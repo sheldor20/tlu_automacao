@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, ProgressBar, StatusPill, Toast } from "@/components/ui";
+import { ProjectTaskBoard } from "@/components/project-task-board";
 import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, initials, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
@@ -39,6 +40,7 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState<"owner" | "all" | null>(null);
+  const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
   const [taskDialog, setTaskDialog] = useState(false);
   const [memberDialog, setMemberDialog] = useState(false);
   const [fileDialog, setFileDialog] = useState(false);
@@ -48,9 +50,9 @@ export default function ProjectDetailPage() {
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!supabase || !params.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const [projectResult, taskResult, commentResult, memberResult, fileResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("project_tasks").select("*").eq("project_id", params.id).order("position"),
@@ -110,15 +112,28 @@ export default function ProjectDetailPage() {
   }
 
   async function changeStatus(task: ProjectTask, status: TaskStatus) {
-    if (!supabase || task.status === status) return;
-    const previous = tasks;
-    setTasks(tasks.map((item) => item.id === task.id ? { ...item, status } : item));
-    const { error } = await supabase.from("project_tasks").update({ status }).eq("id", task.id);
+    if (!supabase || task.status === status || movingTaskId) return;
+    const previousTasks = tasks;
+    const previousProject = project;
+    const position = tasks.filter((item) => item.status === status).length;
+    const nextTasks = tasks.map((item) => item.id === task.id ? { ...item, status, position } : item);
+    setMovingTaskId(task.id);
+    setTasks(nextTasks);
+    setProject((current) => current ? {
+      ...current,
+      progress_percent: nextTasks.length
+        ? (nextTasks.filter((item) => item.status === "concluida").length / nextTasks.length) * 100
+        : 0,
+    } : current);
+    const { error } = await supabase.from("project_tasks").update({ status, position }).eq("id", task.id);
     if (error) {
-      setTasks(previous);
+      setTasks(previousTasks);
+      setProject(previousProject);
+      setMovingTaskId(null);
       return setToast({ message: friendlyError(error), type: "error" });
     }
-    await loadData();
+    await loadData(true);
+    setMovingTaskId(null);
   }
 
   async function addComment(event: FormEvent) {
@@ -217,32 +232,13 @@ export default function ProjectDetailPage() {
       </section>
 
       <section className="kanban-section">
-        <div className="section-title-row"><div><h2>Quadro de tarefas</h2><p>Mova o status de cada tarefa pelo seletor no cartão.</p></div><Button onClick={() => setTaskDialog(true)}><Plus size={17} /> Nova tarefa</Button></div>
-        <div className="kanban-board">
-          {TASK_COLUMNS.map((column) => {
-            const columnTasks = tasks.filter((task) => task.status === column.key);
-            return (
-              <section className={`kanban-column column-${column.key}`} key={column.key}>
-                <header><div><span className="column-dot" /><h3>{column.label}</h3></div><strong>{columnTasks.length}</strong></header>
-                <div className="kanban-tasks">
-                  {columnTasks.map((task) => {
-                    const overdue = task.status !== "concluida" && task.due_date < todayIso();
-                    return (
-                      <article className={`task-card ${overdue ? "task-overdue" : ""}`} key={task.id}>
-                        <div className="task-card-top"><span className="task-avatar">{initials(task.assignee_name)}</span>{overdue ? <StatusPill tone="danger">Atrasada</StatusPill> : task.status === "concluida" ? <StatusPill tone="success">Concluída</StatusPill> : null}</div>
-                        <h4>{task.title}</h4>{task.description ? <p>{task.description}</p> : null}
-                        <div className="task-meta"><span><Users size={12} /> {task.assignee_name}</span><span className={overdue ? "text-danger" : ""}><Calendar size={12} /> {dateBr(task.due_date)}</span></div>
-                        <select value={task.status} onChange={(event) => changeStatus(task, event.target.value as TaskStatus)} aria-label={`Mudar status de ${task.title}`}>{TASK_COLUMNS.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select>
-                      </article>
-                    );
-                  })}
-                  {columnTasks.length === 0 ? <div className="column-empty">Nenhuma tarefa nesta etapa.</div> : null}
-                </div>
-                <button className="kanban-add" onClick={() => { setTaskForm({ ...taskForm, status: column.key }); setTaskDialog(true); }}><Plus size={15} /> Adicionar tarefa</button>
-              </section>
-            );
-          })}
-        </div>
+        <div className="section-title-row"><div><h2>Quadro de tarefas</h2><p>Arraste os cartões entre as colunas ou altere pelo seletor.</p></div><Button onClick={() => setTaskDialog(true)}><Plus size={17} /> Nova tarefa</Button></div>
+        <ProjectTaskBoard
+          tasks={tasks}
+          movingTaskId={movingTaskId}
+          onStatusChange={changeStatus}
+          onAddTask={(status) => { setTaskForm((current) => ({ ...current, status })); setTaskDialog(true); }}
+        />
       </section>
 
       <div className="split-layout project-notion-grid">
