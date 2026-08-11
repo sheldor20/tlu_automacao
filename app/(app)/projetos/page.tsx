@@ -1,9 +1,10 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, ProgressBar, StatusPill, Toast } from "@/components/ui";
+import { UserSelect } from "@/components/user-select";
 import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Project, ProjectStatus } from "@/lib/types";
+import type { Project, ProjectStatus, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
   Archive,
@@ -32,6 +33,7 @@ type ProjectAction = "archive" | "delete";
 export default function ProjectsPage() {
   const supabase = getSupabase();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [filter, setFilter] = useState<ProjectFilter>("current");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,14 +41,19 @@ export default function ProjectsPage() {
   const [actionProject, setActionProject] = useState<Project | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction>("archive");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [form, setForm] = useState({ name: "", start_date: todayIso(), end_date: "", owner_name: "", owner_email: "", objective: "" });
+  const [form, setForm] = useState({ name: "", start_date: todayIso(), end_date: "", owner_user_id: "", objective: "" });
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const { data, error } = await supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false });
-    if (error) setToast({ message: friendlyError(error), type: "error" });
-    setProjects((data || []) as Project[]);
+    const [projectResult, userResult] = await Promise.all([
+      supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
+      supabase.from("profiles").select("user_id,full_name,email,active").eq("active", true).not("email", "is", null).order("full_name"),
+    ]);
+    if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
+    if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
+    setProjects((projectResult.data || []) as Project[]);
+    setUsers((userResult.data || []) as UserProfile[]);
     setLoading(false);
   }, [supabase]);
 
@@ -73,13 +80,19 @@ export default function ProjectsPage() {
   async function createProject(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
+    const owner = users.find((user) => user.user_id === form.owner_user_id);
+    if (!owner?.email) {
+      setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
+      return;
+    }
     setSaving(true);
     const { error } = await supabase.from("projects").insert({
       name: form.name.trim(),
       start_date: form.start_date,
       end_date: form.end_date || null,
-      owner_name: form.owner_name.trim(),
-      owner_email: form.owner_email.trim().toLowerCase(),
+      owner_user_id: owner.user_id,
+      owner_name: owner.full_name?.trim() || owner.email.split("@")[0],
+      owner_email: owner.email.toLowerCase(),
       objective: form.objective.trim(),
       status: "ativo",
     });
@@ -87,7 +100,7 @@ export default function ProjectsPage() {
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setDialogOpen(false);
     setFilter("current");
-    setForm({ name: "", start_date: todayIso(), end_date: "", owner_name: "", owner_email: "", objective: "" });
+    setForm({ name: "", start_date: todayIso(), end_date: "", owner_user_id: "", objective: "" });
     setToast({ message: "Projeto criado e pronto para receber tarefas.", type: "success" });
     await loadData();
   }
@@ -212,8 +225,10 @@ export default function ProjectsPage() {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo projeto" description="Defina o contexto essencial; as tarefas e envolvidos entram na próxima etapa." wide>
         <form className="form-grid" onSubmit={createProject}>
           <Field label="Nome do projeto"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required /></Field>
-          <Field label="Responsável"><input value={form.owner_name} onChange={(event) => setForm({ ...form, owner_name: event.target.value })} maxLength={140} required /></Field>
-          <Field label="E-mail do responsável"><input type="email" value={form.owner_email} onChange={(event) => setForm({ ...form, owner_email: event.target.value })} required /></Field>
+          <Field label="Responsável" hint="Lista de usuários ativos cadastrados no Supabase." className="form-span-2">
+            <UserSelect users={users} value={form.owner_user_id} onChange={(user) => setForm({ ...form, owner_user_id: user?.user_id || "" })} required />
+            {users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado no Supabase.</span> : null}
+          </Field>
           <Field label="Data de início"><input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></Field>
           <Field label="Previsão de fim"><input type="date" min={form.start_date} value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} /></Field>
           <Field label="Objetivo" hint="Descreva o resultado que define o sucesso deste projeto." className="form-span-2"><textarea value={form.objective} onChange={(event) => setForm({ ...form, objective: event.target.value })} maxLength={2500} required /></Field>
