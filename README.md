@@ -5,12 +5,12 @@ e Projetos.
 
 ## Módulos
 
-- **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa e
-  transferência automática para Obras.
-- **Obras:** portfólio, orçamento mensal, macro e micro etapas, pesos, insumos,
-  evidências obrigatórias e relatório PDF.
-- **Projetos:** quadro de tarefas, responsáveis, prazos, alertas, comentários,
-  arquivos, envolvidos e e-mail de status.
+- **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa,
+  arquivamento e transferência automática para Obras.
+- **Obras:** portfólio, orçamento mensal, macro e micro etapas, pesos, insumos
+  estruturados, evidências obrigatórias, arquivamento e relatório PDF.
+- **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
+  alertas, comentários, arquivos, envolvidos e e-mail de status.
 
 ## Desenvolvimento
 
