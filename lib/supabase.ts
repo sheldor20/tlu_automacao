@@ -51,6 +51,12 @@ export function friendlyError(error: unknown) {
   if (message.includes("business_project_not_eligible")) {
     return "O projeto selecionado precisa estar ativo ou concluído e não pode estar arquivado.";
   }
+  if (message.includes("profile_required") || message.includes("profile_not_available")) {
+    return "Selecione um usuário ativo cadastrado no Supabase.";
+  }
+  if (message.includes("invalid_supplies")) {
+    return "Revise os insumos: preencha o nome, use valores positivos e mantenha a quantidade utilizada menor ou igual à quantidade total.";
+  }
   if (message.includes("violates foreign key constraint") && message.includes("project_id")) {
     return "Este projeto possui um negócio vinculado. Arquive-o para preservar o histórico.";
   }

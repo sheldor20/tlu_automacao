@@ -15,6 +15,8 @@ import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Business, BusinessStage, Project, StageHistory } from "@/lib/types";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   Building2,
   Clock3,
@@ -24,6 +26,7 @@ import {
   Plus,
   Route,
   TrendingUp,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -56,15 +59,21 @@ const emptyForm: BusinessForm = {
   stage: "prospeccao",
 };
 
+type BusinessFilter = "current" | "archived";
+type BusinessAction = "archive" | "delete";
+
 export default function NewBusinessPage() {
   const supabase = getSupabase();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [history, setHistory] = useState<StageHistory[]>([]);
+  const [filter, setFilter] = useState<BusinessFilter>("current");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Business | null>(null);
+  const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
+  const [businessAction, setBusinessAction] = useState<BusinessAction>("archive");
   const [form, setForm] = useState<BusinessForm>(emptyForm);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
@@ -94,23 +103,31 @@ export default function NewBusinessPage() {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  const currentBusinesses = useMemo(() => businesses.filter((business) => !business.archived_at), [businesses]);
+  const archivedBusinesses = useMemo(() => businesses.filter((business) => Boolean(business.archived_at)), [businesses]);
+  const visibleBusinesses = filter === "current" ? currentBusinesses : archivedBusinesses;
+  const currentHistory = useMemo(() => {
+    const ids = new Set(currentBusinesses.map((business) => business.id));
+    return history.filter((item) => ids.has(item.business_id));
+  }, [currentBusinesses, history]);
+
   const metrics = useMemo(() => {
-    const total = businesses.length;
-    const totalVgv = businesses.reduce((sum, item) => sum + Number(item.potential_vgv || 0), 0);
-    const workCount = businesses.filter((item) => item.stage === "obra").length;
-    const averageDays = history.length
-      ? Math.round(history.reduce((sum, item) => sum + daysBetween(item.entered_at, item.exited_at), 0) / history.length)
+    const total = currentBusinesses.length;
+    const totalVgv = currentBusinesses.reduce((sum, item) => sum + Number(item.potential_vgv || 0), 0);
+    const workCount = currentBusinesses.filter((item) => item.stage === "obra").length;
+    const averageDays = currentHistory.length
+      ? Math.round(currentHistory.reduce((sum, item) => sum + daysBetween(item.entered_at, item.exited_at), 0) / currentHistory.length)
       : 0;
     return { total, totalVgv, workCount, averageDays };
-  }, [businesses, history]);
+  }, [currentBusinesses, currentHistory]);
 
   const byStage = useMemo(() => {
     return BUSINESS_STAGES.map((stage, index) => {
-      const items = businesses.filter((business) => business.stage === stage.key);
-      const reached = businesses.filter(
+      const items = currentBusinesses.filter((business) => business.stage === stage.key);
+      const reached = currentBusinesses.filter(
         (business) => BUSINESS_STAGES.findIndex((item) => item.key === business.stage) >= index,
       ).length;
-      const durations = history.filter((item) => item.stage === stage.key);
+      const durations = currentHistory.filter((item) => item.stage === stage.key);
       const avgDays = durations.length
         ? Math.round(durations.reduce((sum, item) => sum + daysBetween(item.entered_at, item.exited_at), 0) / durations.length)
         : 0;
@@ -118,11 +135,11 @@ export default function NewBusinessPage() {
         ...stage,
         items,
         vgv: items.reduce((sum, item) => sum + Number(item.potential_vgv || 0), 0),
-        conversion: businesses.length ? Math.round((reached / businesses.length) * 100) : 0,
+        conversion: currentBusinesses.length ? Math.round((reached / currentBusinesses.length) * 100) : 0,
         avgDays,
       };
     });
-  }, [businesses, history]);
+  }, [currentBusinesses, currentHistory]);
 
   function openNew() {
     setEditing(null);
@@ -180,6 +197,38 @@ export default function NewBusinessPage() {
     });
     setDialogOpen(false);
     setSaving(false);
+    await loadData();
+  }
+
+  function requestAction(business: Business, action: BusinessAction) {
+    setActionBusiness(business);
+    setBusinessAction(action);
+  }
+
+  async function archiveBusiness(business: Business) {
+    if (!supabase) return;
+    setSaving(true);
+    const { data } = await supabase.auth.getUser();
+    const archived = Boolean(business.archived_at);
+    const { error } = await supabase
+      .from("businesses")
+      .update({ archived_at: archived ? null : new Date().toISOString(), archived_by: archived ? null : data.user?.id || null })
+      .eq("id", business.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setActionBusiness(null);
+    setToast({ message: archived ? "Negócio restaurado ao funil." : "Negócio arquivado sem perder o histórico.", type: "success" });
+    await loadData();
+  }
+
+  async function deleteBusiness(business: Business) {
+    if (!supabase) return;
+    setSaving(true);
+    const { error } = await supabase.from("businesses").delete().eq("id", business.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setActionBusiness(null);
+    setToast({ message: "Negócio excluído definitivamente.", type: "success" });
     await loadData();
   }
 
@@ -247,20 +296,21 @@ export default function NewBusinessPage() {
       </section>
 
       <section className="content-card business-list-card">
-        <div className="content-card-head">
+        <div className="content-card-head project-list-head">
           <div>
-            <h2>Todos os negócios</h2>
-            <p>Dados gerais, localização e fase atual</p>
+            <h2>{filter === "current" ? "Negócios atuais" : "Negócios arquivados"}</h2>
+            <p>Dados gerais, localização, fase atual e gestão do histórico</p>
           </div>
+          <div className="segmented" aria-label="Filtrar negócios"><button type="button" className={filter === "current" ? "active" : ""} onClick={() => setFilter("current")}>Atuais · {currentBusinesses.length}</button><button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Arquivados · {archivedBusinesses.length}</button></div>
         </div>
         {loading ? (
           <div className="list-loading">Carregando negócios…</div>
-        ) : businesses.length === 0 ? (
+        ) : visibleBusinesses.length === 0 ? (
           <EmptyState
-            icon={<TrendingUp size={23} />}
-            title="Seu funil está pronto"
-            description="Cadastre o primeiro negócio para começar a acompanhar VGV, conversão e tempo entre fases."
-            action={<Button onClick={openNew}><Plus size={17} /> Adicionar negócio</Button>}
+            icon={filter === "current" ? <TrendingUp size={23} /> : <Archive size={23} />}
+            title={filter === "current" ? "Seu funil está pronto" : "Nenhum negócio arquivado"}
+            description={filter === "current" ? "Cadastre o primeiro negócio para começar a acompanhar VGV, conversão e tempo entre fases." : "Negócios arquivados aparecerão aqui e poderão ser restaurados."}
+            action={filter === "current" ? <Button onClick={openNew}><Plus size={17} /> Adicionar negócio</Button> : undefined}
           />
         ) : (
           <div className="business-table-wrap">
@@ -269,11 +319,11 @@ export default function NewBusinessPage() {
                 <tr><th>Negócio</th><th>Projeto conectado</th><th>Fase atual</th><th>VGV potencial</th><th>Início</th><th>Localização</th><th aria-label="Ações" /></tr>
               </thead>
               <tbody>
-                {businesses.map((business) => {
+                {visibleBusinesses.map((business) => {
                   const stage = BUSINESS_STAGES.find((item) => item.key === business.stage);
                   return (
                     <tr key={business.id}>
-                      <td><strong>{business.name}</strong><small>Atualizado em {dateBr(business.updated_at)}</small></td>
+                      <td><strong>{business.name}</strong><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
                       <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project ? "Projeto relacionado" : "Registro anterior à nova regra"}</small></td>
                       <td><StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill></td>
                       <td><strong>{currency(business.potential_vgv)}</strong></td>
@@ -283,7 +333,7 @@ export default function NewBusinessPage() {
                           <MapPin size={14} /> {business.city || "Ver mapa"} <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`}><Pencil size={16} /></button></td>
+                      <td><div className="table-actions">{business.archived_at ? null : <button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button><button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir negócio"><Trash2 size={16} /></button></div></td>
                     </tr>
                   );
                 })}
@@ -361,6 +411,8 @@ export default function NewBusinessPage() {
           </div>
         </form>
       </Dialog>
+
+      <Dialog open={Boolean(actionBusiness)} onClose={() => setActionBusiness(null)} title={businessAction === "delete" ? "Excluir negócio?" : "Arquivar negócio?"} description={businessAction === "delete" ? "A exclusão é definitiva e remove o histórico do funil. Se existir uma obra vinculada, ela será preservada como obra avulsa." : "O negócio sairá do funil atual, mas todo o histórico será preservado e poderá ser restaurado."}><div className="confirmation-content"><strong>{actionBusiness?.name}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setActionBusiness(null)}>Cancelar</Button><Button type="button" variant={businessAction === "delete" ? "danger" : "primary"} loading={saving} onClick={() => actionBusiness && (businessAction === "delete" ? void deleteBusiness(actionBusiness) : void archiveBusiness(actionBusiness))}>{businessAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar negócio</>}</Button></div></div></Dialog>
 
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>

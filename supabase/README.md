@@ -2,8 +2,14 @@
 
 ## 1. Criar o banco
 
-No painel do Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de
-`migrations/20260811120000_initial_schema.sql` e clique em **Run**.
+No painel do Supabase, abra **SQL Editor > New query** e execute as migrations
+abaixo, uma por vez e nesta ordem:
+
+1. `migrations/20260811120000_initial_schema.sql`
+2. `migrations/20260811190000_business_project_link_and_project_archiving.sql`
+3. `migrations/20260811203000_operational_archiving_supplies_and_user_directory.sql`
+
+Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
 Esse SQL cria:
 
@@ -13,6 +19,9 @@ Esse SQL cria:
 - cálculo ponderado do avanço das obras;
 - regra que exige uma nova evidência antes de alterar o avanço de uma micro etapa;
 - cálculo de progresso e alertas de projetos;
+- arquivamento e exclusão de negócios, obras e projetos;
+- insumos opcionais com valor e quantidades total e utilizada;
+- diretório de responsáveis sincronizado com os usuários do Supabase;
 - RLS para restringir o sistema a usuários autenticados;
 - buckets privados de evidências e arquivos.
 
