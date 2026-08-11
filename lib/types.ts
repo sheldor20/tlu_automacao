@@ -9,6 +9,7 @@ export type BusinessStage =
 
 export type Business = {
   id: string;
+  project_id: string | null;
   name: string;
   start_date: string;
   stage: BusinessStage;
@@ -21,6 +22,7 @@ export type Business = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  project?: Pick<Project, "id" | "name" | "status" | "archived_at"> | null;
 };
 
 export type StageHistory = {
@@ -106,6 +108,8 @@ export type Project = {
   owner_email: string;
   objective: string;
   status: ProjectStatus;
+  archived_at: string | null;
+  archived_by: string | null;
   progress_percent?: number;
   total_tasks?: number;
   completed_tasks?: number;
