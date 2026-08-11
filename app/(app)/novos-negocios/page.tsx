@@ -13,7 +13,7 @@ import {
 import { BRAZIL_STATES, BUSINESS_STAGES } from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Business, BusinessStage, StageHistory } from "@/lib/types";
+import type { Business, BusinessStage, Project, StageHistory } from "@/lib/types";
 import {
   ArrowRight,
   Building2,
@@ -25,9 +25,11 @@ import {
   Route,
   TrendingUp,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type BusinessForm = {
+  project_id: string;
   name: string;
   start_date: string;
   address: string;
@@ -41,6 +43,7 @@ type BusinessForm = {
 };
 
 const emptyForm: BusinessForm = {
+  project_id: "",
   name: "",
   start_date: todayIso(),
   address: "",
@@ -56,6 +59,7 @@ const emptyForm: BusinessForm = {
 export default function NewBusinessPage() {
   const supabase = getSupabase();
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [history, setHistory] = useState<StageHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -67,12 +71,20 @@ export default function NewBusinessPage() {
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [{ data: businessData, error }, { data: historyData }] = await Promise.all([
-      supabase.from("businesses").select("*").order("updated_at", { ascending: false }),
+    const [{ data: businessData, error }, { data: historyData }, { data: projectData, error: projectError }] = await Promise.all([
+      supabase.from("businesses").select("*, project:projects(id,name,status,archived_at)").order("updated_at", { ascending: false }),
       supabase.from("business_stage_history").select("*").order("entered_at"),
+      supabase
+        .from("project_progress_summary")
+        .select("*")
+        .in("status", ["ativo", "concluido"])
+        .is("archived_at", null)
+        .order("name"),
     ]);
     if (error) setToast({ message: friendlyError(error), type: "error" });
+    if (projectError) setToast({ message: friendlyError(projectError), type: "error" });
     setBusinesses((businessData || []) as Business[]);
+    setProjects((projectData || []) as Project[]);
     setHistory((historyData || []) as StageHistory[]);
     setLoading(false);
   }, [supabase]);
@@ -114,13 +126,14 @@ export default function NewBusinessPage() {
 
   function openNew() {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm });
     setDialogOpen(true);
   }
 
   function openEdit(business: Business) {
     setEditing(business);
     setForm({
+      project_id: business.project_id || "",
       name: business.name,
       start_date: business.start_date,
       address: business.address,
@@ -140,6 +153,7 @@ export default function NewBusinessPage() {
     if (!supabase) return;
     setSaving(true);
     const payload = {
+      project_id: form.project_id,
       start_date: form.start_date,
       address: form.address.trim(),
       city: form.city.trim(),
@@ -252,7 +266,7 @@ export default function NewBusinessPage() {
           <div className="business-table-wrap">
             <table className="data-table">
               <thead>
-                <tr><th>Negócio</th><th>Fase atual</th><th>VGV potencial</th><th>Início</th><th>Localização</th><th aria-label="Ações" /></tr>
+                <tr><th>Negócio</th><th>Projeto conectado</th><th>Fase atual</th><th>VGV potencial</th><th>Início</th><th>Localização</th><th aria-label="Ações" /></tr>
               </thead>
               <tbody>
                 {businesses.map((business) => {
@@ -260,6 +274,7 @@ export default function NewBusinessPage() {
                   return (
                     <tr key={business.id}>
                       <td><strong>{business.name}</strong><small>Atualizado em {dateBr(business.updated_at)}</small></td>
+                      <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project ? "Projeto relacionado" : "Registro anterior à nova regra"}</small></td>
                       <td><StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill></td>
                       <td><strong>{currency(business.potential_vgv)}</strong></td>
                       <td>{dateBr(business.start_date)}</td>
@@ -286,6 +301,24 @@ export default function NewBusinessPage() {
         wide
       >
         <form className="form-grid" onSubmit={saveBusiness}>
+          <Field
+            label="Projeto relacionado"
+            hint="Selecione um projeto ativo ou concluído. O vínculo ficará visível nos dois módulos."
+            className="form-span-2"
+          >
+            <select value={form.project_id} onChange={(event) => setForm({ ...form, project_id: event.target.value })} required>
+              <option value="">Selecione o projeto</option>
+              {editing?.project && !projects.some((project) => project.id === editing.project_id) ? (
+                <option value={editing.project.id}>{editing.project.name} · vínculo atual</option>
+              ) : null}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name} · {project.status === "concluido" ? "Concluído" : "Em andamento"}</option>
+              ))}
+            </select>
+            {projects.length === 0 && !editing?.project ? (
+              <span className="field-empty-hint">Nenhum projeto elegível. <Link href="/projetos">Crie um projeto primeiro.</Link></span>
+            ) : null}
+          </Field>
           <Field label="Nome do negócio">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={Boolean(editing)} maxLength={140} required />
           </Field>
@@ -319,12 +352,12 @@ export default function NewBusinessPage() {
           <Field label="Longitude" hint="Opcional, melhora a precisão no mapa.">
             <input type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => setForm({ ...form, longitude: event.target.value })} placeholder="-46.6333" />
           </Field>
-          <Field label="Observações" hint="Informações rápidas para contextualizar a oportunidade.">
+          <Field label="Observações" hint="Informações rápidas para contextualizar a oportunidade." className="form-span-2">
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={2000} />
           </Field>
           <div className="form-actions">
             <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button type="submit" loading={saving}>{editing ? "Salvar alterações" : "Criar negócio"}</Button>
+            <Button type="submit" loading={saving} disabled={!form.project_id}>{editing ? "Salvar alterações" : "Criar negócio"}</Button>
           </div>
         </form>
       </Dialog>

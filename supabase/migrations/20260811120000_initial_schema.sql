@@ -188,11 +188,19 @@ create table public.projects (
   owner_email text not null check (owner_email ~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$'),
   objective text not null check (char_length(btrim(objective)) between 3 and 5000),
   status public.project_status not null default 'ativo',
+  archived_at timestamptz,
+  archived_by uuid references auth.users(id) on delete set null,
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint valid_project_dates check (end_date is null or end_date >= start_date)
 );
+
+-- Um negócio sempre nasce ligado a um projeto. A coluna permanece nullable para
+-- permitir a migração de registros legados, enquanto o trigger abaixo protege
+-- todas as novas inclusões.
+alter table public.businesses
+  add column project_id uuid references public.projects(id) on delete restrict;
 
 create table public.project_members (
   id uuid primary key default gen_random_uuid(),
@@ -254,6 +262,7 @@ create table public.email_dispatches (
 
 -- Índices para os filtros e painéis mais usados.
 create index businesses_stage_idx on public.businesses(stage);
+create index businesses_project_idx on public.businesses(project_id);
 create index businesses_updated_idx on public.businesses(updated_at desc);
 create index business_history_business_idx on public.business_stage_history(business_id, entered_at desc);
 create unique index business_history_open_stage_idx on public.business_stage_history(business_id) where exited_at is null;
@@ -263,6 +272,7 @@ create index micro_macro_position_idx on public.construction_micro_stages(macro_
 create index evidence_construction_date_idx on public.construction_evidence(construction_id, captured_at desc);
 create index budgets_construction_month_idx on public.construction_budgets(construction_id, reference_month desc);
 create index project_tasks_project_status_idx on public.project_tasks(project_id, status);
+create index projects_archived_idx on public.projects(archived_at, updated_at desc);
 create index project_tasks_due_idx on public.project_tasks(due_date) where status <> 'concluida';
 create index project_comments_project_date_idx on public.project_comments(project_id, created_at desc);
 create index project_files_project_date_idx on public.project_files(project_id, created_at desc);
@@ -307,6 +317,42 @@ from auth.users
 on conflict (user_id) do update set
   email = excluded.email,
   updated_at = now();
+
+create or replace function public.validate_business_project()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  eligible boolean;
+begin
+  if tg_op = 'UPDATE' and new.project_id is not distinct from old.project_id then
+    return new;
+  end if;
+
+  if new.project_id is null then
+    raise exception using message = 'business_project_required';
+  end if;
+
+  select exists (
+    select 1
+    from public.projects p
+    where p.id = new.project_id
+      and p.archived_at is null
+      and p.status in ('ativo', 'concluido')
+  ) into eligible;
+
+  if not coalesce(eligible, false) then
+    raise exception using message = 'business_project_not_eligible';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger validate_business_project_before_write
+before insert or update of project_id on public.businesses
+for each row execute function public.validate_business_project();
 
 create or replace function public.protect_business_name()
 returns trigger
