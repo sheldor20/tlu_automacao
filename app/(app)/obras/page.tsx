@@ -15,6 +15,8 @@ import { currency, dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Construction } from "@/lib/types";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUpRight,
   Banknote,
   Building2,
@@ -22,6 +24,7 @@ import {
   CircleDollarSign,
   Hammer,
   Plus,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -33,12 +36,18 @@ const statusLabel: Record<Construction["status"], string> = {
   concluida: "Concluída",
 };
 
+type WorkFilter = "current" | "archived";
+type WorkAction = "archive" | "delete";
+
 export default function WorksPage() {
   const supabase = getSupabase();
   const [works, setWorks] = useState<Construction[]>([]);
+  const [filter, setFilter] = useState<WorkFilter>("current");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [actionWork, setActionWork] = useState<Construction | null>(null);
+  const [workAction, setWorkAction] = useState<WorkAction>("archive");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [form, setForm] = useState({
     name: "",
@@ -67,15 +76,19 @@ export default function WorksPage() {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  const currentWorks = useMemo(() => works.filter((work) => !work.archived_at), [works]);
+  const archivedWorks = useMemo(() => works.filter((work) => Boolean(work.archived_at)), [works]);
+  const visibleWorks = filter === "current" ? currentWorks : archivedWorks;
+
   const metrics = useMemo(() => {
-    const planned = works.reduce((sum, work) => sum + Number(work.planned_budget || 0), 0);
-    const realized = works.reduce((sum, work) => sum + Number(work.realized_total || 0), 0);
-    const month = works.reduce((sum, work) => sum + Number(work.realized_current_month || 0), 0);
-    const progress = works.length
-      ? works.reduce((sum, work) => sum + Number(work.progress_percent || 0), 0) / works.length
+    const planned = currentWorks.reduce((sum, work) => sum + Number(work.planned_budget || 0), 0);
+    const realized = currentWorks.reduce((sum, work) => sum + Number(work.realized_total || 0), 0);
+    const month = currentWorks.reduce((sum, work) => sum + Number(work.realized_current_month || 0), 0);
+    const progress = currentWorks.length
+      ? currentWorks.reduce((sum, work) => sum + Number(work.progress_percent || 0), 0) / currentWorks.length
       : 0;
     return { planned, realized, month, progress };
-  }, [works]);
+  }, [currentWorks]);
 
   async function createWork(event: FormEvent) {
     event.preventDefault();
@@ -102,6 +115,51 @@ export default function WorksPage() {
     await loadData();
   }
 
+  function requestAction(work: Construction, action: WorkAction) {
+    setActionWork(work);
+    setWorkAction(action);
+  }
+
+  async function archiveWork(work: Construction) {
+    if (!supabase) return;
+    setSaving(true);
+    const { data } = await supabase.auth.getUser();
+    const archived = Boolean(work.archived_at);
+    const { error } = await supabase
+      .from("constructions")
+      .update({ archived_at: archived ? null : new Date().toISOString(), archived_by: archived ? null : data.user?.id || null })
+      .eq("id", work.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setActionWork(null);
+    setToast({ message: archived ? "Obra restaurada." : "Obra arquivada sem perder o histórico.", type: "success" });
+    await loadData();
+  }
+
+  async function deleteWork(work: Construction) {
+    if (!supabase) return;
+    setSaving(true);
+    const { data: evidenceRows, error: evidenceError } = await supabase
+      .from("construction_evidence")
+      .select("file_path")
+      .eq("construction_id", work.id);
+    if (evidenceError) {
+      setSaving(false);
+      return setToast({ message: friendlyError(evidenceError), type: "error" });
+    }
+    const { error } = await supabase.from("constructions").delete().eq("id", work.id);
+    if (error) {
+      setSaving(false);
+      return setToast({ message: friendlyError(error), type: "error" });
+    }
+    const paths = (evidenceRows || []).map((item) => item.file_path).filter(Boolean);
+    if (paths.length) await supabase.storage.from("construction-evidence").remove(paths);
+    setSaving(false);
+    setActionWork(null);
+    setToast({ message: "Obra excluída definitivamente.", type: "success" });
+    await loadData();
+  }
+
   return (
     <>
       <PageIntro
@@ -112,7 +170,7 @@ export default function WorksPage() {
       />
 
       <section className="kpi-grid">
-        <KpiCard label="Avanço médio" value={`${metrics.progress.toFixed(0)}%`} helper={`${works.length} obras no portfólio`} tone="success" icon={<Hammer size={17} />} />
+        <KpiCard label="Avanço médio" value={`${metrics.progress.toFixed(0)}%`} helper={`${currentWorks.length} obras no portfólio`} tone="success" icon={<Hammer size={17} />} />
         <KpiCard label="Orçamento previsto" value={currency(metrics.planned, true)} helper="total do departamento" icon={<CircleDollarSign size={17} />} />
         <KpiCard label="Realizado acumulado" value={currency(metrics.realized, true)} helper={`${metrics.planned ? (metrics.realized / metrics.planned * 100).toFixed(0) : 0}% do previsto`} icon={<Banknote size={17} />} />
         <KpiCard label="Gasto no mês" value={currency(metrics.month, true)} helper="competência atual" icon={<CalendarClock size={17} />} />
@@ -120,31 +178,30 @@ export default function WorksPage() {
 
       <section className="content-card">
         <div className="content-card-head">
-          <div><h2>Portfólio de obras</h2><p>Visão geral do departamento</p></div>
-          <StatusPill tone={metrics.realized > metrics.planned && metrics.planned > 0 ? "danger" : "success"}>
-            {metrics.realized > metrics.planned && metrics.planned > 0 ? "Atenção ao orçamento" : "Financeiro acompanhado"}
-          </StatusPill>
+          <div><h2>{filter === "current" ? "Portfólio de obras" : "Obras arquivadas"}</h2><p>Visão geral do departamento e gestão do histórico</p></div>
+          <div className="segmented" aria-label="Filtrar obras"><button type="button" className={filter === "current" ? "active" : ""} onClick={() => setFilter("current")}>Atuais · {currentWorks.length}</button><button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Arquivadas · {archivedWorks.length}</button></div>
         </div>
         {loading ? (
           <div className="list-loading">Carregando obras…</div>
-        ) : works.length === 0 ? (
+        ) : visibleWorks.length === 0 ? (
           <EmptyState
-            icon={<Building2 size={23} />}
-            title="Nenhuma obra em andamento"
-            description="As oportunidades que chegam à fase Obra aparecem aqui automaticamente. Você também pode criar uma obra avulsa."
-            action={<Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar obra</Button>}
+            icon={filter === "current" ? <Building2 size={23} /> : <Archive size={23} />}
+            title={filter === "current" ? "Nenhuma obra em andamento" : "Nenhuma obra arquivada"}
+            description={filter === "current" ? "As oportunidades que chegam à fase Obra aparecem aqui automaticamente. Você também pode criar uma obra avulsa." : "Obras arquivadas aparecerão aqui e poderão ser restauradas."}
+            action={filter === "current" ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar obra</Button> : undefined}
           />
         ) : (
           <div className="works-grid">
-            {works.map((work) => {
+            {visibleWorks.map((work) => {
               const realized = Number(work.realized_total || 0);
               const budgetPercent = work.planned_budget ? realized / Number(work.planned_budget) * 100 : 0;
               return (
-                <Link href={`/obras/${work.id}`} className="work-card" key={work.id}>
+                <article className={`work-card ${work.archived_at ? "work-card-archived" : ""}`} key={work.id}>
                   <div className="work-card-head">
                     <div className="work-type-icon"><Building2 size={20} /></div>
-                    <StatusPill tone={work.status === "concluida" ? "success" : work.status === "pausada" ? "warning" : "neutral"}>{statusLabel[work.status]}</StatusPill>
+                    <div className="work-card-actions"><StatusPill tone={work.status === "concluida" ? "success" : work.status === "pausada" ? "warning" : "neutral"}>{statusLabel[work.status]}</StatusPill>{work.archived_at ? <StatusPill tone="neutral">Arquivada</StatusPill> : null}<button type="button" onClick={() => work.archived_at ? void archiveWork(work) : requestAction(work, "archive")} aria-label={work.archived_at ? `Restaurar ${work.name}` : `Arquivar ${work.name}`} title={work.archived_at ? "Restaurar obra" : "Arquivar obra"}>{work.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button><button type="button" className="danger" onClick={() => requestAction(work, "delete")} aria-label={`Excluir ${work.name}`} title="Excluir obra"><Trash2 size={16} /></button></div>
                   </div>
+                  <Link href={`/obras/${work.id}`} className="work-card-link">
                   <div className="work-title">
                     <span>{work.type === "loteamento" ? "Loteamento" : "Construção"}</span>
                     <h3>{work.name}</h3>
@@ -160,7 +217,8 @@ export default function WorksPage() {
                     <span>{dateBr(work.start_date)} → {dateBr(work.expected_end_date)}</span>
                     <span className="inline-link">Abrir obra <ArrowUpRight size={14} /></span>
                   </div>
-                </Link>
+                  </Link>
+                </article>
               );
             })}
           </div>
@@ -179,6 +237,7 @@ export default function WorksPage() {
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar obra</Button></div>
         </form>
       </Dialog>
+      <Dialog open={Boolean(actionWork)} onClose={() => setActionWork(null)} title={workAction === "delete" ? "Excluir obra?" : "Arquivar obra?"} description={workAction === "delete" ? "A exclusão é definitiva e remove etapas, orçamentos e evidências. Se a obra veio de um negócio, o negócio continuará no funil." : "A obra sairá da visão atual, mas todo o histórico será preservado e poderá ser restaurado."}><div className="confirmation-content"><strong>{actionWork?.name}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setActionWork(null)}>Cancelar</Button><Button type="button" variant={workAction === "delete" ? "danger" : "primary"} loading={saving} onClick={() => actionWork && (workAction === "delete" ? void deleteWork(actionWork) : void archiveWork(actionWork))}>{workAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar obra</>}</Button></div></div></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
   );
