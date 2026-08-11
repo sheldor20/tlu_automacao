@@ -76,14 +76,16 @@ export function Field({
   hint,
   error,
   children,
+  className = "",
 }: {
   label: string;
   hint?: string;
   error?: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <label className="field">
+    <label className={`field ${className}`}>
       <span className="field-label">{label}</span>
       {children}
       {hint ? <span className="field-hint">{hint}</span> : null}
