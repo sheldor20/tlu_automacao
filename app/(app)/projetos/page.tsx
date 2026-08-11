@@ -48,7 +48,7 @@ export default function ProjectsPage() {
     setLoading(true);
     const [projectResult, userResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
-      supabase.from("profiles").select("user_id,full_name,email,active").eq("active", true).not("email", "is", null).order("full_name"),
+      supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });

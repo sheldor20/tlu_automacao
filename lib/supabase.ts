@@ -57,6 +57,18 @@ export function friendlyError(error: unknown) {
   if (message.includes("invalid_supplies")) {
     return "Revise os insumos: preencha o nome, use valores positivos e mantenha a quantidade utilizada menor ou igual à quantidade total.";
   }
+  if (message.includes("rented_requires_start_date")) {
+    return "Informe o início da locação antes de marcar o imóvel como alugado.";
+  }
+  if (message.includes("commission_not_above_rent")) {
+    return "A comissão mensal não pode ser maior que o valor da locação.";
+  }
+  if (message.includes("valid_rental_date")) {
+    return "O término da locação deve ser posterior ao início.";
+  }
+  if (message.includes("permission denied") || message.includes("row-level security")) {
+    return "Seu usuário não possui acesso a este departamento ou ação.";
+  }
   if (message.includes("violates foreign key constraint") && message.includes("project_id")) {
     return "Este projeto possui um negócio vinculado. Arquive-o para preservar o histórico.";
   }

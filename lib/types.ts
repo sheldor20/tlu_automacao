@@ -91,6 +91,50 @@ export type UserProfile = {
   full_name: string | null;
   email: string;
   active: boolean;
+  is_admin: boolean;
+};
+
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis";
+
+export type Department = {
+  slug: DepartmentSlug;
+  name: string;
+  position: number;
+};
+
+export type ProfileDepartment = {
+  user_id: string;
+  department_slug: DepartmentSlug;
+  access_level: "viewer" | "member" | "manager" | "admin";
+};
+
+export type RentalStatus = "alugado" | "desocupado" | "aguardando_reforma";
+export type LessorType = "pf" | "pj";
+
+export type Rental = {
+  id: string;
+  name: string;
+  property_address: string;
+  status: RentalStatus;
+  monthly_rent: number;
+  lessor_type: LessorType;
+  lessor_name: string;
+  lease_start_date: string | null;
+  lease_end_date: string | null;
+  annual_adjustment_percent: number;
+  broker_name: string | null;
+  broker_commission: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RentalMonthlySummary = {
+  reference_month: string;
+  rented_properties: number;
+  gross_rent: number;
+  broker_commission: number;
+  net_rent: number;
 };
 
 export type ConstructionEvidence = {

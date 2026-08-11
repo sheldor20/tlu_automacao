@@ -61,11 +61,12 @@ const emptyForm: BusinessForm = {
 
 type BusinessFilter = "current" | "archived";
 type BusinessAction = "archive" | "delete";
+type ProjectOption = Pick<Project, "id" | "name" | "status" | "archived_at">;
 
 export default function NewBusinessPage() {
   const supabase = getSupabase();
   const [businesses, setBusinesses] = useState<Business[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [history, setHistory] = useState<StageHistory[]>([]);
   const [filter, setFilter] = useState<BusinessFilter>("current");
   const [loading, setLoading] = useState(true);
@@ -81,19 +82,18 @@ export default function NewBusinessPage() {
     if (!supabase) return;
     setLoading(true);
     const [{ data: businessData, error }, { data: historyData }, { data: projectData, error: projectError }] = await Promise.all([
-      supabase.from("businesses").select("*, project:projects(id,name,status,archived_at)").order("updated_at", { ascending: false }),
+      supabase.from("businesses").select("*").order("updated_at", { ascending: false }),
       supabase.from("business_stage_history").select("*").order("entered_at"),
-      supabase
-        .from("project_progress_summary")
-        .select("*")
-        .in("status", ["ativo", "concluido"])
-        .is("archived_at", null)
-        .order("name"),
+      supabase.rpc("business_project_options"),
     ]);
     if (error) setToast({ message: friendlyError(error), type: "error" });
     if (projectError) setToast({ message: friendlyError(projectError), type: "error" });
-    setBusinesses((businessData || []) as Business[]);
-    setProjects((projectData || []) as Project[]);
+    const options = (projectData || []) as ProjectOption[];
+    setBusinesses(((businessData || []) as Business[]).map((business) => ({
+      ...business,
+      project: options.find((project) => project.id === business.project_id) || null,
+    })));
+    setProjects(options);
     setHistory((historyData || []) as StageHistory[]);
     setLoading(false);
   }, [supabase]);

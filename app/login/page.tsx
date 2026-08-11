@@ -58,7 +58,7 @@ export default function LoginPage() {
             <span>Gestão integrada</span>
             <h1>Decisões claras.<br />Projetos em movimento.</h1>
             <p>
-              Novos negócios, obras e projetos acompanhados em um só lugar.
+              Novos negócios, obras, projetos e aluguéis acompanhados em um só lugar.
             </p>
           </div>
         </div>

@@ -11,6 +11,10 @@ e Projetos.
   estruturados, evidências obrigatórias, arquivamento e relatório PDF.
 - **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
   alertas, comentários, arquivos, envolvidos e e-mail de status.
+- **Aluguéis:** imóveis, contratos, atualização direta de status e resultado
+  mensal líquido de comissão, com reajuste anual.
+- **Administração:** criação de usuários e acesso a um ou mais departamentos,
+  aplicado ao menu e às políticas RLS do Supabase.
 
 ## Desenvolvimento
 

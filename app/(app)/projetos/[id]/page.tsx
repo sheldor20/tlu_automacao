@@ -71,7 +71,7 @@ export default function ProjectDetailPage() {
       supabase.from("project_members").select("*").eq("project_id", params.id).order("name"),
       supabase.from("project_files").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("businesses").select("id,name,stage,potential_vgv").eq("project_id", params.id).order("updated_at", { ascending: false }),
-      supabase.from("profiles").select("user_id,full_name,email,active").eq("active", true).not("email", "is", null).order("full_name"),
+      supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
