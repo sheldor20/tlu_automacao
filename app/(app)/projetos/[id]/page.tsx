@@ -2,13 +2,14 @@
 
 import { Button, Dialog, EmptyState, Field, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { ProjectTaskBoard } from "@/components/project-task-board";
-import { TASK_COLUMNS } from "@/lib/constants";
-import { dateBr, initials, todayIso } from "@/lib/format";
+import { BUSINESS_STAGES, TASK_COLUMNS } from "@/lib/constants";
+import { currency, dateBr, initials, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
-import type { Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus } from "@/lib/types";
+import type { BusinessStage, Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus } from "@/lib/types";
 import {
   AlertTriangle,
   ArrowLeft,
+  Building2,
   Calendar,
   CheckCircle2,
   Clock3,
@@ -29,6 +30,13 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+type LinkedBusiness = {
+  id: string;
+  name: string;
+  stage: BusinessStage;
+  potential_vgv: number;
+};
+
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const supabase = getSupabase();
@@ -37,6 +45,7 @@ export default function ProjectDetailPage() {
   const [comments, setComments] = useState<ProjectComment[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [linkedBusinesses, setLinkedBusinesses] = useState<LinkedBusiness[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState<"owner" | "all" | null>(null);
@@ -53,12 +62,13 @@ export default function ProjectDetailPage() {
   const loadData = useCallback(async (silent = false) => {
     if (!supabase || !params.id) return;
     if (!silent) setLoading(true);
-    const [projectResult, taskResult, commentResult, memberResult, fileResult] = await Promise.all([
+    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("project_tasks").select("*").eq("project_id", params.id).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("project_members").select("*").eq("project_id", params.id).order("name"),
       supabase.from("project_files").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
+      supabase.from("businesses").select("id,name,stage,potential_vgv").eq("project_id", params.id).order("updated_at", { ascending: false }),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
@@ -75,6 +85,7 @@ export default function ProjectDetailPage() {
     setComments((commentResult.data || []) as ProjectComment[]);
     setMembers((memberResult.data || []) as ProjectMember[]);
     setFiles(signedFiles);
+    setLinkedBusinesses((businessResult.data || []) as LinkedBusiness[]);
     setLoading(false);
   }, [params.id, supabase]);
 
@@ -213,7 +224,7 @@ export default function ProjectDetailPage() {
       <Link href="/projetos" className="detail-back"><ArrowLeft size={16} /> Voltar para Projetos</Link>
       <header className="project-detail-header">
         <div>
-          <div className="project-title-meta"><StatusPill tone="info">{project.status === "ativo" ? "Projeto ativo" : project.status}</StatusPill>{stats.overdue ? <StatusPill tone="danger"><AlertTriangle size={11} /> {stats.overdue} atrasadas</StatusPill> : <StatusPill tone="success">Prazos acompanhados</StatusPill>}</div>
+          <div className="project-title-meta"><StatusPill tone="info">{project.status === "ativo" ? "Projeto ativo" : project.status}</StatusPill>{project.archived_at ? <StatusPill tone="neutral">Arquivado</StatusPill> : null}{stats.overdue ? <StatusPill tone="danger"><AlertTriangle size={11} /> {stats.overdue} atrasadas</StatusPill> : <StatusPill tone="success">Prazos acompanhados</StatusPill>}</div>
           <h1>{project.name}</h1>
           <p><Users size={14} /> {project.owner_name} · {project.owner_email} <span /> <Calendar size={14} /> {dateBr(project.start_date)} a {dateBr(project.end_date)}</p>
         </div>
@@ -229,6 +240,30 @@ export default function ProjectDetailPage() {
       <section className="project-context-grid">
         <article className="objective-card"><span className="eyebrow">Objetivo do projeto</span><p>{project.objective}</p></article>
         <article className="members-card"><div><span className="eyebrow">Envolvidos</span><div className="avatar-stack">{members.slice(0, 5).map((member) => <span title={`${member.name} · ${member.email}`} key={member.id}>{initials(member.name)}</span>)}{members.length > 5 ? <span>+{members.length - 5}</span> : null}</div></div><Button variant="ghost" onClick={() => setMemberDialog(true)}><UserPlus size={16} /> Adicionar</Button></article>
+      </section>
+
+      <section className="content-card linked-businesses-card">
+        <div className="content-card-head">
+          <div><h2>Novos negócios vinculados</h2><p>Conexão entre a execução do projeto e o funil de desenvolvimento</p></div>
+          <StatusPill tone={linkedBusinesses.length ? "success" : "neutral"}>{linkedBusinesses.length} vínculo(s)</StatusPill>
+        </div>
+        {linkedBusinesses.length ? (
+          <div className="linked-businesses-list">
+            {linkedBusinesses.map((business) => {
+              const stage = BUSINESS_STAGES.find((item) => item.key === business.stage);
+              return (
+                <article key={business.id}>
+                  <span className="linked-business-icon"><Building2 size={18} /></span>
+                  <div><strong>{business.name}</strong><small>{stage?.label || business.stage}</small></div>
+                  <div><span>VGV potencial</span><strong>{currency(business.potential_vgv)}</strong></div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="linked-businesses-empty">Este projeto ainda não está conectado a um novo negócio. O vínculo é definido ao cadastrar o negócio no funil.</div>
+        )}
+        <div className="linked-businesses-footer"><Link href="/novos-negocios">Abrir Novos negócios</Link></div>
       </section>
 
       <section className="kanban-section">
