@@ -2,10 +2,11 @@
 
 import { Button, Dialog, EmptyState, Field, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { ProjectTaskBoard } from "@/components/project-task-board";
+import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES, TASK_COLUMNS } from "@/lib/constants";
 import { currency, dateBr, initials, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
-import type { BusinessStage, Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus } from "@/lib/types";
+import type { BusinessStage, Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -46,6 +47,7 @@ export default function ProjectDetailPage() {
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [linkedBusinesses, setLinkedBusinesses] = useState<LinkedBusiness[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState<"owner" | "all" | null>(null);
@@ -53,8 +55,8 @@ export default function ProjectDetailPage() {
   const [taskDialog, setTaskDialog] = useState(false);
   const [memberDialog, setMemberDialog] = useState(false);
   const [fileDialog, setFileDialog] = useState(false);
-  const [taskForm, setTaskForm] = useState({ title: "", description: "", assignee_name: "", assignee_email: "", due_date: todayIso(), status: "a_fazer" as TaskStatus });
-  const [memberForm, setMemberForm] = useState({ name: "", email: "", role: "" });
+  const [taskForm, setTaskForm] = useState({ title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" as TaskStatus });
+  const [memberForm, setMemberForm] = useState({ user_id: "", role: "" });
   const [fileForm, setFileForm] = useState({ file: null as globalThis.File | null });
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -62,19 +64,21 @@ export default function ProjectDetailPage() {
   const loadData = useCallback(async (silent = false) => {
     if (!supabase || !params.id) return;
     if (!silent) setLoading(true);
-    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult] = await Promise.all([
+    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("project_tasks").select("*").eq("project_id", params.id).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("project_members").select("*").eq("project_id", params.id).order("name"),
       supabase.from("project_files").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("businesses").select("id,name,stage,potential_vgv").eq("project_id", params.id).order("updated_at", { ascending: false }),
+      supabase.from("profiles").select("user_id,full_name,email,active").eq("active", true).not("email", "is", null).order("full_name"),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
       setLoading(false);
       return;
     }
+    if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
     const fileRows = (fileResult.data || []) as ProjectFile[];
     const signedFiles = await Promise.all(fileRows.map(async (item) => {
       const { data } = await supabase.storage.from("project-files").createSignedUrl(item.file_path, 3600);
@@ -86,6 +90,7 @@ export default function ProjectDetailPage() {
     setMembers((memberResult.data || []) as ProjectMember[]);
     setFiles(signedFiles);
     setLinkedBusinesses((businessResult.data || []) as LinkedBusiness[]);
+    setUsers((userResult.data || []) as UserProfile[]);
     setLoading(false);
   }, [params.id, supabase]);
 
@@ -103,13 +108,19 @@ export default function ProjectDetailPage() {
   async function addTask(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !project) return;
+    const assignee = users.find((user) => user.user_id === taskForm.assignee_user_id);
+    if (!assignee?.email) {
+      setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
+      return;
+    }
     setSaving(true);
     const { error } = await supabase.from("project_tasks").insert({
       project_id: project.id,
       title: taskForm.title.trim(),
       description: taskForm.description.trim() || null,
-      assignee_name: taskForm.assignee_name.trim(),
-      assignee_email: taskForm.assignee_email.trim().toLowerCase(),
+      assignee_user_id: assignee.user_id,
+      assignee_name: assignee.full_name?.trim() || assignee.email.split("@")[0],
+      assignee_email: assignee.email.toLowerCase(),
       due_date: taskForm.due_date,
       status: taskForm.status,
       position: tasks.filter((task) => task.status === taskForm.status).length,
@@ -117,7 +128,7 @@ export default function ProjectDetailPage() {
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setTaskDialog(false);
-    setTaskForm({ title: "", description: "", assignee_name: "", assignee_email: "", due_date: todayIso(), status: "a_fazer" });
+    setTaskForm({ title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" });
     setToast({ message: "Tarefa adicionada ao quadro.", type: "success" });
     await loadData();
   }
@@ -164,12 +175,23 @@ export default function ProjectDetailPage() {
   async function addMember(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !project) return;
+    const member = users.find((user) => user.user_id === memberForm.user_id);
+    if (!member?.email) {
+      setToast({ message: "Selecione um usuário ativo para adicionar ao projeto.", type: "error" });
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from("project_members").insert({ project_id: project.id, name: memberForm.name.trim(), email: memberForm.email.trim().toLowerCase(), role: memberForm.role.trim() || null });
+    const { error } = await supabase.from("project_members").upsert({
+      project_id: project.id,
+      user_id: member.user_id,
+      name: member.full_name?.trim() || member.email.split("@")[0],
+      email: member.email.toLowerCase(),
+      role: memberForm.role.trim() || null,
+    }, { onConflict: "project_id,email" });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setMemberDialog(false);
-    setMemberForm({ name: "", email: "", role: "" });
+    setMemberForm({ user_id: "", role: "" });
     setToast({ message: "Envolvido adicionado ao projeto.", type: "success" });
     await loadData();
   }
@@ -288,8 +310,8 @@ export default function ProjectDetailPage() {
         </section>
       </div>
 
-      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Defina claramente a entrega, o responsável e o prazo." wide><form className="form-grid" onSubmit={addTask}><Field label="Tarefa"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} /></Field><Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field><Field label="Responsável"><input value={taskForm.assignee_name} onChange={(event) => setTaskForm({ ...taskForm, assignee_name: event.target.value })} required /></Field><Field label="E-mail do responsável"><input type="email" value={taskForm.assignee_email} onChange={(event) => setTaskForm({ ...taskForm, assignee_email: event.target.value })} required /></Field><Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Descrição"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar tarefa</Button></div></form></Dialog>
-      <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="A pessoa poderá receber os e-mails de status do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Nome"><input value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} required /></Field><Field label="E-mail"><input type="email" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} required /></Field><Field label="Papel no projeto"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
+      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Defina claramente a entrega, o responsável e o prazo." wide><form className="form-grid" onSubmit={addTask}><Field label="Tarefa"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} /></Field><Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field><Field label="Responsável" hint="Nome e e-mail vêm dos usuários ativos do Supabase." className="form-span-2"><UserSelect users={users} value={taskForm.assignee_user_id} onChange={(user) => setTaskForm({ ...taskForm, assignee_user_id: user?.user_id || "" })} required />{users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado.</span> : null}</Field><Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Descrição"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!taskForm.assignee_user_id}>Criar tarefa</Button></div></form></Dialog>
+      <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="Selecione um usuário do Supabase para receber os e-mails de status do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Usuário" hint="A lista exibe nome e e-mail dos usuários ativos." className="form-span-2"><UserSelect users={users} value={memberForm.user_id} onChange={(user) => setMemberForm({ ...memberForm, user_id: user?.user_id || "" })} required /></Field><Field label="Papel no projeto" className="form-span-2"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!memberForm.user_id}>Adicionar</Button></div></form></Dialog>
       <Dialog open={fileDialog} onClose={() => setFileDialog(false)} title="Adicionar arquivo" description="Arquivos ficam protegidos no storage do Supabase."><form className="form-grid" onSubmit={uploadFile}><Field label="Arquivo" hint="Imagens ou documentos de até 20 MB."><label className="file-drop"><Upload size={21} /><span>{fileForm.file?.name || "Selecionar arquivo"}</span><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => setFileForm({ file: event.target.files?.[0] || null })} required /></label></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setFileDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!fileForm.file}>Enviar arquivo</Button></div></form></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
