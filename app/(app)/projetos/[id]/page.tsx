@@ -5,6 +5,7 @@ import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES, TASK_COLUMNS } from "@/lib/constants";
 import { currency, dateBr, initials, todayIso } from "@/lib/format";
+import { generateProjectReport } from "@/lib/project-report";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { BusinessStage, Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
 import {
@@ -16,12 +17,11 @@ import {
   Clock3,
   Download,
   File,
+  FileDown,
   ListTodo,
-  Mail,
   MessageSquare,
   Paperclip,
   Plus,
-  Send,
   Upload,
   UserPlus,
   Users,
@@ -50,7 +50,7 @@ export default function ProjectDetailPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState<"owner" | "all" | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
   const [taskDialog, setTaskDialog] = useState(false);
   const [memberDialog, setMemberDialog] = useState(false);
@@ -218,23 +218,23 @@ export default function ProjectDetailPage() {
     await loadData();
   }
 
-  async function sendStatus(scope: "owner" | "all") {
-    if (!supabase || !project) return;
-    setSending(scope);
-    const { data } = await supabase.auth.getSession();
+  async function saveProjectPdf() {
+    if (!project) return;
+    setGeneratingPdf(true);
     try {
-      const response = await fetch("/api/projects/status-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token || ""}` },
-        body: JSON.stringify({ projectId: project.id, scope }),
+      await generateProjectReport({
+        project,
+        tasks,
+        comments,
+        members,
+        files,
+        linkedBusinesses,
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Não foi possível enviar o status.");
-      setToast({ message: `Status enviado para ${result.recipientCount} destinatário(s).`, type: "success" });
+      setToast({ message: "PDF completo do projeto salvo.", type: "success" });
     } catch (error) {
       setToast({ message: friendlyError(error), type: "error" });
     } finally {
-      setSending(null);
+      setGeneratingPdf(false);
     }
   }
 
@@ -250,7 +250,7 @@ export default function ProjectDetailPage() {
           <h1>{project.name}</h1>
           <p><Users size={14} /> {project.owner_name} · {project.owner_email} <span /> <Calendar size={14} /> {dateBr(project.start_date)} a {dateBr(project.end_date)}</p>
         </div>
-        <div className="email-actions"><Button variant="secondary" onClick={() => sendStatus("owner")} loading={sending === "owner"}><Mail size={16} /> Enviar ao responsável</Button><Button onClick={() => sendStatus("all")} loading={sending === "all"}><Send size={16} /> Enviar a todos</Button></div>
+        <div className="email-actions"><Button onClick={saveProjectPdf} loading={generatingPdf}><FileDown size={16} /> Salvar PDF</Button></div>
       </header>
 
       <section className="project-progress-strip">
