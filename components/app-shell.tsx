@@ -2,11 +2,14 @@
 
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
+import type { DepartmentSlug } from "@/lib/types";
 import {
   Building2,
   FolderKanban,
+  Home,
   LogOut,
   Menu,
+  ShieldCheck,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -15,18 +18,31 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-const links = [
-  { href: "/novos-negocios", label: "Novos negócios", icon: TrendingUp },
-  { href: "/obras", label: "Obras", icon: Building2 },
-  { href: "/projetos", label: "Projetos", icon: FolderKanban },
+const departmentLinks: Array<{
+  slug: DepartmentSlug;
+  href: string;
+  label: string;
+  mobileLabel: string;
+  icon: typeof TrendingUp;
+}> = [
+  { slug: "novos-negocios", href: "/novos-negocios", label: "Novos negócios", mobileLabel: "Negócios", icon: TrendingUp },
+  { slug: "obras", href: "/obras", label: "Obras", mobileLabel: "Obras", icon: Building2 },
+  { slug: "projetos", href: "/projetos", label: "Projetos", mobileLabel: "Projetos", icon: FolderKanban },
+  { slug: "alugueis", href: "/alugueis", label: "Aluguéis", mobileLabel: "Aluguéis", icon: Home },
 ];
+
+const adminLink = { href: "/administracao", label: "Administração", mobileLabel: "Acessos", icon: ShieldCheck };
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = getSupabase();
   const [loading, setLoading] = useState(Boolean(supabase));
+  const [accessError, setAccessError] = useState("");
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("Usuário");
+  const [allowedDepartments, setAllowedDepartments] = useState<DepartmentSlug[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
 
   useEffect(() => {
@@ -34,12 +50,52 @@ export function AppShell({ children }: { children: ReactNode }) {
       return;
     }
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
       if (!data.session) {
         router.replace("/login");
       } else {
-        setEmail(data.session.user.email || "Usuário");
+        const user = data.session.user;
+        const [profileResult, departmentResult] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("full_name,email,active,is_admin")
+            .eq("user_id", user.id)
+            .single(),
+          supabase
+            .from("profile_departments")
+            .select("department_slug")
+            .eq("user_id", user.id),
+        ]);
+        if (!active) return;
+        if (profileResult.error || !profileResult.data) {
+          setAccessError("Não foi possível carregar as permissões. Confirme se a migration mais recente foi executada no Supabase.");
+          setLoading(false);
+          return;
+        }
+        if (!profileResult.data.active) {
+          await supabase.auth.signOut();
+          router.replace("/login");
+          return;
+        }
+
+        const administrator = Boolean(profileResult.data.is_admin);
+        const assigned = administrator
+          ? departmentLinks.map((link) => link.slug)
+          : (departmentResult.data || []).map((item) => item.department_slug as DepartmentSlug);
+        const visibleLinks = departmentLinks.filter((link) => assigned.includes(link.slug));
+
+        setEmail(profileResult.data.email || user.email || "Usuário");
+        setFullName(profileResult.data.full_name || profileResult.data.email?.split("@")[0] || "Usuário");
+        setAllowedDepartments(assigned);
+        setIsAdmin(administrator);
+
+        const currentDepartment = departmentLinks.find((link) => pathname.startsWith(link.href));
+        const blockedDepartment = currentDepartment && !assigned.includes(currentDepartment.slug);
+        const blockedAdmin = pathname.startsWith(adminLink.href) && !administrator;
+        if (blockedDepartment || blockedAdmin) {
+          router.replace(visibleLinks[0]?.href || (administrator ? adminLink.href : "/login"));
+        }
         setLoading(false);
       }
     });
@@ -50,7 +106,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [router, supabase]);
+  }, [pathname, router, supabase]);
+
+  const visibleDepartmentLinks = departmentLinks.filter((link) => allowedDepartments.includes(link.slug));
+  const visibleLinks = isAdmin ? [...visibleDepartmentLinks, adminLink] : visibleDepartmentLinks;
 
   async function signOut() {
     await supabase?.auth.signOut();
@@ -76,6 +135,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             Configure <code>NEXT_PUBLIC_SUPABASE_URL</code> e
             <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> no Vercel para acessar o sistema.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (accessError || visibleLinks.length === 0) {
+    return (
+      <div className="config-screen">
+        <div className="config-card">
+          <div className="brand-mark">TL</div>
+          <h1>{accessError ? "Permissões indisponíveis" : "Acesso pendente"}</h1>
+          <p>{accessError || "Seu usuário ainda não recebeu acesso a nenhum departamento. Solicite a liberação ao administrador."}</p>
+          <button className="button button-secondary" onClick={signOut}>Sair do sistema</button>
         </div>
       </div>
     );
@@ -107,7 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <nav aria-label="Departamentos">
           <span className="nav-caption">Departamentos</span>
-          {links.map(({ href, label, icon: Icon }) => {
+          {visibleDepartmentLinks.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
@@ -123,10 +195,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
+        {isAdmin ? (
+          <nav className="admin-nav" aria-label="Administração">
+            <span className="nav-caption">Sistema</span>
+            <Link
+              href={adminLink.href}
+              className={pathname.startsWith(adminLink.href) ? "nav-link active" : "nav-link"}
+              onClick={() => setMobileMenu(false)}
+            >
+              <ShieldCheck size={19} />
+              <span>{adminLink.label}</span>
+            </Link>
+          </nav>
+        ) : null}
+
         <div className="side-user">
-          <div className="user-avatar">{initials(email)}</div>
+          <div className="user-avatar">{initials(fullName)}</div>
           <div className="user-meta">
-            <strong>Usuário</strong>
+            <strong>{fullName}</strong>
             <span>{email}</span>
           </div>
           <button onClick={signOut} aria-label="Sair do sistema" title="Sair">
@@ -135,13 +221,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <nav className="mobile-bottom-nav" aria-label="Departamentos">
-        {links.map(({ href, label, icon: Icon }) => {
+      <nav
+        className="mobile-bottom-nav"
+        aria-label="Navegação principal"
+        style={{ gridTemplateColumns: `repeat(${visibleLinks.length}, minmax(0, 1fr))` }}
+      >
+        {visibleLinks.map(({ href, mobileLabel, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
             <Link key={href} href={href} className={active ? "active" : ""}>
               <Icon size={20} />
-              <span>{label === "Novos negócios" ? "Negócios" : label}</span>
+              <span>{mobileLabel}</span>
             </Link>
           );
         })}

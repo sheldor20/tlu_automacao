@@ -5,15 +5,20 @@
 No painel do Supabase, abra **SQL Editor > New query** e execute as migrations
 abaixo, uma por vez e nesta ordem:
 
+Antes de executar, confirme no seletor **Role** do SQL Editor que está marcado
+`postgres`. Não use `authenticated`: essa função representa os usuários do app e
+não é proprietária das tabelas, portanto recebe o erro `must be owner of table`.
+
 1. `migrations/20260811120000_initial_schema.sql`
 2. `migrations/20260811190000_business_project_link_and_project_archiving.sql`
 3. `migrations/20260811203000_operational_archiving_supplies_and_user_directory.sql`
+4. `migrations/20260811220000_rentals_and_department_access.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
 Esse SQL cria:
 
-- tabelas, enums, índices e views dos três departamentos;
+- tabelas, enums, índices e views dos quatro departamentos;
 - histórico automático de fases de Novos Negócios;
 - criação automática de uma obra ao mover um negócio para `Obra`;
 - cálculo ponderado do avanço das obras;
@@ -22,14 +27,15 @@ Esse SQL cria:
 - arquivamento e exclusão de negócios, obras e projetos;
 - insumos opcionais com valor e quantidades total e utilizada;
 - diretório de responsáveis sincronizado com os usuários do Supabase;
-- RLS para restringir o sistema a usuários autenticados;
+- departamento de Aluguéis com receita bruta, comissão e resultado líquido mensal;
+- RLS por departamento, com menu e dados limitados às permissões de cada usuário;
 - buckets privados de evidências e arquivos.
 
-## 2. Criar usuários
+## 2. Administrar usuários
 
-Em **Authentication > Users**, use **Add user > Create new user**. Não habilite
-cadastro público no aplicativo. Os usuários criados diretamente pelo Supabase
-conseguirão entrar na tela de login.
+Depois da migration, o usuário mais antigo do Supabase vira o administrador
+inicial. Entre no sistema e abra **Administração** para criar novos usuários e
+liberar um ou mais departamentos. Não habilite cadastro público no aplicativo.
 
 ## 3. Configurar o Vercel
 
@@ -38,10 +44,12 @@ Em **Settings > Environment Variables** do projeto Vercel, adicione:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://SEU-PROJETO.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=SUA-CHAVE-PUBLICA
+SUPABASE_SERVICE_ROLE_KEY=SUA-CHAVE-SERVICE-ROLE
 ```
 
 Use somente a chave pública (`anon`/publishable) no `NEXT_PUBLIC_*`. A chave
-`service_role` nunca deve ser colocada no navegador.
+`service_role` é usada somente pelo endpoint protegido do servidor para criar
+usuários. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável.
 
 ## 4. Habilitar os e-mails de status
 

@@ -1,4 +1,11 @@
-import type { BusinessStage, TaskStatus } from "@/lib/types";
+import type { BusinessStage, Department, TaskStatus } from "@/lib/types";
+
+export const DEPARTMENTS: Department[] = [
+  { slug: "novos-negocios", name: "Novos negócios", position: 1 },
+  { slug: "obras", name: "Obras", position: 2 },
+  { slug: "projetos", name: "Projetos", position: 3 },
+  { slug: "alugueis", name: "Aluguéis", position: 4 },
+];
 
 export const BUSINESS_STAGES: Array<{
   key: BusinessStage;

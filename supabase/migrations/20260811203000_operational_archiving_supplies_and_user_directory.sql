@@ -1,7 +1,21 @@
 -- Arquivamento operacional, insumos estruturados e diretório de usuários.
 -- Execute depois de 20260811190000_business_project_link_and_project_archiving.sql.
+-- IMPORTANTE: no SQL Editor do Supabase, selecione a role `postgres`.
+-- A role `authenticated` representa os usuários do aplicativo e, por segurança,
+-- não pode alterar a estrutura das tabelas.
 
 begin;
+
+do $$
+begin
+  if current_user <> 'postgres' and not pg_has_role(current_user, 'postgres', 'member') then
+    raise exception using
+      errcode = '42501',
+      message = 'migration_requires_postgres_role',
+      hint = 'No SQL Editor do Supabase, altere Role de authenticated para postgres e execute novamente.';
+  end if;
+end;
+$$;
 
 alter table public.businesses
   add column if not exists archived_at timestamptz,
