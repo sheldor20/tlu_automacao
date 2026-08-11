@@ -20,6 +20,8 @@ export type Business = {
   longitude: number | null;
   potential_vgv: number;
   notes: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
   created_at: string;
   updated_at: string;
   project?: Pick<Project, "id" | "name" | "status" | "archived_at"> | null;
@@ -44,6 +46,8 @@ export type Construction = {
   address: string | null;
   status: "planejamento" | "em_andamento" | "pausada" | "concluida";
   notes: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
   progress_percent?: number;
   realized_total?: number;
   realized_current_month?: number;
@@ -70,9 +74,23 @@ export type MicroStage = {
   description: string | null;
   progress_percent: number;
   position: number;
-  supplies: Array<{ name: string; quantity?: number; unit?: string }>;
+  supplies: ConstructionSupply[];
   last_evidence_id: string | null;
   updated_at: string;
+};
+
+export type ConstructionSupply = {
+  name: string;
+  total_value: number;
+  total_quantity: number;
+  used_quantity: number;
+};
+
+export type UserProfile = {
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  active: boolean;
 };
 
 export type ConstructionEvidence = {
@@ -104,6 +122,7 @@ export type Project = {
   name: string;
   start_date: string;
   end_date: string | null;
+  owner_user_id: string | null;
   owner_name: string;
   owner_email: string;
   objective: string;
@@ -123,6 +142,7 @@ export type ProjectTask = {
   project_id: string;
   title: string;
   description: string | null;
+  assignee_user_id: string | null;
   assignee_name: string;
   assignee_email: string;
   due_date: string;
@@ -143,6 +163,7 @@ export type ProjectComment = {
 export type ProjectMember = {
   id: string;
   project_id: string;
+  user_id: string | null;
   name: string;
   email: string;
   role: string | null;
