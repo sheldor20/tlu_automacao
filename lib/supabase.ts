@@ -45,5 +45,14 @@ export function friendlyError(error: unknown) {
   if (message.includes("business_name_immutable")) {
     return "O nome do negócio não pode ser alterado.";
   }
+  if (message.includes("business_project_required")) {
+    return "Selecione um projeto ativo ou concluído para criar o negócio.";
+  }
+  if (message.includes("business_project_not_eligible")) {
+    return "O projeto selecionado precisa estar ativo ou concluído e não pode estar arquivado.";
+  }
+  if (message.includes("violates foreign key constraint") && message.includes("project_id")) {
+    return "Este projeto possui um negócio vinculado. Arquive-o para preservar o histórico.";
+  }
   return message || "Não foi possível concluir. Tente novamente.";
 }
