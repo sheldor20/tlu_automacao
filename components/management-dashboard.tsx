@@ -38,8 +38,9 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-const PRESENTATION_WIDTH = 1600;
-const PRESENTATION_HEIGHT = 800;
+const PRESENTATION_WIDTH = 1360;
+const PRESENTATION_HEIGHT = 680;
+const PRESENTATION_PADDING = 14;
 const PRESENTATION_STORAGE_KEY = "terra-lotus-management-presentation";
 
 const managementAreas: Array<{
@@ -236,8 +237,8 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
 
         const content = presentationContentRef.current;
         if (!content) return;
-        const availableWidth = PRESENTATION_WIDTH - 32;
-        const availableHeight = PRESENTATION_HEIGHT - 32;
+        const availableWidth = PRESENTATION_WIDTH - PRESENTATION_PADDING * 2;
+        const availableHeight = PRESENTATION_HEIGHT - PRESENTATION_PADDING * 2;
         setPresentationContentScale(Math.min(
           1,
           availableWidth / Math.max(content.scrollWidth, 1),
