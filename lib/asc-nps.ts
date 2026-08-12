@@ -107,8 +107,21 @@ function formatDate(date: Date) {
 export function buildMonthlyReportPath(surveyId: string, year: number, month: number) {
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 0));
-  const filter = `cod_pesquisa/${surveyId}/dat_inicio/${formatDate(start)}/dat_fim/${formatDate(end)}`;
-  return `/relatorios-pesquisa/detalhamento/datastr/${encodeURIComponent(Buffer.from(filter).toString("base64"))}`;
+  const filter = `cod_pesquisa/${surveyId}/dat_inicial/${formatDate(start)}/dat_final/${formatDate(end)}`;
+  return `/relatorios-pesquisa/detalhamento/datastr/${Buffer.from(filter).toString("base64")}`;
+}
+
+export function assertMonthlyFiltersApplied(results: NpsMonthResult[]) {
+  const nonEmpty = results.filter((result) => result.responseCount > 0);
+  if (nonEmpty.length !== 12) return;
+
+  const signatures = new Set(nonEmpty.map((result) => JSON.stringify({
+    responseCount: result.responseCount,
+    distribution: result.distribution,
+  })));
+  if (signatures.size === 1) {
+    throw new Error("ASCSAC: os 12 meses retornaram a mesma distribuição; o filtro mensal não foi aplicado.");
+  }
 }
 
 function updateCookies(response: Response, jar: Map<string, string>) {
@@ -202,5 +215,6 @@ export async function scrapeNpsYear(credentials: AscCredentials, year: number) {
     const monthKey = `${year}-${String(month).padStart(2, "0")}-01`;
     results.push(parseNpsReportHtml(html, monthKey));
   }
+  assertMonthlyFiltersApplied(results);
   return results;
 }
