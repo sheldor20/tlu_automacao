@@ -44,14 +44,38 @@ async function browserDiagnostic() {
   }
 }
 
+async function loginDiagnostic() {
+  let phase = "load-browser-runtime";
+  try {
+    const { diagnoseQlikLogin } = await import("@/lib/qlik-cloud");
+    phase = "open-qlik-login";
+    const details = await diagnoseQlikLogin(process.env.QLIK_DELINQUENCY_SHEET_URL || DEFAULT_SHEET_URL);
+    return NextResponse.json({ ok: true, diagnostic: "qlik-login", phase: "completed", details });
+  } catch (error) {
+    const message = safeError(error);
+    console.error("Diagnóstico do login Qlik falhou:", { phase, message, stack: error instanceof Error ? error.stack : null });
+    return NextResponse.json({
+      ok: false,
+      diagnostic: "qlik-login",
+      phase,
+      error: message,
+      hint: "A página de autenticação do Qlik não pôde ser inspecionada pela função da Vercel.",
+    });
+  }
+}
+
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret || request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  if (new URL(request.url).searchParams.get("diagnostic") === "browser") {
+  const diagnostic = new URL(request.url).searchParams.get("diagnostic");
+  if (diagnostic === "browser") {
     return browserDiagnostic();
+  }
+  if (diagnostic === "login") {
+    return loginDiagnostic();
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

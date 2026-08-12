@@ -1,5 +1,5 @@
 import chromium from "@sparticuz/chromium";
-import puppeteer, { type Browser, type ElementHandle, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } from "puppeteer-core";
 import type { QlikTableSnapshot } from "@/lib/qlik-delinquency";
 
 type QlikCloudCredentials = {
@@ -14,10 +14,38 @@ type QlikCloudTableOptions = QlikCloudCredentials & {
 };
 
 const QLIK_READY_SELECTOR = "[data-testid='top-bar-root'], #qv-stage-container";
+const USERNAME_SELECTORS = [
+  "input[autocomplete='username']",
+  "input[type='email']",
+  "input[name='email']",
+  "input[name='username']",
+  "input[name='login']",
+  "input[name='user']",
+  "input[name='identifier']",
+  "input[id*='email' i]",
+  "input[id*='username' i]",
+  "input[placeholder*='email' i]",
+  "input[placeholder*='usuário' i]",
+  "input[placeholder*='usuario' i]",
+  "input[placeholder*='username' i]",
+];
+const PASSWORD_SELECTORS = ["input[type='password']", "input[autocomplete='current-password']"];
+const LOGIN_GATEWAY_LABELS = [
+  "Qlik Account",
+  "Log in with Qlik",
+  "Sign in with Qlik",
+  "Continue with Qlik",
+  "Entrar com Qlik",
+  "Continuar com Qlik",
+  "Email",
+  "Log in",
+  "Sign in",
+  "Entrar",
+];
 
-async function firstVisible(page: Page, selectors: string[]): Promise<ElementHandle<Element> | null> {
+async function firstVisible(scope: Page | Frame, selectors: string[]): Promise<ElementHandle<Element> | null> {
   for (const selector of selectors) {
-    const elements = await page.$$(selector);
+    const elements = await scope.$$(selector);
     for (const element of elements) {
       if (await element.isVisible().catch(() => false)) return element;
     }
@@ -25,9 +53,9 @@ async function firstVisible(page: Page, selectors: string[]): Promise<ElementHan
   return null;
 }
 
-async function firstButtonWithText(page: Page, labels: string[]) {
+async function firstButtonWithText(scope: Page | Frame, labels: string[]) {
   const normalizedLabels = labels.map((label) => label.toLocaleLowerCase("pt-BR"));
-  for (const button of await page.$$("button, input[type='submit']")) {
+  for (const button of await scope.$$("button, input[type='submit'], [role='button']")) {
     const label = await button.evaluate((element) => (
       element.textContent || (element as HTMLInputElement).value || ""
     ).trim().toLocaleLowerCase("pt-BR"));
@@ -41,47 +69,125 @@ async function fillField(field: ElementHandle<Element>, value: string) {
   await field.type(value);
 }
 
-async function submitVisibleForm(page: Page) {
-  const submit = await firstVisible(page, [
+async function submitVisibleForm(page: Page, frame: Frame) {
+  const submit = await firstVisible(frame, [
     "button[type='submit']",
     "input[type='submit']",
-  ]) || await firstButtonWithText(page, ["Continuar", "Continue", "Entrar", "Log in", "Sign in"]);
+  ]) || await firstButtonWithText(frame, ["Continuar", "Continue", "Entrar", "Log in", "Sign in"]);
   if (!submit) throw new Error("Qlik: botão para continuar a autenticação não encontrado.");
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined),
-    submit.click(),
+  const navigation = page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
+  await submit.click();
+  await Promise.race([
+    navigation,
+    new Promise((resolve) => setTimeout(resolve, 1_500)),
   ]);
 }
 
-async function authenticateIfNeeded(page: Page, credentials: QlikCloudCredentials) {
-  const ready = await page.$(QLIK_READY_SELECTOR);
-  if (ready && await ready.isVisible().catch(() => false)) return;
+type AuthenticationSurface = {
+  frame: Frame;
+  kind: "ready" | "username" | "password" | "gateway";
+  element?: ElementHandle<Element>;
+};
 
-  const username = await firstVisible(page, [
-    "input[autocomplete='username']",
-    "input[type='email']",
-    "input[name='email']",
-    "input[name='username']",
-    "input[name='identifier']",
-    "input[id*='email' i]",
-    "input[id*='username' i]",
-  ]);
-  if (!username) throw new Error("Qlik: campo de usuário não encontrado. Confirme se o acesso usa login e senha sem MFA/SSO interativo.");
-  await fillField(username, credentials.username);
+type AuthenticationSurfaceKind = AuthenticationSurface["kind"];
 
-  let password = await firstVisible(page, ["input[type='password']", "input[autocomplete='current-password']"]);
-  if (!password) {
-    await submitVisibleForm(page);
-    await page.waitForSelector("input[type='password'], input[autocomplete='current-password']", {
-      visible: true,
-      timeout: 30_000,
-    })
-      .catch(() => undefined);
-    password = await firstVisible(page, ["input[type='password']", "input[autocomplete='current-password']"]);
+async function detectAuthenticationSurface(page: Page): Promise<AuthenticationSurface | null> {
+  for (const frame of page.frames()) {
+    const ready = await firstVisible(frame, [QLIK_READY_SELECTOR]);
+    if (ready) return { frame, kind: "ready", element: ready };
+    const username = await firstVisible(frame, USERNAME_SELECTORS);
+    if (username) return { frame, kind: "username", element: username };
+    const password = await firstVisible(frame, PASSWORD_SELECTORS);
+    if (password) return { frame, kind: "password", element: password };
+    const gateway = await firstButtonWithText(frame, LOGIN_GATEWAY_LABELS);
+    if (gateway) return { frame, kind: "gateway", element: gateway };
   }
-  if (!password) throw new Error("Qlik: campo de senha não encontrado. O provedor pode exigir MFA ou autenticação interativa.");
+  return null;
+}
+
+async function waitForAuthenticationSurface(
+  page: Page,
+  timeout = 60_000,
+  acceptedKinds?: ReadonlyArray<AuthenticationSurfaceKind>,
+) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const surface = await detectAuthenticationSurface(page);
+    if (surface && (!acceptedKinds || acceptedKinds.includes(surface.kind))) return surface;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
+}
+
+function safeLocation(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "indisponível";
+  }
+}
+
+async function loginSurfaceSummary(page: Page) {
+  const frames = await Promise.all(page.frames().map(async (frame) => {
+    const surface = await frame.evaluate(() => ({
+      inputs: Array.from(document.querySelectorAll<HTMLInputElement>("input")).slice(0, 12).map((input) => ({
+        type: input.type || "text",
+        name: input.name || null,
+        id: input.id || null,
+        autocomplete: input.autocomplete || null,
+        placeholder: input.placeholder?.slice(0, 80) || null,
+      })),
+      buttons: Array.from(document.querySelectorAll<HTMLElement>("button, [role='button'], input[type='submit']"))
+        .slice(0, 12)
+        .map((button) => (button.textContent || (button as HTMLInputElement).value || "").trim().slice(0, 80))
+        .filter(Boolean),
+    })).catch(() => ({ inputs: [], buttons: [] }));
+    return { url: safeLocation(frame.url()), ...surface };
+  }));
+  return {
+    url: safeLocation(page.url()),
+    title: (await page.title().catch(() => "indisponível")).slice(0, 120),
+    frames,
+  };
+}
+
+async function loginSurfaceSummaryText(page: Page) {
+  return JSON.stringify(await loginSurfaceSummary(page)).slice(0, 1_200);
+}
+
+async function authenticateIfNeeded(page: Page, credentials: QlikCloudCredentials) {
+  let surface = await waitForAuthenticationSurface(page);
+  if (!surface) {
+    throw new Error(`Qlik: a tela de autenticação não carregou em 60 segundos. Superfície: ${await loginSurfaceSummaryText(page)}`);
+  }
+  if (surface.kind === "ready") return;
+
+  if (surface.kind === "gateway") {
+    await surface.element!.click();
+    surface = await waitForAuthenticationSurface(page, 45_000, ["ready", "username", "password"]);
+    if (!surface) {
+      throw new Error(`Qlik: a opção de login foi aberta, mas o formulário não apareceu. Superfície: ${await loginSurfaceSummaryText(page)}`);
+    }
+    if (surface.kind === "ready") return;
+  }
+
+  if (surface.kind === "username") {
+    await fillField(surface.element!, credentials.username);
+  }
+
+  let password = await firstVisible(surface.frame, PASSWORD_SELECTORS);
+  if (!password) {
+    await submitVisibleForm(page, surface.frame);
+    surface = await waitForAuthenticationSurface(page, 45_000, ["ready", "password"]);
+    if (surface?.kind === "ready") return;
+    password = surface ? await firstVisible(surface.frame, PASSWORD_SELECTORS) : null;
+  }
+  if (!password || !surface) {
+    throw new Error(`Qlik: campo de senha não encontrado. O provedor pode exigir MFA ou SSO. Superfície: ${await loginSurfaceSummaryText(page)}`);
+  }
   await fillField(password, credentials.password);
-  await submitVisibleForm(page);
+  await submitVisibleForm(page, surface.frame);
 }
 
 async function applySelections(page: Page, filters: QlikCloudTableOptions["filters"]) {
@@ -183,13 +289,29 @@ export async function diagnoseQlikBrowser() {
   }
 }
 
+export async function diagnoseQlikLogin(sheetUrl: string) {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(45_000);
+    await page.emulateTimezone("America/Sao_Paulo");
+    await page.goto(sheetUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    const surface = await waitForAuthenticationSurface(page, 30_000);
+    return {
+      surface_kind: surface?.kind || "unknown",
+      surface: await loginSurfaceSummary(page),
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
 export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Promise<QlikTableSnapshot> {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(45_000);
     await page.emulateTimezone("America/Sao_Paulo");
-    await page.setUserAgent("TerraLotus-Indicators/1.0");
     await page.goto(options.sheetUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
     await authenticateIfNeeded(page, options);
     await page.waitForSelector(QLIK_READY_SELECTOR, { visible: true, timeout: 120_000 });
