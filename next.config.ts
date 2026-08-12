@@ -2,7 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["@sparticuz/chromium", "playwright-core"],
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  outputFileTracingIncludes: {
+    "/api/cron/qlik/delinquency": [
+      "./node_modules/@sparticuz/chromium/**/*",
+      "./node_modules/puppeteer-core/**/*",
+      "./node_modules/@puppeteer/browsers/**/*",
+    ],
+  },
   images: {
     remotePatterns: [
       {
