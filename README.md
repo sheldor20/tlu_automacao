@@ -52,17 +52,15 @@ ano manualmente, faça uma requisição autenticada para
 ## Seguidores do Instagram
 
 O endpoint `/api/cron/instagram-followers` consulta diariamente a contagem
-agregada de seguidores do perfil `@terralotusurbanismo` pela API oficial do
-Instagram/Meta. O valor do mês corrente é atualizado no indicador
-`instagram_seguidores`; nenhum dado individual de seguidores é coletado.
+agregada de seguidores do perfil público `@terralotusurbanismo`. A leitura é
+anônima e tenta, em paralelo, o JSON público usado pela página, os metadados do
+perfil e a versão incorporada. Não usa login, cookies, token nem coleta dados
+individuais de seguidores. Se o Instagram bloquear uma execução ou alterar a
+página, o último valor válido permanece no indicador.
 
-Configure apenas no ambiente **Production** da Vercel:
-
-- `INSTAGRAM_ACCOUNT_ID`: ID da conta profissional no Instagram;
-- `INSTAGRAM_ACCESS_TOKEN`: token de acesso mantido como segredo;
-- `INSTAGRAM_USERNAME`: `terralotusurbanismo`;
-- `INSTAGRAM_GRAPH_API_VERSION`: `v25.0`;
-- `INSTAGRAM_GRAPH_BASE_URL`: `https://graph.instagram.com`.
+Não existem variáveis específicas do Instagram para configurar. O endpoint usa
+somente `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` e
+`NEXT_PUBLIC_SUPABASE_URL`, que já são necessários para as outras rotinas.
 
 O cron roda diariamente às 10:00 UTC (07:00 no horário de Brasília). Para uma
 primeira carga manual, faça `GET /api/cron/instagram-followers` com o mesmo
