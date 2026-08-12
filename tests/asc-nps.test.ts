@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Buffer } from "node:buffer";
-import { buildMonthlyReportPath, parseNpsReportHtml } from "../lib/asc-nps.ts";
+import {
+  assertMonthlyFiltersApplied,
+  buildMonthlyReportPath,
+  parseNpsReportHtml,
+  type NpsMonthResult,
+} from "../lib/asc-nps.ts";
 
 const reportHtml = `
   <h3 class="panel-title">Como foi sua experiência com nosso atendimento numa escala de 0 a 5?</h3>
@@ -33,8 +38,15 @@ test("calcula a média somente da pergunta de recomendação", () => {
 test("monta o filtro mensal com o último dia correto", () => {
   const encoded = buildMonthlyReportPath("1", 2026, 2).split("/").at(-1)!;
   assert.equal(
-    Buffer.from(decodeURIComponent(encoded), "base64").toString(),
-    "cod_pesquisa/1/dat_inicio/01-02-2026/dat_fim/28-02-2026",
+    Buffer.from(encoded, "base64").toString(),
+    "cod_pesquisa/1/dat_inicial/01-02-2026/dat_final/28-02-2026",
+  );
+});
+
+test("reproduz exatamente o filtro mensal usado pelo ASCSAC", () => {
+  assert.equal(
+    buildMonthlyReportPath("1", 2026, 7),
+    "/relatorios-pesquisa/detalhamento/datastr/Y29kX3Blc3F1aXNhLzEvZGF0X2luaWNpYWwvMDEtMDctMjAyNi9kYXRfZmluYWwvMzEtMDctMjAyNg==",
   );
 });
 
@@ -52,4 +64,14 @@ test("falha explicitamente se a pergunta de recomendação mudar", () => {
     () => parseNpsReportHtml('<h3 class="panel-title">Outra pergunta</h3><script>var atendPorStatus = [[]];</script>', "2026-07-01"),
     /pergunta de recomendação não encontrada/,
   );
+});
+
+test("bloqueia uma carga anual quando o filtro mensal foi ignorado", () => {
+  const repeated = Array.from({ length: 12 }, (_, index): NpsMonthResult => ({
+    referenceMonth: `2026-${String(index + 1).padStart(2, "0")}-01`,
+    average: 4.2181,
+    responseCount: 1128,
+    distribution: { "0": 10, "1": 20, "2": 30, "3": 40, "4": 50, "5": 978 },
+  }));
+  assert.throws(() => assertMonthlyFiltersApplied(repeated), /filtro mensal não foi aplicado/);
 });
