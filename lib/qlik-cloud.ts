@@ -130,11 +130,33 @@ async function readTable(page: Page, objectId: string): Promise<Pick<QlikTableSn
 
 async function launchBrowser(): Promise<Browser> {
   chromium.setGraphicsMode = false;
+  const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath();
+  if (!executablePath) throw new Error("Chromium: o executável não foi localizado no ambiente do servidor.");
   return playwright.launch({
     args: chromium.args,
-    executablePath: process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath(),
+    executablePath,
     headless: true,
   });
+}
+
+export async function diagnoseQlikBrowser() {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setContent("<!doctype html><title>Terra Lotus browser check</title>");
+    const title = await page.title();
+    if (title !== "Terra Lotus browser check") {
+      throw new Error("Chromium: a página de diagnóstico não foi processada corretamente.");
+    }
+    return {
+      browser_version: await browser.version(),
+      node_version: process.version,
+      platform: process.platform,
+      vercel: Boolean(process.env.VERCEL),
+    };
+  } finally {
+    await browser.close();
+  }
 }
 
 export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Promise<QlikTableSnapshot> {

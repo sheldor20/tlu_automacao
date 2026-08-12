@@ -109,6 +109,18 @@ Invoke-RestMethod -Method Get -Uri "https://www.terralotus.space/api/cron/qlik/d
 O retorno mostra a competência fechada mais recente, o saldo de inadimplência,
 o percentual de redução e a série histórica importada.
 
+Se a chamada retornar erro do servidor, valide primeiro somente o navegador,
+sem abrir o Qlik e sem gravar dados:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "https://www.terralotus.space/api/cron/qlik/delinquency?diagnostic=browser" -Headers $headers
+```
+
+O diagnóstico informa se a falha ocorreu ao carregar ou ao iniciar o Chromium.
+Na carga normal, erros também retornam o campo `phase`, que identifica se o
+problema ocorreu no navegador, na abertura do Qlik, na validação da tabela ou na
+gravação no Supabase. Nenhuma credencial é incluída nessas mensagens.
+
 ## Segurança
 
 - sem cadastro público no front-end;
