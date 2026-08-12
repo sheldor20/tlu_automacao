@@ -5,6 +5,7 @@ import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES, TASK_COLUMNS } from "@/lib/constants";
 import { currency, dateBr, initials, todayIso } from "@/lib/format";
+import { generateProjectReport } from "@/lib/project-report";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { BusinessStage, Project, ProjectComment, ProjectFile, ProjectMember, ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
 import {
@@ -16,12 +17,11 @@ import {
   Clock3,
   Download,
   File,
+  FileDown,
   ListTodo,
-  Mail,
   MessageSquare,
   Paperclip,
   Plus,
-  Send,
   Upload,
   UserPlus,
   Users,
@@ -50,7 +50,7 @@ export default function ProjectDetailPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState<"owner" | "all" | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
   const [taskDialog, setTaskDialog] = useState(false);
   const [memberDialog, setMemberDialog] = useState(false);
@@ -218,23 +218,23 @@ export default function ProjectDetailPage() {
     await loadData();
   }
 
-  async function sendStatus(scope: "owner" | "all") {
-    if (!supabase || !project) return;
-    setSending(scope);
-    const { data } = await supabase.auth.getSession();
+  async function saveProjectPdf() {
+    if (!project) return;
+    setGeneratingPdf(true);
     try {
-      const response = await fetch("/api/projects/status-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token || ""}` },
-        body: JSON.stringify({ projectId: project.id, scope }),
+      await generateProjectReport({
+        project,
+        tasks,
+        comments,
+        members,
+        files,
+        linkedBusinesses,
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Não foi possível enviar o status.");
-      setToast({ message: `Status enviado para ${result.recipientCount} destinatário(s).`, type: "success" });
+      setToast({ message: "PDF completo do projeto salvo.", type: "success" });
     } catch (error) {
       setToast({ message: friendlyError(error), type: "error" });
     } finally {
-      setSending(null);
+      setGeneratingPdf(false);
     }
   }
 
@@ -250,7 +250,7 @@ export default function ProjectDetailPage() {
           <h1>{project.name}</h1>
           <p><Users size={14} /> {project.owner_name} · {project.owner_email} <span /> <Calendar size={14} /> {dateBr(project.start_date)} a {dateBr(project.end_date)}</p>
         </div>
-        <div className="email-actions"><Button variant="secondary" onClick={() => sendStatus("owner")} loading={sending === "owner"}><Mail size={16} /> Enviar ao responsável</Button><Button onClick={() => sendStatus("all")} loading={sending === "all"}><Send size={16} /> Enviar a todos</Button></div>
+        <div className="email-actions"><Button onClick={saveProjectPdf} loading={generatingPdf}><FileDown size={16} /> Salvar PDF</Button></div>
       </header>
 
       <section className="project-progress-strip">
@@ -311,7 +311,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Defina claramente a entrega, o responsável e o prazo." wide><form className="form-grid" onSubmit={addTask}><Field label="Tarefa"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} /></Field><Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field><Field label="Responsável" hint="Nome e e-mail vêm dos usuários ativos do Supabase." className="form-span-2"><UserSelect users={users} value={taskForm.assignee_user_id} onChange={(user) => setTaskForm({ ...taskForm, assignee_user_id: user?.user_id || "" })} required />{users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado.</span> : null}</Field><Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Descrição"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!taskForm.assignee_user_id}>Criar tarefa</Button></div></form></Dialog>
-      <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="Selecione um usuário do Supabase para receber os e-mails de status do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Usuário" hint="A lista exibe nome e e-mail dos usuários ativos." className="form-span-2"><UserSelect users={users} value={memberForm.user_id} onChange={(user) => setMemberForm({ ...memberForm, user_id: user?.user_id || "" })} required /></Field><Field label="Papel no projeto" className="form-span-2"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!memberForm.user_id}>Adicionar</Button></div></form></Dialog>
+      <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="Selecione um usuário do Supabase para participar do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Usuário" hint="A lista exibe nome e e-mail dos usuários ativos." className="form-span-2"><UserSelect users={users} value={memberForm.user_id} onChange={(user) => setMemberForm({ ...memberForm, user_id: user?.user_id || "" })} required /></Field><Field label="Papel no projeto" className="form-span-2"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!memberForm.user_id}>Adicionar</Button></div></form></Dialog>
       <Dialog open={fileDialog} onClose={() => setFileDialog(false)} title="Adicionar arquivo" description="Arquivos ficam protegidos no storage do Supabase."><form className="form-grid" onSubmit={uploadFile}><Field label="Arquivo" hint="Imagens ou documentos de até 20 MB."><label className="file-drop"><Upload size={21} /><span>{fileForm.file?.name || "Selecionar arquivo"}</span><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => setFileForm({ file: event.target.files?.[0] || null })} required /></label></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setFileDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!fileForm.file}>Enviar arquivo</Button></div></form></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
