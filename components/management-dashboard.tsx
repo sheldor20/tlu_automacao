@@ -24,6 +24,8 @@ import {
   HandCoins,
   HardHat,
   Landmark,
+  Maximize2,
+  Minimize2,
   RefreshCw,
   Scale,
   ShoppingCart,
@@ -34,7 +36,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+
+const PRESENTATION_WIDTH = 1600;
+const PRESENTATION_HEIGHT = 800;
+const PRESENTATION_STORAGE_KEY = "terra-lotus-management-presentation";
 
 const managementAreas: Array<{
   slug: ManagementAreaSlug;
@@ -147,7 +153,12 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
   const [error, setError] = useState("");
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "manual">("connecting");
+  const [presentationMode, setPresentationMode] = useState(false);
+  const [presentationScale, setPresentationScale] = useState(1);
+  const [presentationContentScale, setPresentationContentScale] = useState(1);
   const reloadTimer = useRef<number | null>(null);
+  const presentationContentRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenRequestedRef = useRef(false);
   const currentArea = managementAreas.find((item) => item.slug === area);
   const months = useMemo(() => buildMonthRange(12), []);
 
@@ -198,6 +209,74 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
+
+  useEffect(() => {
+    if (window.sessionStorage.getItem(PRESENTATION_STORAGE_KEY) === "true") {
+      const timer = window.setTimeout(() => setPresentationMode(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("management-presenting", presentationMode);
+    return () => document.body.classList.remove("management-presenting");
+  }, [presentationMode]);
+
+  useEffect(() => {
+    if (!presentationMode) return;
+
+    let animationFrame = 0;
+    const fitPresentation = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        setPresentationScale(Math.min(
+          window.innerWidth / PRESENTATION_WIDTH,
+          window.innerHeight / PRESENTATION_HEIGHT,
+        ));
+
+        const content = presentationContentRef.current;
+        if (!content) return;
+        const availableWidth = PRESENTATION_WIDTH - 32;
+        const availableHeight = PRESENTATION_HEIGHT - 32;
+        setPresentationContentScale(Math.min(
+          1,
+          availableWidth / Math.max(content.scrollWidth, 1),
+          availableHeight / Math.max(content.scrollHeight, 1),
+        ));
+      });
+    };
+
+    fitPresentation();
+    window.addEventListener("resize", fitPresentation);
+    const resizeObserver = new ResizeObserver(fitPresentation);
+    if (presentationContentRef.current) resizeObserver.observe(presentationContentRef.current);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", fitPresentation);
+      resizeObserver.disconnect();
+    };
+  }, [presentationMode, area]);
+
+  useEffect(() => {
+    const leavePresentation = () => {
+      fullscreenRequestedRef.current = false;
+      window.sessionStorage.removeItem(PRESENTATION_STORAGE_KEY);
+      setPresentationMode(false);
+    };
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && (fullscreenRequestedRef.current || presentationMode)) leavePresentation();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && presentationMode && !document.fullscreenElement) leavePresentation();
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [presentationMode]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -256,9 +335,40 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
 
   const CurrentIcon = currentArea.icon;
   const lastSyncLabel = lastSync ? lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const presentationStyle = presentationMode ? ({
+    "--management-presentation-scale": presentationScale,
+    "--management-content-scale": presentationContentScale,
+  } as CSSProperties) : undefined;
+
+  async function togglePresentation() {
+    if (presentationMode) {
+      fullscreenRequestedRef.current = false;
+      window.sessionStorage.removeItem(PRESENTATION_STORAGE_KEY);
+      setPresentationMode(false);
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // O modo de apresentação local ainda é encerrado se o navegador recusar a API.
+        }
+      }
+      return;
+    }
+
+    window.sessionStorage.setItem(PRESENTATION_STORAGE_KEY, "true");
+    setPresentationMode(true);
+    fullscreenRequestedRef.current = true;
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      fullscreenRequestedRef.current = false;
+      // Mantém o palco 16:8 ativo mesmo quando o navegador bloqueia tela cheia.
+    }
+  }
 
   return (
-    <div className="management-page">
+    <div className={`management-page${presentationMode ? " management-page-presenting" : ""}`} style={presentationStyle}>
+      <div className="management-presentation-content" ref={presentationContentRef}>
       <nav className="management-area-nav" aria-label="Visões do painel gerencial">
         {managementAreas.map((item) => {
           const Icon = item.icon;
@@ -276,7 +386,13 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         <div className="management-sync">
           <span className={`live-indicator live-${liveStatus}`}><i />{liveStatus === "live" ? "Atualização em tempo real" : liveStatus === "connecting" ? "Conectando à base" : "Atualização manual"}</span>
           <small>Última leitura {lastSyncLabel}</small>
-          <Button variant="secondary" onClick={() => void loadData(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} /> Atualizar</Button>
+          <div className="management-sync-actions">
+            <Button variant="secondary" onClick={() => void loadData(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} /> Atualizar</Button>
+            <Button className="management-fullscreen-button" variant="secondary" onClick={() => void togglePresentation()} aria-pressed={presentationMode} title={presentationMode ? "Sair da apresentação" : "Apresentar em tela cheia na proporção 16:8"}>
+              {presentationMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {presentationMode ? "Sair" : "Tela cheia"}<span>16:8</span>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -299,6 +415,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
           {area === "obras-engenharia" ? <EngineeringView constructions={constructions} /> : null}
         </>
       )}
+      </div>
     </div>
   );
 }
