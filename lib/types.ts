@@ -133,6 +133,11 @@ export type ProfileDepartment = {
   access_level: "viewer" | "member" | "manager" | "admin";
 };
 
+export type ProfileIndicatorArea = {
+  user_id: string;
+  area: ManagementAreaSlug;
+};
+
 export type RentalStatus = "alugado" | "desocupado" | "aguardando_reforma";
 export type LessorType = "pf" | "pj";
 

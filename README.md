@@ -7,15 +7,17 @@ Projetos e Aluguéis.
 
 - **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa,
   arquivamento e transferência automática para Obras.
-- **Obras:** portfólio, orçamento mensal, macro e micro etapas, pesos, insumos
-  estruturados, modelos prontos, evidências obrigatórias, arquivamento e relatório PDF.
+- **Obras:** portfólio, orçamento mensal, macro e microetapas, estoque e consumo
+  calculado de insumos, modelos prontos, evidências obrigatórias e relatório PDF.
 - **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
   alertas, comentários, arquivos, envolvidos e e-mail de status.
 - **Aluguéis:** imóveis, contratos, atualização direta de status e dados-base de
   locação, comissão e reajuste.
-- **Hoje:** tarefas e exceções operacionais com ações rápidas por departamento.
-- **Administração:** criação de usuários e acesso a um ou mais departamentos,
-  aplicado ao menu e às políticas RLS do Supabase.
+- **Hoje:** tarefas atribuídas, projetos e obras sob responsabilidade do usuário,
+  além das exceções dos departamentos que ele pode acessar.
+- **Indicadores:** seis visões gerenciais com acesso individual por usuário.
+- **Administração:** criação de usuários, acesso por departamento e seleção das
+  visões de Indicadores, aplicados ao menu e às políticas RLS do Supabase.
 
 ## Desenvolvimento
 

@@ -2,7 +2,7 @@
 
 import { GroupedBarChart, TrendChart } from "@/components/management-charts";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
-import { BUSINESS_STAGES } from "@/lib/constants";
+import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
@@ -102,7 +102,7 @@ const managementAreas: Array<{
   },
 ];
 
-const allowedAreas = new Set(managementAreas.map((area) => area.slug));
+const validAreas = new Set(managementAreas.map((area) => area.slug));
 const monthFormatter = new Intl.DateTimeFormat("pt-BR", { month: "short" });
 const competenceFormatter = new Intl.DateTimeFormat("pt-BR", { month: "short", year: "numeric" });
 
@@ -159,6 +159,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
   const [businessStages, setBusinessStages] = useState<ManagementBusinessStageSnapshot[]>([]);
   const [constructions, setConstructions] = useState<ManagementConstructionSnapshot[]>([]);
   const [rentalSnapshot, setRentalSnapshot] = useState<ManagementRentalSnapshot | null>(null);
+  const [authorizedAreas, setAuthorizedAreas] = useState<ManagementAreaSlug[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -180,16 +181,45 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     else setLoading(true);
     setError("");
 
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) {
+      setError("Sua sessão expirou. Entre novamente.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    const [profileResult, accessResult] = await Promise.all([
+      supabase.from("profiles").select("is_admin").eq("user_id", authData.user.id).single(),
+      supabase.from("profile_indicator_areas").select("area").eq("user_id", authData.user.id),
+    ]);
+    if (profileResult.error || accessResult.error) {
+      setError(friendlyError(profileResult.error || accessResult.error));
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    const permittedAreas = profileResult.data?.is_admin
+      ? MANAGEMENT_AREAS.map((item) => item.slug)
+      : (accessResult.data || []).map((item) => item.area as ManagementAreaSlug);
+    setAuthorizedAreas(permittedAreas);
+    if (!permittedAreas.includes(area)) {
+      setError("Esta visão de Indicadores não está liberada para o seu usuário.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     const [valueResult, businessResult, constructionResult, rentalResult] = await Promise.all([
       supabase
         .from("management_indicator_values")
         .select("*")
+        .eq("area", area)
         .gte("reference_month", `${currentYear}-01-01`)
         .lt("reference_month", `${currentYear + 1}-01-01`)
         .order("reference_month", { ascending: true }),
-      supabase.rpc("management_business_funnel_snapshot"),
-      supabase.rpc("management_construction_snapshot"),
-      supabase.rpc("management_rental_snapshot"),
+      area === "novos-negocios" ? supabase.rpc("management_business_funnel_snapshot") : Promise.resolve({ data: [], error: null }),
+      area === "obras-engenharia" ? supabase.rpc("management_construction_snapshot") : Promise.resolve({ data: [], error: null }),
+      area === "rh-marketing-clientes" ? supabase.rpc("management_rental_snapshot") : Promise.resolve({ data: [], error: null }),
     ]);
     const firstError = valueResult.error || businessResult.error || constructionResult.error || rentalResult.error;
     if (firstError) {
@@ -220,7 +250,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     }
     setLoading(false);
     setRefreshing(false);
-  }, [currentYear, supabase]);
+  }, [area, currentYear, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -346,8 +376,13 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
       .sort((a, b) => b.value - a.value);
   }
 
-  if (!currentArea || !allowedAreas.has(area)) {
+  if (!currentArea || !validAreas.has(area)) {
     return <section className="management-setup-error"><h1>Visão não encontrada</h1><p>Escolha uma das áreas disponíveis no painel de indicadores.</p><Link className="button button-primary" href="/indicadores/empresa">Abrir Empresa</Link></section>;
+  }
+
+  if (!loading && authorizedAreas && !authorizedAreas.includes(area)) {
+    const firstArea = authorizedAreas[0];
+    return <section className="management-setup-error"><h1>Visão sem acesso</h1><p>Solicite esta visão ao administrador ou abra uma das áreas já liberadas.</p>{firstArea ? <Link className="button button-primary" href={`/indicadores/${firstArea}`}>Abrir visão autorizada</Link> : <Link className="button button-primary" href="/hoje">Voltar para Hoje</Link>}</section>;
   }
 
   const CurrentIcon = currentArea.icon;
@@ -387,7 +422,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     <div className={`management-page${presentationMode ? " management-page-presenting" : ""}`} style={presentationStyle}>
       <div className="management-presentation-content" ref={presentationContentRef}>
       <nav className="management-area-nav" aria-label="Visões do painel gerencial">
-        {managementAreas.map((item) => {
+        {managementAreas.filter((item) => authorizedAreas?.includes(item.slug)).map((item) => {
           const Icon = item.icon;
           return <Link key={item.slug} href={`/indicadores/${item.slug}`} className={item.slug === area ? "active" : ""}><Icon size={17} /><span>{item.shortLabel}</span></Link>;
         })}
