@@ -1,4 +1,5 @@
 import { currency, dateBr } from "@/lib/format";
+import { remainingSupplyQuantity } from "@/lib/construction-supplies";
 import type { Construction, ConstructionEvidence, MacroStage } from "@/lib/types";
 
 type Update = {
@@ -44,6 +45,9 @@ export async function generateConstructionReport({
   const dark = [38, 51, 41] as const;
   const muted = [104, 117, 108] as const;
   const light = [237, 241, 235] as const;
+  const supplyRows = macros.flatMap((macro) => (macro.micro_stages || []).flatMap((micro) =>
+    (micro.supplies || []).map((supply) => ({ macro: macro.name, micro: micro.name, supply })),
+  ));
 
   const header = () => {
     doc.setFillColor(...dark);
@@ -115,6 +119,62 @@ export async function generateConstructionReport({
   });
 
   pageNumber();
+
+  if (supplyRows.length) {
+    doc.addPage();
+    header();
+    y = 48;
+
+    const drawSupplyTableHeader = () => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(...dark);
+      doc.text("Insumos e posicao de estoque", 16, y);
+      y += 9;
+      doc.setFillColor(...dark);
+      doc.rect(16, y, 178, 9, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7);
+      doc.text("ETAPA / MICROETAPA", 19, y + 6);
+      doc.text("INSUMO", 84, y + 6);
+      doc.text("TOTAL", 132, y + 6, { align: "right" });
+      doc.text("ESTOQUE", 153, y + 6, { align: "right" });
+      doc.text("CONSUMO", 174, y + 6, { align: "right" });
+      doc.text("VALOR", 191, y + 6, { align: "right" });
+      y += 9;
+    };
+
+    drawSupplyTableHeader();
+    for (const row of supplyRows) {
+      if (y > 274) {
+        pageNumber();
+        doc.addPage();
+        header();
+        y = 48;
+        drawSupplyTableHeader();
+      }
+      const remaining = remainingSupplyQuantity(row.supply);
+      doc.setFillColor(y % 2 === 0 ? 248 : 252, 249, 247);
+      doc.rect(16, y, 178, 12, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.2);
+      doc.setTextColor(...dark);
+      doc.text(doc.splitTextToSize(row.macro, 60).slice(0, 1), 19, y + 5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...muted);
+      doc.text(doc.splitTextToSize(row.micro, 60).slice(0, 1), 19, y + 9.5);
+      doc.setTextColor(...dark);
+      doc.text(doc.splitTextToSize(row.supply.name, 42).slice(0, 2), 84, y + 5);
+      doc.text(Number(row.supply.total_quantity || 0).toLocaleString("pt-BR"), 132, y + 7, { align: "right" });
+      doc.setFont("helvetica", "bold");
+      doc.text(remaining.toLocaleString("pt-BR"), 153, y + 7, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.text(Number(row.supply.used_quantity || 0).toLocaleString("pt-BR"), 174, y + 7, { align: "right" });
+      doc.text(currency(Number(row.supply.total_value || 0), true), 191, y + 7, { align: "right" });
+      y += 12;
+    }
+    pageNumber();
+  }
 
   if (updates.length) {
     doc.addPage();

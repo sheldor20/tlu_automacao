@@ -1,13 +1,13 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
-import { DEPARTMENTS } from "@/lib/constants";
+import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { DepartmentSlug, ProfileDepartment, UserProfile } from "@/lib/types";
+import type { DepartmentSlug, ManagementAreaSlug, ProfileDepartment, ProfileIndicatorArea, UserProfile } from "@/lib/types";
 import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type ManagedUser = UserProfile & { departments: DepartmentSlug[] };
+type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[] };
 
 const emptyForm = {
   full_name: "",
@@ -16,6 +16,7 @@ const emptyForm = {
   active: true,
   is_admin: false,
   departments: ["novos-negocios"] as DepartmentSlug[],
+  indicator_areas: [] as ManagementAreaSlug[],
 };
 
 export default function AdministrationPage() {
@@ -31,19 +32,22 @@ export default function AdministrationPage() {
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [profileResult, accessResult] = await Promise.all([
+    const [profileResult, accessResult, indicatorAccessResult] = await Promise.all([
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
+      supabase.from("profile_indicator_areas").select("user_id,area"),
     ]);
-    if (profileResult.error || accessResult.error) {
-      setToast({ message: friendlyError(profileResult.error || accessResult.error), type: "error" });
+    if (profileResult.error || accessResult.error || indicatorAccessResult.error) {
+      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error), type: "error" });
       setLoading(false);
       return;
     }
     const accesses = (accessResult.data || []) as ProfileDepartment[];
+    const indicatorAccesses = (indicatorAccessResult.data || []) as ProfileIndicatorArea[];
     setUsers(((profileResult.data || []) as UserProfile[]).map((profile) => ({
       ...profile,
       departments: accesses.filter((access) => access.user_id === profile.user_id).map((access) => access.department_slug),
+      indicator_areas: indicatorAccesses.filter((access) => access.user_id === profile.user_id).map((access) => access.area),
     })));
     setLoading(false);
   }, [supabase]);
@@ -74,6 +78,7 @@ export default function AdministrationPage() {
       active: user.active,
       is_admin: user.is_admin,
       departments: user.departments,
+      indicator_areas: user.indicator_areas,
     });
     setDialogOpen(true);
   }
@@ -84,6 +89,18 @@ export default function AdministrationPage() {
       departments: current.departments.includes(slug)
         ? current.departments.filter((item) => item !== slug)
         : [...current.departments, slug],
+      indicator_areas: slug === "indicadores"
+        ? current.departments.includes(slug) ? [] : MANAGEMENT_AREAS.map((area) => area.slug)
+        : current.indicator_areas,
+    }));
+  }
+
+  function toggleIndicatorArea(slug: ManagementAreaSlug) {
+    setForm((current) => ({
+      ...current,
+      indicator_areas: current.indicator_areas.includes(slug)
+        ? current.indicator_areas.filter((item) => item !== slug)
+        : [...current.indicator_areas, slug],
     }));
   }
 
@@ -92,6 +109,10 @@ export default function AdministrationPage() {
     if (!supabase) return;
     if (!form.is_admin && form.active && form.departments.length === 0) {
       setToast({ message: "Selecione ao menos um departamento para o usuário.", type: "error" });
+      return;
+    }
+    if (!form.is_admin && form.active && form.departments.includes("indicadores") && form.indicator_areas.length === 0) {
+      setToast({ message: "Selecione ao menos uma visão de Indicadores para o usuário.", type: "error" });
       return;
     }
     setSaving(true);
@@ -111,6 +132,7 @@ export default function AdministrationPage() {
         active: form.active,
         is_admin: form.is_admin,
         departments: form.departments,
+        indicator_areas: form.indicator_areas,
       } : form),
     });
     const result = await response.json().catch(() => ({}));
@@ -152,6 +174,7 @@ export default function AdministrationPage() {
                 <div className="admin-user-status"><StatusPill tone={user.active ? "success" : "neutral"}>{user.active ? "Ativo" : "Inativo"}</StatusPill>{user.is_admin ? <StatusPill tone="info">Administrador</StatusPill> : null}</div>
                 <div className="admin-user-departments">
                   {user.is_admin ? <span>Todos os departamentos</span> : DEPARTMENTS.map((department) => user.departments.includes(department.slug) ? <span key={department.slug}>{department.name}</span> : null)}
+                  {!user.is_admin && user.departments.includes("indicadores") ? <small>{user.indicator_areas.length} de {MANAGEMENT_AREAS.length} visões de Indicadores</small> : null}
                 </div>
                 <button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button>
               </article>
@@ -183,6 +206,21 @@ export default function AdministrationPage() {
               ))}
             </div>
           </fieldset>
+
+          {form.departments.includes("indicadores") && !form.is_admin && form.active ? (
+            <fieldset className="department-access-fieldset indicator-access-fieldset form-span-2">
+              <legend>Visões de Indicadores</legend>
+              <p>Defina quais telas gerenciais este usuário poderá abrir. Os dados das demais visões também ficam bloqueados no banco.</p>
+              <div className="indicator-access-grid">
+                {MANAGEMENT_AREAS.map((area) => (
+                  <label key={area.slug} className={form.indicator_areas.includes(area.slug) ? "selected" : ""}>
+                    <input type="checkbox" checked={form.indicator_areas.includes(area.slug)} onChange={() => toggleIndicatorArea(area.slug)} />
+                    <span>{area.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
 
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>{editing ? "Salvar acessos" : "Criar usuário"}</Button></div>
         </form>

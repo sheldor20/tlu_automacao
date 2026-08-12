@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis", "indicadores"]);
+const indicatorAreaSchema = z.enum([
+  "empresa",
+  "juridico-vendas-cobranca",
+  "rh-marketing-clientes",
+  "financas-compras",
+  "novos-negocios",
+  "obras-engenharia",
+]);
 
 const createUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
@@ -11,9 +19,13 @@ const createUserSchema = z.object({
   active: z.boolean().default(true),
   is_admin: z.boolean().default(false),
   departments: z.array(departmentSchema).max(5),
+  indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
+  }
+  if (!data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
+    context.addIssue({ code: "custom", path: ["indicator_areas"], message: "indicator_area_required" });
   }
 });
 
@@ -23,9 +35,13 @@ const updateUserSchema = z.object({
   active: z.boolean(),
   is_admin: z.boolean(),
   departments: z.array(departmentSchema).max(5),
+  indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
+  }
+  if (data.active && !data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
+    context.addIssue({ code: "custom", path: ["indicator_areas"], message: "indicator_area_required" });
   }
 });
 
@@ -91,6 +107,20 @@ async function replaceDepartments(service: SupabaseClient, userId: string, depar
   if (insertError) throw insertError;
 }
 
+async function replaceIndicatorAreas(service: SupabaseClient, userId: string, indicatorAreas: string[]) {
+  const { error: deleteError } = await service
+    .from("profile_indicator_areas")
+    .delete()
+    .eq("user_id", userId);
+  if (deleteError) throw deleteError;
+
+  if (indicatorAreas.length === 0) return;
+  const { error: insertError } = await service.from("profile_indicator_areas").insert(
+    [...new Set(indicatorAreas)].map((area) => ({ user_id: userId, area })),
+  );
+  if (insertError) throw insertError;
+}
+
 export async function POST(request: Request) {
   const context = await requireAdmin(request);
   if (context instanceof NextResponse) return context;
@@ -103,7 +133,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -127,6 +157,11 @@ export async function POST(request: Request) {
     });
     if (profileError) throw profileError;
     await replaceDepartments(context.service, created.user.id, departments);
+    await replaceIndicatorAreas(
+      context.service,
+      created.user.id,
+      departments.includes("indicadores") ? indicator_areas : [],
+    );
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
     }
@@ -148,7 +183,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e selecione ao menos um departamento." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -184,6 +219,11 @@ export async function PATCH(request: Request) {
 
   try {
     await replaceDepartments(context.service, user_id, departments);
+    await replaceIndicatorAreas(
+      context.service,
+      user_id,
+      departments.includes("indicadores") ? indicator_areas : [],
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";
     return NextResponse.json({ error: message }, { status: 500 });

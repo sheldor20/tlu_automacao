@@ -1,4 +1,4 @@
-import type { BusinessStage, Department, TaskStatus } from "@/lib/types";
+import type { BusinessStage, Department, ManagementAreaSlug, TaskStatus } from "@/lib/types";
 
 export const DEPARTMENTS: Department[] = [
   { slug: "novos-negocios", name: "Novos negócios", position: 1 },
@@ -6,6 +6,15 @@ export const DEPARTMENTS: Department[] = [
   { slug: "projetos", name: "Projetos", position: 3 },
   { slug: "alugueis", name: "Aluguéis", position: 4 },
   { slug: "indicadores", name: "Indicadores", position: 5 },
+];
+
+export const MANAGEMENT_AREAS: Array<{ slug: ManagementAreaSlug; name: string }> = [
+  { slug: "empresa", name: "Empresa" },
+  { slug: "juridico-vendas-cobranca", name: "Jurídico, Pós-vendas, Vendas e Cobrança" },
+  { slug: "rh-marketing-clientes", name: "RH, Marketing e Clientes" },
+  { slug: "financas-compras", name: "Finanças e Compras" },
+  { slug: "novos-negocios", name: "Novos Negócios" },
+  { slug: "obras-engenharia", name: "Obras e Engenharia" },
 ];
 
 export const BUSINESS_STAGES: Array<{

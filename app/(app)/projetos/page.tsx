@@ -11,12 +11,10 @@ import {
   Archive,
   ArchiveRestore,
   ArrowUpRight,
-  CalendarCheck,
   CheckCircle2,
   FolderKanban,
   Plus,
   Trash2,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -122,19 +120,6 @@ export default function ProjectsPage() {
     if (data) router.push(`/projetos/${data}`);
   }
 
-  async function quickUpdate(project: Project, updates: Partial<Pick<Project, "status" | "owner_user_id" | "end_date">>) {
-    if (!supabase) return;
-    const previous = projects;
-    setProjects((items) => items.map((item) => item.id === project.id ? { ...item, ...updates } : item));
-    const { error } = await supabase.from("projects").update(updates).eq("id", project.id);
-    if (error) {
-      setProjects(previous);
-      return setToast({ message: friendlyError(error), type: "error" });
-    }
-    setToast({ message: `Projeto ${project.name} atualizado.`, type: "success" });
-    await loadData();
-  }
-
   function requestAction(project: Project, action: ProjectAction) {
     setActionProject(project);
     setProjectAction(action);
@@ -196,10 +181,9 @@ export default function ProjectsPage() {
         action={<Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button>}
       />
 
-      <section className="kpi-grid">
+      <section className="kpi-grid projects-kpis">
         <KpiCard label="Projetos ativos" value={String(metrics.active)} helper={`${currentProjects.length} em acompanhamento`} icon={<FolderKanban size={17} />} />
-        <KpiCard label="Avanço médio" value={`${metrics.average.toFixed(0)}%`} helper="baseado nas tarefas" tone="success" icon={<CheckCircle2 size={17} />} />
-        <KpiCard label="Tarefas concluídas" value={`${metrics.completed}/${metrics.total}`} helper="em projetos atuais" icon={<CalendarCheck size={17} />} />
+        <KpiCard label="Avanço médio" value={`${metrics.average.toFixed(0)}%`} helper={`${metrics.completed}/${metrics.total} tarefas concluídas`} tone="success" icon={<CheckCircle2 size={17} />} />
         <KpiCard label="Tarefas atrasadas" value={String(metrics.overdue)} helper={metrics.overdue ? "precisam de atenção" : "nenhum alerta aberto"} tone={metrics.overdue ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
       </section>
 
@@ -223,16 +207,30 @@ export default function ProjectsPage() {
             action={filter === "current" ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar projeto</Button> : undefined}
           />
         ) : (
-          <div className="projects-grid">
+          <div className="project-list-view">
             {visibleProjects.map((project) => (
-              <article className={`project-card ${project.archived_at ? "project-card-archived" : ""} ${Number(project.overdue_tasks || 0) > 0 ? "exception-card" : ""}`} key={project.id}>
-                <div className="project-card-top">
-                  <div className="project-card-pills">
+              <article className={`project-list-row ${project.archived_at ? "project-card-archived" : ""} ${Number(project.overdue_tasks || 0) > 0 ? "exception-card" : ""}`} key={project.id}>
+                <div className="project-list-status">
+                  <div>
                     <StatusPill tone={project.status === "concluido" ? "success" : project.status === "pausado" ? "warning" : "info"}>{statusLabel[project.status]}</StatusPill>
                     {project.archived_at ? <StatusPill tone="neutral">Arquivado</StatusPill> : null}
-                    {Number(project.overdue_tasks || 0) > 0 ? <StatusPill tone="danger"><AlertTriangle size={11} /> {project.overdue_tasks} atrasadas</StatusPill> : null}
+                    {Number(project.overdue_tasks || 0) > 0 ? <StatusPill tone="danger"><AlertTriangle size={11} /> {project.overdue_tasks}</StatusPill> : null}
                   </div>
-                  <div className="project-card-actions">
+                </div>
+                <Link href={`/projetos/${project.id}`} className="project-list-identity">
+                  <h3>{project.name}</h3>
+                  <span>{project.owner_name} · prazo {dateBr(project.end_date)}</span>
+                </Link>
+                <Link href={`/projetos/${project.id}`} className="project-list-progress">
+                  <div><span>Progresso</span><strong>{Number(project.progress_percent || 0).toFixed(0)}%</strong></div>
+                  <ProgressBar value={Number(project.progress_percent || 0)} />
+                </Link>
+                <Link href={`/projetos/${project.id}?tab=tarefas`} className="project-list-tasks">
+                  <span>Tarefas</span>
+                  <strong>{project.completed_tasks || 0}/{project.total_tasks || 0}</strong>
+                </Link>
+                <div className="project-list-actions">
+                  <Link href={`/projetos/${project.id}`} className="button button-secondary">Abrir <ArrowUpRight size={14} /></Link>
                     <button
                       type="button"
                       onClick={() => project.archived_at ? void archiveProject(project) : requestAction(project, "archive")}
@@ -242,18 +240,7 @@ export default function ProjectsPage() {
                       {project.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}
                     </button>
                     <button type="button" className="danger" onClick={() => requestAction(project, "delete")} aria-label={`Excluir ${project.name}`} title="Excluir projeto"><Trash2 size={16} /></button>
-                  </div>
                 </div>
-                <Link href={`/projetos/${project.id}`} className="project-card-link">
-                  <div className="project-card-title"><h3>{project.name}</h3><p>{project.objective}</p></div>
-                  <ProgressBar value={Number(project.progress_percent || 0)} label="Progresso das tarefas" />
-                </Link>
-                {!project.archived_at ? <div className="quick-edit-grid project-quick-edit">
-                  <label><span>Status</span><select value={project.status} onChange={(event) => void quickUpdate(project, { status: event.target.value as ProjectStatus })}>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <label><span>Responsável</span><select value={project.owner_user_id || ""} onChange={(event) => void quickUpdate(project, { owner_user_id: event.target.value })}>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></label>
-                  <label><span>Prazo</span><input type="date" min={project.start_date} value={project.end_date || ""} onChange={(event) => void quickUpdate(project, { end_date: event.target.value || null })} /></label>
-                </div> : null}
-                <Link href={`/projetos/${project.id}`} className="project-card-link"><div className="project-stats"><div><span>Responsável</span><strong>{project.owner_name}</strong></div><div><span>Prazo</span><strong>{dateBr(project.end_date)}</strong></div><div><span>Tarefas</span><strong>{project.completed_tasks || 0}/{project.total_tasks || 0}</strong></div></div><div className="project-card-footer"><span><Users size={13} /> {project.owner_email}</span><span className="inline-link">Abrir projeto <ArrowUpRight size={14} /></span></div></Link>
               </article>
             ))}
           </div>

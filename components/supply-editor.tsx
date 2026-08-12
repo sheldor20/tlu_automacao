@@ -1,4 +1,5 @@
 import type { ConstructionSupply } from "@/lib/types";
+import { remainingSupplyQuantity, supplyWithRemainingQuantity } from "@/lib/construction-supplies";
 import { Plus, Trash2 } from "lucide-react";
 
 const emptySupply = (): ConstructionSupply => ({
@@ -24,7 +25,7 @@ export function SupplyEditor({
       <div className="supply-editor-head">
         <div>
           <strong>Insumos</strong>
-          <span>Opcional. Cadastre os itens e acompanhe quanto já foi utilizado.</span>
+          <span>Informe o total adquirido e o estoque atual. O consumo é calculado automaticamente.</span>
         </div>
         <button type="button" onClick={() => onChange([...value, emptySupply()])}>
           <Plus size={15} /> Adicionar insumo
@@ -69,16 +70,17 @@ export function SupplyEditor({
                 />
               </label>
               <label>
-                <span>Qtd. utilizada</span>
+                <span>Estoque atual</span>
                 <input
                   type="number"
                   min="0"
                   max={item.total_quantity}
                   step="0.01"
-                  value={item.used_quantity}
-                  onChange={(event) => update(index, { used_quantity: Number(event.target.value) })}
+                  value={remainingSupplyQuantity(item)}
+                  onChange={(event) => update(index, supplyWithRemainingQuantity(item, Number(event.target.value)))}
                   required
                 />
+                <small>{remainingSupplyQuantity(item) < Number(item.total_quantity || 0) ? `${Number(item.used_quantity || 0).toLocaleString("pt-BR")} consumidos` : "Sem consumo registrado"}</small>
               </label>
               <button
                 type="button"

@@ -18,6 +18,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 7. `migrations/20260812200000_asc_nps_catalog.sql`
 8. `migrations/20260812220000_instagram_followers_metric.sql`
 9. `migrations/20260812230000_finance_purchases_area.sql`
+10. `migrations/20260812240000_indicator_access_by_area.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -30,7 +31,7 @@ Esse SQL cria:
 - regra que exige uma nova evidência antes de alterar o avanço de uma micro etapa;
 - cálculo de progresso e alertas de projetos;
 - arquivamento e exclusão de negócios, obras e projetos;
-- insumos opcionais com valor e quantidades total e utilizada;
+- insumos opcionais com valor, quantidade total, estoque atual e consumo calculado;
 - diretório de responsáveis sincronizado com os usuários do Supabase;
 - departamento de Aluguéis com dados contratuais, locação, comissão e reajuste;
 - modelos persistidos de loteamento, construção e projeto;
@@ -42,6 +43,7 @@ Esse SQL cria:
 - painel gerencial com seis visões, incluindo Finanças e Compras, catálogo de indicadores e valores mensais;
 - resumos seguros de Novos Negócios, Obras e Aluguéis para a gestão;
 - atualização automática do painel por Supabase Realtime.
+- acesso individual às seis visões de Indicadores, protegido também por RLS.
 
 ## 2. Alimentar os indicadores gerenciais
 
@@ -71,8 +73,9 @@ competência mais recente e monta a composição automaticamente.
 ## 3. Administrar usuários
 
 Depois da migration, o usuário mais antigo do Supabase vira o administrador
-inicial. Entre no sistema e abra **Administração** para criar novos usuários e
-liberar um ou mais departamentos. Não habilite cadastro público no aplicativo.
+inicial. Entre no sistema e abra **Administração** para criar novos usuários,
+liberar departamentos e escolher quais visões de Indicadores cada pessoa pode
+abrir. Não habilite cadastro público no aplicativo.
 
 ## 4. Configurar o Vercel
 

@@ -2,7 +2,8 @@
 
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
-import type { DepartmentSlug } from "@/lib/types";
+import { MANAGEMENT_AREAS } from "@/lib/constants";
+import type { DepartmentSlug, ManagementAreaSlug } from "@/lib/types";
 import {
   Building2,
   ChartNoAxesCombined,
@@ -36,6 +37,7 @@ const departmentLinks: Array<{
 
 const adminLink = { href: "/administracao", label: "Administração", mobileLabel: "Acessos", icon: ShieldCheck };
 const todayLink = { href: "/hoje", label: "Hoje", mobileLabel: "Hoje", icon: CalendarDays };
+const indicatorsLink = departmentLinks.find((link) => link.slug === "indicadores")!;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -46,6 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("Usuário");
   const [allowedDepartments, setAllowedDepartments] = useState<DepartmentSlug[]>([]);
+  const [allowedIndicatorAreas, setAllowedIndicatorAreas] = useState<ManagementAreaSlug[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
 
@@ -60,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         router.replace("/login");
       } else {
         const user = data.session.user;
-        const [profileResult, departmentResult] = await Promise.all([
+        const [profileResult, departmentResult, indicatorAreaResult] = await Promise.all([
           supabase
             .from("profiles")
             .select("full_name,email,active,is_admin")
@@ -70,9 +73,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             .from("profile_departments")
             .select("department_slug")
             .eq("user_id", user.id),
+          supabase
+            .from("profile_indicator_areas")
+            .select("area")
+            .eq("user_id", user.id),
         ]);
         if (!active) return;
-        if (profileResult.error || !profileResult.data) {
+        if (profileResult.error || departmentResult.error || indicatorAreaResult.error || !profileResult.data) {
           setAccessError("Não foi possível carregar as permissões. Confirme se a migration mais recente foi executada no Supabase.");
           setLoading(false);
           return;
@@ -87,17 +94,27 @@ export function AppShell({ children }: { children: ReactNode }) {
         const assigned = administrator
           ? departmentLinks.map((link) => link.slug)
           : (departmentResult.data || []).map((item) => item.department_slug as DepartmentSlug);
+        const indicatorAreas = administrator
+          ? MANAGEMENT_AREAS.map((area) => area.slug)
+          : (indicatorAreaResult.data || []).map((item) => item.area as ManagementAreaSlug);
         const visibleLinks = departmentLinks.filter((link) => assigned.includes(link.slug));
 
         setEmail(profileResult.data.email || user.email || "Usuário");
         setFullName(profileResult.data.full_name || profileResult.data.email?.split("@")[0] || "Usuário");
         setAllowedDepartments(assigned);
+        setAllowedIndicatorAreas(indicatorAreas);
         setIsAdmin(administrator);
 
         const currentDepartment = departmentLinks.find((link) => pathname.startsWith(link.href));
         const blockedDepartment = currentDepartment && !assigned.includes(currentDepartment.slug);
+        const requestedIndicatorArea = pathname.startsWith("/indicadores/")
+          ? pathname.split("/")[2] as ManagementAreaSlug
+          : null;
+        const blockedIndicatorArea = requestedIndicatorArea && !indicatorAreas.includes(requestedIndicatorArea);
         const blockedAdmin = pathname.startsWith(adminLink.href) && !administrator;
-        if (blockedDepartment || blockedAdmin) {
+        if (blockedIndicatorArea && assigned.includes("indicadores") && indicatorAreas.length) {
+          router.replace(`/indicadores/${indicatorAreas[0]}`);
+        } else if (blockedDepartment || blockedAdmin) {
           router.replace(visibleLinks[0]?.href || (administrator ? adminLink.href : "/login"));
         }
         setLoading(false);
@@ -112,8 +129,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [pathname, router, supabase]);
 
-  const visibleDepartmentLinks = departmentLinks.filter((link) => allowedDepartments.includes(link.slug));
-  const visibleLinks = isAdmin ? [todayLink, ...visibleDepartmentLinks, adminLink] : [todayLink, ...visibleDepartmentLinks];
+  const visibleDepartmentLinks = departmentLinks.filter((link) => link.slug !== "indicadores" && allowedDepartments.includes(link.slug));
+  const showIndicators = allowedDepartments.includes("indicadores") && allowedIndicatorAreas.length > 0;
+  const resolvedIndicatorsLink = { ...indicatorsLink, href: `/indicadores/${allowedIndicatorAreas[0] || "empresa"}` };
+  const operationLinks = showIndicators ? [todayLink, resolvedIndicatorsLink] : [todayLink];
+  const visibleLinks = isAdmin ? [...operationLinks, ...visibleDepartmentLinks, adminLink] : [...operationLinks, ...visibleDepartmentLinks];
 
   async function signOut() {
     await supabase?.auth.signOut();
@@ -144,7 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (accessError || (visibleDepartmentLinks.length === 0 && !isAdmin)) {
+  if (accessError || (allowedDepartments.length === 0 && !isAdmin)) {
     return (
       <div className="config-screen">
         <div className="config-card">
@@ -191,6 +211,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             <CalendarDays size={19} />
             <span>{todayLink.label}</span>
           </Link>
+          {showIndicators ? (
+            <Link
+              href={resolvedIndicatorsLink.href}
+              className={pathname.startsWith("/indicadores") ? "nav-link active" : "nav-link"}
+              onClick={() => setMobileMenu(false)}
+            >
+              <ChartNoAxesCombined size={19} />
+              <span>Indicadores</span>
+            </Link>
+          ) : null}
           <span className="nav-caption nav-caption-spaced">Departamentos</span>
           {visibleDepartmentLinks.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
