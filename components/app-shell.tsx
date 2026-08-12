@@ -5,6 +5,7 @@ import { initials } from "@/lib/format";
 import type { DepartmentSlug } from "@/lib/types";
 import {
   Building2,
+  ChartNoAxesCombined,
   CalendarDays,
   FolderKanban,
   Home,
@@ -30,6 +31,7 @@ const departmentLinks: Array<{
   { slug: "obras", href: "/obras", label: "Obras", mobileLabel: "Obras", icon: Building2 },
   { slug: "projetos", href: "/projetos", label: "Projetos", mobileLabel: "Projetos", icon: FolderKanban },
   { slug: "alugueis", href: "/alugueis", label: "Aluguéis", mobileLabel: "Aluguéis", icon: Home },
+  { slug: "indicadores", href: "/indicadores", label: "Indicadores", mobileLabel: "Indicadores", icon: ChartNoAxesCombined },
 ];
 
 const adminLink = { href: "/administracao", label: "Administração", mobileLabel: "Acessos", icon: ShieldCheck };
@@ -235,7 +237,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav
         className="mobile-bottom-nav"
         aria-label="Navegação principal"
-        style={{ gridTemplateColumns: `repeat(${visibleLinks.length}, minmax(0, 1fr))` }}
       >
         {visibleLinks.map(({ href, mobileLabel, icon: Icon }) => {
           const active = pathname.startsWith(href);

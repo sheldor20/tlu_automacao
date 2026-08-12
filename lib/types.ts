@@ -119,7 +119,7 @@ export type UserProfile = {
   is_admin: boolean;
 };
 
-export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis";
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis" | "indicadores";
 
 export type Department = {
   slug: DepartmentSlug;
@@ -252,3 +252,48 @@ export type ConstructionSourceFile = Pick<
   ProjectFile,
   "id" | "file_path" | "file_name" | "mime_type" | "created_at" | "signed_url"
 >;
+
+export type ManagementAreaSlug =
+  | "empresa"
+  | "juridico-vendas-cobranca"
+  | "rh-marketing-clientes"
+  | "novos-negocios"
+  | "obras-engenharia";
+
+export type ManagementIndicatorValue = {
+  id: string;
+  area: Extract<ManagementAreaSlug, "empresa" | "juridico-vendas-cobranca" | "rh-marketing-clientes">;
+  metric_key: string;
+  reference_month: string;
+  dimension_key: string;
+  dimension_label: string | null;
+  value: number;
+  source: string | null;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  updated_at: string;
+};
+
+export type ManagementBusinessStageSnapshot = {
+  stage: BusinessStage;
+  area_count: number;
+  potential_vgv: number;
+  average_days: number;
+};
+
+export type ManagementConstructionSnapshot = {
+  id: string;
+  name: string;
+  status: Construction["status"];
+  planned_budget: number;
+  realized_total: number;
+  physical_progress: number;
+  financial_progress: number;
+};
+
+export type ManagementRentalSnapshot = {
+  total_properties: number;
+  available_properties: number;
+  rented_properties: number;
+  renovation_properties: number;
+};

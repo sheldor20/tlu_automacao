@@ -90,6 +90,9 @@ export function friendlyError(error: unknown) {
   if (message.includes("department_access_required")) {
     return "Seu usuário não possui acesso a este departamento.";
   }
+  if (message.includes("management_indicator_values") || message.includes("management_business_funnel_snapshot")) {
+    return "A base de indicadores ainda não foi instalada. Execute a migration de indicadores no Supabase.";
+  }
   if (message.includes("migration_requires_postgres_role")) {
     return "Execute a migration no Supabase usando a role postgres.";
   }

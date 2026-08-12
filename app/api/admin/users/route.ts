@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from "@supabase/supabase
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis"]);
+const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis", "indicadores"]);
 
 const createUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
@@ -10,7 +10,7 @@ const createUserSchema = z.object({
   password: z.string().min(8).max(72),
   active: z.boolean().default(true),
   is_admin: z.boolean().default(false),
-  departments: z.array(departmentSchema).max(4),
+  departments: z.array(departmentSchema).max(5),
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
@@ -22,7 +22,7 @@ const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
   active: z.boolean(),
   is_admin: z.boolean(),
-  departments: z.array(departmentSchema).max(4),
+  departments: z.array(departmentSchema).max(5),
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });

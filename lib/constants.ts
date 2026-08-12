@@ -5,6 +5,7 @@ export const DEPARTMENTS: Department[] = [
   { slug: "obras", name: "Obras", position: 2 },
   { slug: "projetos", name: "Projetos", position: 3 },
   { slug: "alugueis", name: "Aluguéis", position: 4 },
+  { slug: "indicadores", name: "Indicadores", position: 5 },
 ];
 
 export const BUSINESS_STAGES: Array<{
