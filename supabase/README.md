@@ -19,6 +19,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 8. `migrations/20260812220000_instagram_followers_metric.sql`
 9. `migrations/20260812230000_finance_purchases_area.sql`
 10. `migrations/20260812240000_indicator_access_by_area.sql`
+11. `migrations/20260812250000_data_connections_and_qlik_delinquency.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -44,6 +45,7 @@ Esse SQL cria:
 - resumos seguros de Novos Negócios, Obras e Aluguéis para a gestão;
 - atualização automática do painel por Supabase Realtime.
 - acesso individual às seis visões de Indicadores, protegido também por RLS.
+- catálogo de conexões externas e histórico auditável das cargas do Qlik Cloud.
 
 ## 2. Alimentar os indicadores gerenciais
 
@@ -90,6 +92,20 @@ SUPABASE_SERVICE_ROLE_KEY=SUA-CHAVE-SERVICE-ROLE
 Use somente a chave pública (`anon`/publishable) no `NEXT_PUBLIC_*`. A chave
 `service_role` é usada somente pelo endpoint protegido do servidor para criar
 usuários. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável.
+
+Para a carga de inadimplência, adicione também em **Production**:
+
+```env
+CRON_SECRET=um-segredo-longo-e-aleatorio
+QLIK_USERNAME=seu-usuario-do-qlik
+QLIK_PASSWORD=sua-senha-do-qlik
+```
+
+As credenciais são lidas apenas pelo endpoint no servidor e não são armazenadas
+nas tabelas. `data_connections` guarda somente a configuração não sensível;
+`data_connection_runs` registra sucesso, falha, duração e quantidade de linhas.
+Após salvar as variáveis na Vercel, faça um novo deploy e execute a primeira
+carga conforme o comando PowerShell descrito no README principal.
 
 ## 5. Habilitar os e-mails de status
 
