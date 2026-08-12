@@ -1,17 +1,17 @@
 "use client";
 
-import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
-import { currency, dateBr, monthBr } from "@/lib/format";
+import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, Toast } from "@/components/ui";
+import { currency, dateBr } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { LessorType, Rental, RentalMonthlySummary, RentalStatus } from "@/lib/types";
+import type { LessorType, Rental, RentalStatus } from "@/lib/types";
 import {
   ArrowUpRight,
-  CalendarRange,
-  CircleDollarSign,
+  Building2,
+  Hammer,
   Home,
+  KeyRound,
   Percent,
   Plus,
-  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -39,10 +39,7 @@ const emptyForm = {
 
 export default function RentalsPage() {
   const supabase = getSupabase();
-  const currentYear = new Date().getFullYear();
   const [rentals, setRentals] = useState<Rental[]>([]);
-  const [summary, setSummary] = useState<RentalMonthlySummary[]>([]);
-  const [year, setYear] = useState(currentYear);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -52,34 +49,25 @@ export default function RentalsPage() {
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [rentalResult, summaryResult] = await Promise.all([
-      supabase.from("rentals").select("*").order("updated_at", { ascending: false }),
-      supabase.rpc("rental_monthly_summary", { p_year: year }),
-    ]);
-    if (rentalResult.error || summaryResult.error) {
-      setToast({ message: friendlyError(rentalResult.error || summaryResult.error), type: "error" });
-    }
-    setRentals((rentalResult.data || []) as Rental[]);
-    setSummary((summaryResult.data || []) as RentalMonthlySummary[]);
+    const { data, error } = await supabase
+      .from("rentals")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (error) setToast({ message: friendlyError(error), type: "error" });
+    setRentals((data || []) as Rental[]);
     setLoading(false);
-  }, [supabase, year]);
+  }, [supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
-  const metrics = useMemo(() => {
-    const month = summary[new Date().getMonth()];
-    const rented = rentals.filter((rental) => rental.status === "alugado").length;
-    return {
-      rented,
-      available: rentals.filter((rental) => rental.status === "desocupado").length,
-      net: Number(month?.net_rent || 0),
-      commission: Number(month?.broker_commission || 0),
-      monthLabel: month ? monthBr(month.reference_month) : `mês atual de ${year}`,
-    };
-  }, [rentals, summary, year]);
+  const metrics = useMemo(() => ({
+    rented: rentals.filter((rental) => rental.status === "alugado").length,
+    available: rentals.filter((rental) => rental.status === "desocupado").length,
+    renovation: rentals.filter((rental) => rental.status === "aguardando_reforma").length,
+  }), [rentals]);
 
   async function createRental(event: FormEvent) {
     event.preventDefault();
@@ -134,15 +122,15 @@ export default function RentalsPage() {
       <PageIntro
         eyebrow="Departamento · Aluguéis"
         title="Gestão de aluguéis"
-        description="Imóveis, contratos e resultado líquido mensal após a comissão do corretor."
+        description="Imóveis, contratos e situação de ocupação em uma visão direta."
         action={<Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo imóvel</Button>}
       />
 
       <section className="kpi-grid">
-        <KpiCard label="Imóveis cadastrados" value={String(rentals.length)} helper={`${metrics.rented} alugados`} icon={<Home size={17} />} />
-        <KpiCard label={`Receita líquida · ${metrics.monthLabel}`} value={currency(metrics.net, true)} helper="locação menos comissão" tone="success" icon={<CircleDollarSign size={17} />} />
-        <KpiCard label="Comissão no mês" value={currency(metrics.commission, true)} helper="corretores de imóveis" icon={<WalletCards size={17} />} />
-        <KpiCard label="Disponíveis" value={String(metrics.available)} helper="imóveis desocupados" icon={<CalendarRange size={17} />} />
+        <KpiCard label="Imóveis cadastrados" value={String(rentals.length)} helper="carteira total" icon={<Building2 size={17} />} />
+        <KpiCard label="Alugados" value={String(metrics.rented)} helper="contratos ativos" tone="success" icon={<KeyRound size={17} />} />
+        <KpiCard label="Desocupados" value={String(metrics.available)} helper="disponíveis" icon={<Home size={17} />} />
+        <KpiCard label="Aguardando reforma" value={String(metrics.renovation)} helper="imóveis em preparação" icon={<Hammer size={17} />} />
       </section>
 
       <section className="content-card rentals-list-card">
@@ -155,7 +143,7 @@ export default function RentalsPage() {
           <EmptyState
             icon={<Home size={23} />}
             title="Nenhum imóvel cadastrado"
-            description="Cadastre o primeiro imóvel para acompanhar ocupação, contratos e receita líquida mensal."
+            description="Cadastre o primeiro imóvel para acompanhar ocupação e contratos."
             action={<Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Cadastrar imóvel</Button>}
           />
         ) : (
@@ -187,29 +175,6 @@ export default function RentalsPage() {
             </table>
           </div>
         )}
-      </section>
-
-      <section className="content-card rental-summary-card">
-        <div className="content-card-head project-list-head">
-          <div><h2>Resultado mês a mês</h2><p>Projeção dos contratos alugados, com reajuste anual e comissão deduzida</p></div>
-          <Field label="Ano" className="rental-year-field">
-            <select value={year} onChange={(event) => setYear(Number(event.target.value))}>
-              {[currentYear - 1, currentYear, currentYear + 1, currentYear + 2].map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="rental-month-grid">
-          {summary.map((month) => (
-            <article key={month.reference_month}>
-              <div><strong>{monthBr(month.reference_month)}</strong><StatusPill tone={Number(month.rented_properties) ? "success" : "neutral"}>{month.rented_properties} imóveis</StatusPill></div>
-              <dl>
-                <div><dt>Locação bruta</dt><dd>{currency(month.gross_rent)}</dd></div>
-                <div><dt>Comissão</dt><dd>- {currency(month.broker_commission)}</dd></div>
-                <div className="rental-net-row"><dt>Resultado líquido</dt><dd>{currency(month.net_rent)}</dd></div>
-              </dl>
-            </article>
-          ))}
-        </div>
       </section>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo imóvel" description="Cadastre os dados da locação. Datas podem ficar em branco enquanto o imóvel estiver desocupado." wide>
