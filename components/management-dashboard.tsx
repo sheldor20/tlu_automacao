@@ -503,7 +503,7 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availability }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS dos clientes</h2></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "NPS", color: "#405343", values: seriesFor("nps_clientes") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: seriesFor("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
       </section>
       <section className="management-two-columns management-score-row">
         <article className="management-score-card"><div><UsersRound size={21} /><span>Pesquisa de clima</span></div><strong>{displayNumber(metricValue("pesquisa_clima"))}<small>/10</small></strong><p>{metricHelper("pesquisa_clima", "duas medições por ano")}</p></article>
