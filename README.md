@@ -49,6 +49,25 @@ ano manualmente, faça uma requisição autenticada para
 `GET /api/cron/nps?year=2026` com o cabeçalho
 `Authorization: Bearer <CRON_SECRET>`.
 
+## Seguidores do Instagram
+
+O endpoint `/api/cron/instagram-followers` consulta diariamente a contagem
+agregada de seguidores do perfil `@terralotusurbanismo` pela API oficial do
+Instagram/Meta. O valor do mês corrente é atualizado no indicador
+`instagram_seguidores`; nenhum dado individual de seguidores é coletado.
+
+Configure apenas no ambiente **Production** da Vercel:
+
+- `INSTAGRAM_ACCOUNT_ID`: ID da conta profissional no Instagram;
+- `INSTAGRAM_ACCESS_TOKEN`: token de acesso mantido como segredo;
+- `INSTAGRAM_USERNAME`: `terralotusurbanismo`;
+- `INSTAGRAM_GRAPH_API_VERSION`: `v25.0`;
+- `INSTAGRAM_GRAPH_BASE_URL`: `https://graph.instagram.com`.
+
+O cron roda diariamente às 10:00 UTC (07:00 no horário de Brasília). Para uma
+primeira carga manual, faça `GET /api/cron/instagram-followers` com o mesmo
+cabeçalho `Authorization: Bearer <CRON_SECRET>` usado pelo cron de NPS.
+
 ## Segurança
 
 - sem cadastro público no front-end;
