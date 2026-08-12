@@ -18,6 +18,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   Building2,
+  Camera,
   CircleDollarSign,
   Clock3,
   Gauge,
@@ -502,20 +503,18 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
   const currentMonthIndex = months.findIndex((month) => month.isCurrent);
   if (rentals && currentMonthIndex >= 0) availability[currentMonthIndex] = rentals.available_properties;
   return (
-    <div className="management-view-stack">
-      <section className="management-kpi-grid">
+    <div className="management-view-stack management-people-view">
+      <section className="management-kpi-grid management-people-kpis">
         <KpiCard label="Saldo da conta de aluguéis" value={metricValue("saldo_conta_alugueis") === null ? "—" : currency(metricValue("saldo_conta_alugueis") || 0, true)} helper={metricHelper("saldo_conta_alugueis")} icon={<Landmark size={17} />} />
-        <KpiCard label="Imóveis disponíveis" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? `${rentals.total_properties} imóveis na carteira` : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
-        <KpiCard label="Recebido no mês" value={metricValue("receita_alugueis_mes") === null ? "—" : currency(metricValue("receita_alugueis_mes") || 0, true)} helper={metricHelper("receita_alugueis_mes")} tone="success" icon={<BadgeDollarSign size={17} />} />
-        <KpiCard label="Gasto no mês" value={metricValue("despesa_alugueis_mes") === null ? "—" : currency(metricValue("despesa_alugueis_mes") || 0, true)} helper={metricHelper("despesa_alugueis_mes")} icon={<WalletCards size={17} />} />
+        <KpiCard label="Imóveis desocupados" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? `${rentals.total_properties} imóveis na carteira` : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
+        <KpiCard label="Recebido no mês (Aluguel)" value={metricValue("receita_alugueis_mes") === null ? "—" : currency(metricValue("receita_alugueis_mes") || 0, true)} helper={metricHelper("receita_alugueis_mes")} tone="success" icon={<BadgeDollarSign size={17} />} />
+        <KpiCard label="Gasto no mês (Aluguel)" value={metricValue("despesa_alugueis_mes") === null ? "—" : currency(metricValue("despesa_alugueis_mes") || 0, true)} helper={metricHelper("despesa_alugueis_mes")} icon={<WalletCards size={17} />} />
+        <KpiCard label="Pesquisa de clima" value={metricValue("pesquisa_clima") === null ? "—" : `${displayNumber(metricValue("pesquisa_clima"))}/10`} helper={metricHelper("pesquisa_clima", "duas medições por ano")} icon={<UsersRound size={17} />} />
+        <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availability }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: seriesFor("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
-      </section>
-      <section className="management-two-columns management-score-row">
-        <article className="management-score-card"><div><UsersRound size={21} /><span>Pesquisa de clima</span></div><strong>{displayNumber(metricValue("pesquisa_clima"))}<small>/10</small></strong><p>{metricHelper("pesquisa_clima", "duas medições por ano")}</p></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Clima organizacional</span><h2>Evolução das pesquisas</h2></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Nota de clima", color: "#8a6f55", values: seriesFor("pesquisa_clima") }]} /></article>
       </section>
     </div>
   );
