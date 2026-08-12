@@ -68,6 +68,47 @@ O cron roda diariamente às 10:00 UTC (07:00 no horário de Brasília). Para uma
 primeira carga manual, faça `GET /api/cron/instagram-followers` com o mesmo
 cabeçalho `Authorization: Bearer <CRON_SECRET>` usado pelo cron de NPS.
 
+## Sincronização da inadimplência no Qlik Cloud
+
+O endpoint `/api/cron/qlik/delinquency` abre a planilha **Overview
+Inadimplência Por Posição / Competência Fechada** em um navegador isolado,
+autentica no Qlik e aplica novamente, em cada execução, os filtros obrigatórios:
+
+- `Empreendimento? = Sim`;
+- `Cobrável? = Sim`;
+- `Venda Jurídico? = Não`.
+
+Antes de gravar, a rotina valida as três seleções, os nomes das dez colunas e a
+existência do mês anterior como `Concluído`. Linhas `Em Curso` são ignoradas.
+`Inadimplência Saldo` alimenta `inadimplencia_total` e `Redução Inadimplência`
+alimenta `eficiencia_cobranca`. Se a tela, os filtros ou o fechamento mudarem,
+a carga falha e mantém o último valor válido.
+
+No projeto da Vercel, configure somente no ambiente **Production**:
+
+- `QLIK_USERNAME`: usuário do Qlik Cloud;
+- `QLIK_PASSWORD`: senha do Qlik Cloud;
+- `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` e `NEXT_PUBLIC_SUPABASE_URL`: as
+  mesmas variáveis já usadas pelas outras rotinas.
+
+Não grave usuário ou senha no Git nem no Supabase. A URL da planilha e o objeto
+`jJTqUzF` já possuem valores padrão. `QLIK_DELINQUENCY_SHEET_URL` e
+`QLIK_DELINQUENCY_TABLE_OBJECT_ID` são opcionais e servem apenas para uma futura
+mudança no Qlik.
+
+O cron roda toda segunda-feira às 10:30 UTC (07:30 em Brasília). Depois de
+configurar as variáveis e publicar um novo deploy, a primeira carga pode ser
+disparada no PowerShell:
+
+```powershell
+$secret = Read-Host "CRON_SECRET"
+$headers = @{ Authorization = "Bearer $secret" }
+Invoke-RestMethod -Method Get -Uri "https://www.terralotus.space/api/cron/qlik/delinquency" -Headers $headers
+```
+
+O retorno mostra a competência fechada mais recente, o saldo de inadimplência,
+o percentual de redução e a série histórica importada.
+
 ## Segurança
 
 - sem cadastro público no front-end;
@@ -76,4 +117,5 @@ cabeçalho `Authorization: Bearer <CRON_SECRET>` usado pelo cron de NPS.
 - storage privado e URLs temporárias;
 - validação do token no endpoint de e-mail;
 - variáveis sensíveis apenas no servidor;
+- credenciais de integrações somente em variáveis protegidas da Vercel;
 - acesso efetivo por departamento no menu, nas tabelas e nos arquivos privados.
