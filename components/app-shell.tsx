@@ -5,6 +5,7 @@ import { initials } from "@/lib/format";
 import type { DepartmentSlug } from "@/lib/types";
 import {
   Building2,
+  CalendarDays,
   FolderKanban,
   Home,
   LogOut,
@@ -32,6 +33,7 @@ const departmentLinks: Array<{
 ];
 
 const adminLink = { href: "/administracao", label: "Administração", mobileLabel: "Acessos", icon: ShieldCheck };
+const todayLink = { href: "/hoje", label: "Hoje", mobileLabel: "Hoje", icon: CalendarDays };
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -109,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [pathname, router, supabase]);
 
   const visibleDepartmentLinks = departmentLinks.filter((link) => allowedDepartments.includes(link.slug));
-  const visibleLinks = isAdmin ? [...visibleDepartmentLinks, adminLink] : visibleDepartmentLinks;
+  const visibleLinks = isAdmin ? [todayLink, ...visibleDepartmentLinks, adminLink] : [todayLink, ...visibleDepartmentLinks];
 
   async function signOut() {
     await supabase?.auth.signOut();
@@ -140,7 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (accessError || visibleLinks.length === 0) {
+  if (accessError || (visibleDepartmentLinks.length === 0 && !isAdmin)) {
     return (
       <div className="config-screen">
         <div className="config-card">
@@ -178,7 +180,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav aria-label="Departamentos">
-          <span className="nav-caption">Departamentos</span>
+          <span className="nav-caption">Operação</span>
+          <Link
+            href={todayLink.href}
+            className={pathname.startsWith(todayLink.href) ? "nav-link active" : "nav-link"}
+            onClick={() => setMobileMenu(false)}
+          >
+            <CalendarDays size={19} />
+            <span>{todayLink.label}</span>
+          </Link>
+          <span className="nav-caption nav-caption-spaced">Departamentos</span>
           {visibleDepartmentLinks.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (

@@ -1,10 +1,11 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, ProgressBar, StatusPill, Toast } from "@/components/ui";
+import { ListToolbar } from "@/components/list-toolbar";
 import { UserSelect } from "@/components/user-select";
 import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Project, ProjectStatus, UserProfile } from "@/lib/types";
+import type { Project, ProjectStatus, ProjectTemplate, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
   Archive,
@@ -18,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 const statusLabel: Record<ProjectStatus, string> = {
@@ -31,29 +33,38 @@ type ProjectFilter = "current" | "archived";
 type ProjectAction = "archive" | "delete";
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const supabase = getSupabase();
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [filter, setFilter] = useState<ProjectFilter>("current");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionProject, setActionProject] = useState<Project | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction>("archive");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [form, setForm] = useState({ name: "", start_date: todayIso(), end_date: "", owner_user_id: "", objective: "" });
+  const [form, setForm] = useState({ name: "", start_date: todayIso(), owner_user_id: "", template_id: "" });
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [projectResult, userResult] = await Promise.all([
+    const [projectResult, userResult, templateResult, templateTaskResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
+      supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
+      supabase.from("project_template_tasks").select("id,template_id"),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
+    if (templateResult.error || templateTaskResult.error) setToast({ message: friendlyError(templateResult.error || templateTaskResult.error), type: "error" });
     setProjects((projectResult.data || []) as Project[]);
     setUsers((userResult.data || []) as UserProfile[]);
+    setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
     setLoading(false);
   }, [supabase]);
 
@@ -64,7 +75,17 @@ export default function ProjectsPage() {
 
   const currentProjects = useMemo(() => projects.filter((project) => !project.archived_at), [projects]);
   const archivedProjects = useMemo(() => projects.filter((project) => Boolean(project.archived_at)), [projects]);
-  const visibleProjects = filter === "current" ? currentProjects : archivedProjects;
+  const visibleProjects = useMemo(() => {
+    const source = filter === "current" ? currentProjects : archivedProjects;
+    const normalized = query.trim().toLocaleLowerCase("pt-BR");
+    return source.filter((project) => {
+      const matchesSearch = !normalized || [project.name, project.owner_name, project.owner_email, project.objective].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
+      const matchesStatus = statusFilter === "all" || project.status === statusFilter;
+      const matchesOverdue = !overdueOnly || Number(project.overdue_tasks || 0) > 0;
+      return matchesSearch && matchesStatus && matchesOverdue;
+    });
+  }, [archivedProjects, currentProjects, filter, overdueOnly, query, statusFilter]);
+  const selectedTemplate = templates.find((template) => template.id === form.template_id);
 
   const metrics = useMemo(() => {
     const active = currentProjects.filter((project) => project.status === "ativo").length;
@@ -80,28 +101,37 @@ export default function ProjectsPage() {
   async function createProject(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
-    const owner = users.find((user) => user.user_id === form.owner_user_id);
-    if (!owner?.email) {
+    if (!users.some((user) => user.user_id === form.owner_user_id)) {
       setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("projects").insert({
-      name: form.name.trim(),
-      start_date: form.start_date,
-      end_date: form.end_date || null,
-      owner_user_id: owner.user_id,
-      owner_name: owner.full_name?.trim() || owner.email.split("@")[0],
-      owner_email: owner.email.toLowerCase(),
-      objective: form.objective.trim(),
-      status: "ativo",
+    const { data, error } = await supabase.rpc("create_project_from_template", {
+      p_name: form.name.trim(),
+      p_owner_user_id: form.owner_user_id,
+      p_start_date: form.start_date,
+      p_template_id: form.template_id || null,
     });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setDialogOpen(false);
     setFilter("current");
-    setForm({ name: "", start_date: todayIso(), end_date: "", owner_user_id: "", objective: "" });
-    setToast({ message: "Projeto criado e pronto para receber tarefas.", type: "success" });
+    setForm({ name: "", start_date: todayIso(), owner_user_id: "", template_id: "" });
+    setToast({ message: selectedTemplate ? "Projeto criado com as tarefas do modelo." : "Projeto criado e pronto para receber tarefas.", type: "success" });
+    await loadData();
+    if (data) router.push(`/projetos/${data}`);
+  }
+
+  async function quickUpdate(project: Project, updates: Partial<Pick<Project, "status" | "owner_user_id" | "end_date">>) {
+    if (!supabase) return;
+    const previous = projects;
+    setProjects((items) => items.map((item) => item.id === project.id ? { ...item, ...updates } : item));
+    const { error } = await supabase.from("projects").update(updates).eq("id", project.id);
+    if (error) {
+      setProjects(previous);
+      return setToast({ message: friendlyError(error), type: "error" });
+    }
+    setToast({ message: `Projeto ${project.name} atualizado.`, type: "success" });
     await loadData();
   }
 
@@ -181,6 +211,10 @@ export default function ProjectsPage() {
             <button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Arquivados · {archivedProjects.length}</button>
           </div>
         </div>
+        <ListToolbar query={query} onQueryChange={setQuery}>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ProjectStatus | "all")} aria-label="Filtrar por status"><option value="all">Todos os status</option>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <label className="filter-check"><input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} /> Com tarefas atrasadas</label>
+        </ListToolbar>
         {loading ? <div className="list-loading">Carregando projetos…</div> : visibleProjects.length === 0 ? (
           <EmptyState
             icon={filter === "current" ? <FolderKanban size={23} /> : <Archive size={23} />}
@@ -191,7 +225,7 @@ export default function ProjectsPage() {
         ) : (
           <div className="projects-grid">
             {visibleProjects.map((project) => (
-              <article className={`project-card ${project.archived_at ? "project-card-archived" : ""}`} key={project.id}>
+              <article className={`project-card ${project.archived_at ? "project-card-archived" : ""} ${Number(project.overdue_tasks || 0) > 0 ? "exception-card" : ""}`} key={project.id}>
                 <div className="project-card-top">
                   <div className="project-card-pills">
                     <StatusPill tone={project.status === "concluido" ? "success" : project.status === "pausado" ? "warning" : "info"}>{statusLabel[project.status]}</StatusPill>
@@ -213,26 +247,30 @@ export default function ProjectsPage() {
                 <Link href={`/projetos/${project.id}`} className="project-card-link">
                   <div className="project-card-title"><h3>{project.name}</h3><p>{project.objective}</p></div>
                   <ProgressBar value={Number(project.progress_percent || 0)} label="Progresso das tarefas" />
-                  <div className="project-stats"><div><span>Responsável</span><strong>{project.owner_name}</strong></div><div><span>Prazo</span><strong>{dateBr(project.end_date)}</strong></div><div><span>Tarefas</span><strong>{project.completed_tasks || 0}/{project.total_tasks || 0}</strong></div></div>
-                  <div className="project-card-footer"><span><Users size={13} /> {project.owner_email}</span><span className="inline-link">Abrir projeto <ArrowUpRight size={14} /></span></div>
                 </Link>
+                {!project.archived_at ? <div className="quick-edit-grid project-quick-edit">
+                  <label><span>Status</span><select value={project.status} onChange={(event) => void quickUpdate(project, { status: event.target.value as ProjectStatus })}>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label><span>Responsável</span><select value={project.owner_user_id || ""} onChange={(event) => void quickUpdate(project, { owner_user_id: event.target.value })}>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></label>
+                  <label><span>Prazo</span><input type="date" min={project.start_date} value={project.end_date || ""} onChange={(event) => void quickUpdate(project, { end_date: event.target.value || null })} /></label>
+                </div> : null}
+                <Link href={`/projetos/${project.id}`} className="project-card-link"><div className="project-stats"><div><span>Responsável</span><strong>{project.owner_name}</strong></div><div><span>Prazo</span><strong>{dateBr(project.end_date)}</strong></div><div><span>Tarefas</span><strong>{project.completed_tasks || 0}/{project.total_tasks || 0}</strong></div></div><div className="project-card-footer"><span><Users size={13} /> {project.owner_email}</span><span className="inline-link">Abrir projeto <ArrowUpRight size={14} /></span></div></Link>
               </article>
             ))}
           </div>
         )}
       </section>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo projeto" description="Defina o contexto essencial; as tarefas e envolvidos entram na próxima etapa." wide>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo projeto" description="Comece com o essencial e use um modelo para criar as tarefas automaticamente." wide>
         <form className="form-grid" onSubmit={createProject}>
-          <Field label="Nome do projeto"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required /></Field>
-          <Field label="Responsável" hint="Lista de usuários ativos cadastrados no Supabase." className="form-span-2">
+          <Field label="Nome do projeto"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required autoFocus /></Field>
+          <Field label="Responsável" hint="Lista de usuários ativos cadastrados no Supabase.">
             <UserSelect users={users} value={form.owner_user_id} onChange={(user) => setForm({ ...form, owner_user_id: user?.user_id || "" })} required />
             {users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado no Supabase.</span> : null}
           </Field>
           <Field label="Data de início"><input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></Field>
-          <Field label="Previsão de fim"><input type="date" min={form.start_date} value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} /></Field>
-          <Field label="Objetivo" hint="Descreva o resultado que define o sucesso deste projeto." className="form-span-2"><textarea value={form.objective} onChange={(event) => setForm({ ...form, objective: event.target.value })} maxLength={2500} required /></Field>
-          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar projeto</Button></div>
+          <Field label="Modelo de tarefas" hint="Opcional. Prazos são calculados a partir da data de início."><select value={form.template_id} onChange={(event) => setForm({ ...form, template_id: event.target.value })}><option value="">Sem modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></Field>
+          {selectedTemplate ? <div className="template-preview form-span-2"><strong>{selectedTemplate.name}</strong><p>{selectedTemplate.description}</p><span>{selectedTemplate.task_count} tarefas com prazos relativos · responsável inicial herdado do projeto</span></div> : null}
+          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar e abrir projeto</Button></div>
         </form>
       </Dialog>
 

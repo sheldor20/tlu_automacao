@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, ProgressBar, StatusPill, Toast } from "@/components/ui";
+import { DetailTabs } from "@/components/detail-tabs";
 import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES, TASK_COLUMNS } from "@/lib/constants";
@@ -18,6 +19,8 @@ import {
   Download,
   File,
   FileDown,
+  Files,
+  History,
   ListTodo,
   MessageSquare,
   Paperclip,
@@ -25,11 +28,12 @@ import {
   Upload,
   UserPlus,
   Users,
+  Settings2,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 type LinkedBusiness = {
   id: string;
@@ -37,6 +41,15 @@ type LinkedBusiness = {
   stage: BusinessStage;
   potential_vgv: number;
 };
+
+type ProjectTab = "resumo" | "tarefas" | "arquivos" | "atualizacoes";
+
+const projectTabs = [
+  { key: "resumo", label: "Resumo", icon: <Settings2 size={16} /> },
+  { key: "tarefas", label: "Tarefas", icon: <ListTodo size={16} /> },
+  { key: "arquivos", label: "Arquivos", icon: <Files size={16} /> },
+  { key: "atualizacoes", label: "Atualizações", icon: <History size={16} /> },
+] satisfies Array<{ key: ProjectTab; label: string; icon: ReactNode }>;
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -48,6 +61,11 @@ export default function ProjectDetailPage() {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [linkedBusinesses, setLinkedBusinesses] = useState<LinkedBusiness[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [activeTab, setActiveTab] = useState<ProjectTab>(() => {
+    if (typeof window === "undefined") return "resumo";
+    const requested = new URLSearchParams(window.location.search).get("tab") as ProjectTab | null;
+    return requested && projectTabs.some((tab) => tab.key === requested) ? requested : "resumo";
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -59,6 +77,7 @@ export default function ProjectDetailPage() {
   const [memberForm, setMemberForm] = useState({ user_id: "", role: "" });
   const [fileForm, setFileForm] = useState({ file: null as globalThis.File | null });
   const [comment, setComment] = useState("");
+  const [summaryForm, setSummaryForm] = useState({ start_date: "", end_date: "", owner_user_id: "", objective: "", status: "ativo" as Project["status"] });
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
@@ -84,7 +103,9 @@ export default function ProjectDetailPage() {
       const { data } = await supabase.storage.from("project-files").createSignedUrl(item.file_path, 3600);
       return { ...item, signed_url: data?.signedUrl };
     }));
-    setProject(projectResult.data as Project);
+    const loadedProject = projectResult.data as Project;
+    setProject(loadedProject);
+    setSummaryForm({ start_date: loadedProject.start_date, end_date: loadedProject.end_date || "", owner_user_id: loadedProject.owner_user_id || "", objective: loadedProject.objective, status: loadedProject.status });
     setTasks((taskResult.data || []) as ProjectTask[]);
     setComments((commentResult.data || []) as ProjectComment[]);
     setMembers((memberResult.data || []) as ProjectMember[]);
@@ -156,6 +177,33 @@ export default function ProjectDetailPage() {
     }
     await loadData(true);
     setMovingTaskId(null);
+  }
+
+  async function changeTaskDetails(task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) {
+    if (!supabase || movingTaskId) return;
+    setMovingTaskId(task.id);
+    const { error } = await supabase.from("project_tasks").update(updates).eq("id", task.id);
+    setMovingTaskId(null);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Responsável ou prazo da tarefa atualizado.", type: "success" });
+    await loadData(true);
+  }
+
+  async function saveSummary(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !project) return;
+    setSaving(true);
+    const { error } = await supabase.from("projects").update({
+      start_date: summaryForm.start_date,
+      end_date: summaryForm.end_date || null,
+      owner_user_id: summaryForm.owner_user_id,
+      objective: summaryForm.objective.trim() || "A definir",
+      status: summaryForm.status,
+    }).eq("id", project.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Dados gerais do projeto atualizados.", type: "success" });
+    await loadData();
   }
 
   async function addComment(event: FormEvent) {
@@ -259,6 +307,21 @@ export default function ProjectDetailPage() {
         <div className="project-progress-numbers"><span><CheckCircle2 size={15} /> {stats.completed} concluídas</span><span><Clock3 size={15} /> {tasks.length - stats.completed} abertas</span><span className={stats.overdue ? "text-danger" : ""}><AlertTriangle size={15} /> {stats.overdue} atrasadas</span></div>
       </section>
 
+      <DetailTabs tabs={projectTabs} active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === "resumo" ? <div className="section-stack detail-tab-panel">
+      <section className="content-card">
+        <div className="content-card-head"><div><h2>Dados gerais</h2><p>Responsável, prazo, objetivo e situação do projeto</p></div></div>
+        <div className="content-card-body"><form className="form-grid" onSubmit={saveSummary}>
+          <Field label="Status"><select value={summaryForm.status} onChange={(event) => setSummaryForm({ ...summaryForm, status: event.target.value as Project["status"] })}><option value="planejamento">Planejamento</option><option value="ativo">Ativo</option><option value="pausado">Pausado</option><option value="concluido">Concluído</option></select></Field>
+          <Field label="Responsável"><select value={summaryForm.owner_user_id} onChange={(event) => setSummaryForm({ ...summaryForm, owner_user_id: event.target.value })} required>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}</select></Field>
+          <Field label="Data de início"><input type="date" value={summaryForm.start_date} onChange={(event) => setSummaryForm({ ...summaryForm, start_date: event.target.value })} required /></Field>
+          <Field label="Previsão de fim"><input type="date" min={summaryForm.start_date} value={summaryForm.end_date} onChange={(event) => setSummaryForm({ ...summaryForm, end_date: event.target.value })} /></Field>
+          <Field label="Objetivo" className="form-span-2"><textarea value={summaryForm.objective} onChange={(event) => setSummaryForm({ ...summaryForm, objective: event.target.value })} maxLength={5000} /></Field>
+          <div className="form-actions"><Button type="submit" loading={saving}>Salvar alterações</Button></div>
+        </form></div>
+      </section>
+
       <section className="project-context-grid">
         <article className="objective-card"><span className="eyebrow">Objetivo do projeto</span><p>{project.objective}</p></article>
         <article className="members-card"><div><span className="eyebrow">Envolvidos</span><div className="avatar-stack">{members.slice(0, 5).map((member) => <span title={`${member.name} · ${member.email}`} key={member.id}>{initials(member.name)}</span>)}{members.length > 5 ? <span>+{members.length - 5}</span> : null}</div></div><Button variant="ghost" onClick={() => setMemberDialog(true)}><UserPlus size={16} /> Adicionar</Button></article>
@@ -287,28 +350,31 @@ export default function ProjectDetailPage() {
         )}
         <div className="linked-businesses-footer"><Link href="/novos-negocios">Abrir Novos negócios</Link></div>
       </section>
+      </div> : null}
 
-      <section className="kanban-section">
+      {activeTab === "tarefas" ? <section className="kanban-section detail-tab-panel">
         <div className="section-title-row"><div><h2>Quadro de tarefas</h2><p>Arraste os cartões entre as colunas ou altere pelo seletor.</p></div><Button onClick={() => setTaskDialog(true)}><Plus size={17} /> Nova tarefa</Button></div>
         <ProjectTaskBoard
           tasks={tasks}
+          users={users}
           movingTaskId={movingTaskId}
           onStatusChange={changeStatus}
+          onTaskUpdate={changeTaskDetails}
           onAddTask={(status) => { setTaskForm((current) => ({ ...current, status })); setTaskDialog(true); }}
         />
-      </section>
+      </section> : null}
 
-      <div className="split-layout project-notion-grid">
-        <section className="content-card">
+      {activeTab === "atualizacoes" || activeTab === "arquivos" ? <div className="detail-tab-panel">
+        {activeTab === "atualizacoes" ? <section className="content-card">
           <div className="content-card-head"><div><h2>Comentários gerais</h2><p>Atualizações, decisões e contexto do projeto</p></div><MessageSquare size={18} /></div>
           <form className="comment-form" onSubmit={addComment}><textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Adicionar atualização ou comentário…" maxLength={2500} required /><div><small>O comentário ficará visível para todos os usuários.</small><Button type="submit" loading={saving} disabled={!comment.trim()}>Comentar</Button></div></form>
           <div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><span className="comment-avatar">{initials(item.author_name)}</span><div><div><strong>{item.author_name}</strong><small>{dateBr(item.created_at)}</small></div><p>{item.body}</p></div></article>) : <div className="mini-empty">Nenhum comentário ainda.</div>}</div>
-        </section>
-        <section className="content-card">
-          <div className="content-card-head"><div><h2>Arquivos e imagens</h2><p>Referências compartilhadas do projeto</p></div><button className="icon-button" onClick={() => setFileDialog(true)} aria-label="Adicionar arquivo"><Plus size={17} /></button></div>
-          {files.length ? <div className="project-files">{files.map((item) => { const isImage = item.mime_type?.startsWith("image/") && item.signed_url; return <a key={item.id} href={item.signed_url} target="_blank" rel="noreferrer" className={isImage ? "image-file" : "document-file"}>{isImage ? <Image src={item.signed_url!} alt={item.file_name} width={46} height={46} unoptimized /> : <File size={23} />}<div><strong>{item.file_name}</strong><span>{dateBr(item.created_at)}</span></div><Download size={15} /></a>; })}</div> : <EmptyState icon={<Paperclip size={21} />} title="Nenhum arquivo" description="Adicione imagens, PDFs ou documentos importantes para o projeto." action={<Button variant="secondary" onClick={() => setFileDialog(true)}><Upload size={16} /> Enviar arquivo</Button>} />}
-        </section>
-      </div>
+        </section> : null}
+        {activeTab === "arquivos" ? <section className="content-card">
+          <div className="content-card-head"><div><h2>Arquivos e imagens</h2><p>Referências compartilhadas e reaproveitadas pela obra vinculada</p></div><Button variant="secondary" onClick={() => setFileDialog(true)}><Plus size={16} /> Arquivo</Button></div>
+          {files.length ? <div className="project-files project-files-grid">{files.map((item) => { const isImage = item.mime_type?.startsWith("image/") && item.signed_url; return <a key={item.id} href={item.signed_url} target="_blank" rel="noreferrer" className={isImage ? "image-file" : "document-file"}>{isImage ? <Image src={item.signed_url!} alt={item.file_name} width={46} height={46} unoptimized /> : <File size={23} />}<div><strong>{item.file_name}</strong><span>{dateBr(item.created_at)}</span></div><Download size={15} /></a>; })}</div> : <EmptyState icon={<Paperclip size={21} />} title="Nenhum arquivo" description="Adicione imagens, PDFs ou documentos importantes para o projeto." action={<Button variant="secondary" onClick={() => setFileDialog(true)}><Upload size={16} /> Enviar arquivo</Button>} />}
+        </section> : null}
+      </div> : null}
 
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Defina claramente a entrega, o responsável e o prazo." wide><form className="form-grid" onSubmit={addTask}><Field label="Tarefa"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} /></Field><Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field><Field label="Responsável" hint="Nome e e-mail vêm dos usuários ativos do Supabase." className="form-span-2"><UserSelect users={users} value={taskForm.assignee_user_id} onChange={(user) => setTaskForm({ ...taskForm, assignee_user_id: user?.user_id || "" })} required />{users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado.</span> : null}</Field><Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Descrição"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!taskForm.assignee_user_id}>Criar tarefa</Button></div></form></Dialog>
       <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="Selecione um usuário do Supabase para participar do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Usuário" hint="A lista exibe nome e e-mail dos usuários ativos." className="form-span-2"><UserSelect users={users} value={memberForm.user_id} onChange={(user) => setMemberForm({ ...memberForm, user_id: user?.user_id || "" })} required /></Field><Field label="Papel no projeto" className="form-span-2"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!memberForm.user_id}>Adicionar</Button></div></form></Dialog>

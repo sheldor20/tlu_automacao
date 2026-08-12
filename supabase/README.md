@@ -13,6 +13,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 2. `migrations/20260811190000_business_project_link_and_project_archiving.sql`
 3. `migrations/20260811203000_operational_archiving_supplies_and_user_directory.sql`
 4. `migrations/20260811220000_rentals_and_department_access.sql`
+5. `migrations/20260812100000_operational_simplicity.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -27,7 +28,11 @@ Esse SQL cria:
 - arquivamento e exclusão de negócios, obras e projetos;
 - insumos opcionais com valor e quantidades total e utilizada;
 - diretório de responsáveis sincronizado com os usuários do Supabase;
-- departamento de Aluguéis com receita bruta, comissão e resultado líquido mensal;
+- departamento de Aluguéis com dados contratuais, locação, comissão e reajuste;
+- modelos persistidos de loteamento, construção e projeto;
+- criação transacional de obras e projetos a partir de modelos;
+- resumos operacionais para a página Hoje e filtros por exceção;
+- reaproveitamento de responsável, datas e documentos quando um negócio gera uma obra;
 - RLS por departamento, com menu e dados limitados às permissões de cada usuário;
 - buckets privados de evidências e arquivos.
 

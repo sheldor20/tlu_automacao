@@ -15,7 +15,7 @@ import {
 import { StatusPill } from "@/components/ui";
 import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, initials, todayIso } from "@/lib/format";
-import type { ProjectTask, TaskStatus } from "@/lib/types";
+import type { ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
 import { Calendar, GripVertical, Plus, Users } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
@@ -24,13 +24,17 @@ type ProjectTaskBoardProps = {
   tasks: ProjectTask[];
   movingTaskId: string | null;
   onStatusChange: (task: ProjectTask, status: TaskStatus) => Promise<void>;
+  onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
   onAddTask: (status: TaskStatus) => void;
+  users: UserProfile[];
 };
 
 type TaskCardProps = {
   task: ProjectTask;
   disabled?: boolean;
   onStatusChange: (task: ProjectTask, status: TaskStatus) => Promise<void>;
+  onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
+  users: UserProfile[];
 };
 
 function TaskCardContent({ task, dragHandle }: { task: ProjectTask; dragHandle?: ReactNode }) {
@@ -55,7 +59,7 @@ function TaskCardContent({ task, dragHandle }: { task: ProjectTask; dragHandle?:
   );
 }
 
-function TaskCard({ task, disabled, onStatusChange }: TaskCardProps) {
+function TaskCard({ task, disabled, onStatusChange, onTaskUpdate, users }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     disabled,
@@ -95,6 +99,10 @@ function TaskCard({ task, disabled, onStatusChange }: TaskCardProps) {
       >
         {TASK_COLUMNS.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}
       </select>
+      <div className="task-quick-fields">
+        <label><span>Responsável</span><select value={task.assignee_user_id || ""} onChange={(event) => void onTaskUpdate(task, { assignee_user_id: event.target.value })} disabled={disabled}>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></label>
+        <label><span>Prazo</span><input type="date" value={task.due_date} onChange={(event) => void onTaskUpdate(task, { due_date: event.target.value })} disabled={disabled} /></label>
+      </div>
     </article>
   );
 }
@@ -105,14 +113,18 @@ function TaskColumn({
   tasks,
   movingTaskId,
   onStatusChange,
+  onTaskUpdate,
   onAddTask,
+  users,
 }: {
   status: TaskStatus;
   label: string;
   tasks: ProjectTask[];
   movingTaskId: string | null;
   onStatusChange: (task: ProjectTask, status: TaskStatus) => Promise<void>;
+  onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
   onAddTask: (status: TaskStatus) => void;
+  users: UserProfile[];
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
 
@@ -123,7 +135,7 @@ function TaskColumn({
     >
       <header><div><span className="column-dot" /><h3>{label}</h3></div><strong>{tasks.length}</strong></header>
       <div className="kanban-tasks">
-        {tasks.map((task) => <TaskCard task={task} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} key={task.id} />)}
+        {tasks.map((task) => <TaskCard task={task} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} onTaskUpdate={onTaskUpdate} users={users} key={task.id} />)}
         {tasks.length === 0 ? <div className="column-empty">Solte uma tarefa aqui.</div> : null}
       </div>
       <button className="kanban-add" onClick={() => onAddTask(status)}><Plus size={15} /> Adicionar tarefa</button>
@@ -131,7 +143,7 @@ function TaskColumn({
   );
 }
 
-export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onAddTask }: ProjectTaskBoardProps) {
+export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onTaskUpdate, onAddTask, users }: ProjectTaskBoardProps) {
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -162,7 +174,9 @@ export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onAddTas
             tasks={tasks.filter((task) => task.status === column.key)}
             movingTaskId={movingTaskId}
             onStatusChange={onStatusChange}
+            onTaskUpdate={onTaskUpdate}
             onAddTask={onAddTask}
+            users={users}
             key={column.key}
           />
         ))}
