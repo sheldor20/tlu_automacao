@@ -13,6 +13,7 @@ import {
   KeyRound,
   Percent,
   Plus,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -44,6 +45,7 @@ export default function RentalsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deletingRental, setDeletingRental] = useState<Rental | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<RentalStatus | "all">("all");
   const [exceptionOnly, setExceptionOnly] = useState(false);
@@ -123,6 +125,17 @@ export default function RentalsPage() {
     await loadData();
   }
 
+  async function deleteRental(rental: Rental) {
+    if (!supabase) return;
+    setSaving(true);
+    const { error } = await supabase.from("rentals").delete().eq("id", rental.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setDeletingRental(null);
+    setToast({ message: `Imóvel ${rental.name} excluído definitivamente.`, type: "success" });
+    await loadData();
+  }
+
   return (
     <>
       <PageIntro
@@ -180,7 +193,7 @@ export default function RentalsPage() {
                     <td><strong>{currency(Math.max(Number(rental.monthly_rent) - Number(rental.broker_commission), 0))}</strong><small>- {currency(rental.broker_commission)} comissão</small></td>
                     <td><strong>{rental.lessor_name}</strong><small>{rental.lessor_type.toUpperCase()}</small></td>
                     <td><strong>{dateBr(rental.lease_start_date)}</strong><small>{endInDays >= 0 && endInDays <= 60 ? `vence em ${endInDays} dia(s)` : `até ${dateBr(rental.lease_end_date)}`}</small></td>
-                    <td><Link className="table-action" href={`/alugueis/${rental.id}`} aria-label={`Acessar ${rental.name}`}><ArrowUpRight size={16} /></Link></td>
+                    <td><div className="table-actions"><Link className="table-action" href={`/alugueis/${rental.id}`} aria-label={`Acessar ${rental.name}`} title="Abrir imóvel"><ArrowUpRight size={16} /></Link><button type="button" className="table-action danger" onClick={() => setDeletingRental(rental)} aria-label={`Excluir ${rental.name}`} title="Excluir imóvel"><Trash2 size={16} /></button></div></td>
                   </tr>;
                 })}
               </tbody>
@@ -196,6 +209,21 @@ export default function RentalsPage() {
           <div className="template-preview form-span-2"><strong>Status inicial: desocupado</strong><p>Após salvar, abra o imóvel para informar locação, locador, vigência, reajuste, corretor e comissão.</p></div>
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}><Percent size={16} /> Cadastrar imóvel</Button></div>
         </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingRental)}
+        onClose={() => setDeletingRental(null)}
+        title="Excluir imóvel?"
+        description="A exclusão é definitiva e remove todos os dados cadastrais e contratuais deste imóvel."
+      >
+        <div className="confirmation-content">
+          <strong>{deletingRental?.name}</strong>
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setDeletingRental(null)}>Cancelar</Button>
+            <Button type="button" variant="danger" loading={saving} onClick={() => deletingRental && void deleteRental(deletingRental)}><Trash2 size={16} /> Excluir definitivamente</Button>
+          </div>
+        </div>
       </Dialog>
 
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
