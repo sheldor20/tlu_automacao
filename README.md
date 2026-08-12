@@ -117,6 +117,8 @@ Invoke-RestMethod -Method Get -Uri "https://www.terralotus.space/api/cron/qlik/d
 ```
 
 O diagnóstico informa se a falha ocorreu ao carregar ou ao iniciar o Chromium.
+O navegador serverless usa `@sparticuz/chromium` com `puppeteer-core`, evitando
+arquivos auxiliares do Playwright que não são empacotados nas funções da Vercel.
 Na carga normal, erros também retornam o campo `phase`, que identifica se o
 problema ocorreu no navegador, na abertura do Qlik, na validação da tabela ou na
 gravação no Supabase. Nenhuma credencial é incluída nessas mensagens.
