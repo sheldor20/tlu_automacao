@@ -893,6 +893,8 @@ h1, h2, h3, p { margin-top: 0; }
 .management-sync { min-width: 205px; display: grid; justify-items: end; gap: 7px; }
 .management-sync small { color: var(--muted); font-size: 9px; }
 .management-sync .button { margin-top: 4px; min-height: 39px; font-size: 11px; }
+.management-sync-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.management-fullscreen-button span { margin-left: 2px; padding: 2px 5px; border-radius: 999px; background: var(--sage-100); color: var(--moss-600); font-size: 7px; font-weight: 800; letter-spacing: .08em; }
 .live-indicator { min-height: 29px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 7px; background: var(--sage-100); color: var(--moss-700); font-size: 9px; font-weight: 760; }
 .live-indicator i { width: 7px; height: 7px; border-radius: 999px; background: var(--warning); box-shadow: 0 0 0 4px rgba(163,111,45,.11); }
 .live-indicator.live-live i { background: var(--success); box-shadow: 0 0 0 4px rgba(54,113,74,.11); animation: live-pulse 1.9s ease-out infinite; }
@@ -1022,3 +1024,116 @@ h1, h2, h3, p { margin-top: 0; }
   .management-stage-kpis { grid-template-columns: 1fr 1fr; }
   .management-score-card > strong { font-size: 46px; }
 }
+
+/* Apresentação gerencial em palco 16:8 */
+body.management-presenting { overflow: hidden; background: #162019; }
+body.management-presenting .side-nav,
+body.management-presenting .mobile-bottom-nav,
+body.management-presenting .mobile-menu-button { display: none !important; }
+body.management-presenting .app-frame,
+body.management-presenting .app-main { width: 100vw; height: 100vh; min-height: 0; overflow: hidden; }
+body.management-presenting .app-main { margin: 0; padding: 0; }
+body.management-presenting .app-content { width: 100%; max-width: none; margin: 0; }
+
+.management-page-presenting {
+  position: fixed; z-index: 200; left: 50%; top: 50%;
+  width: 1600px; height: 800px; min-height: 800px; padding: 16px;
+  overflow: hidden; background: var(--cream);
+  transform: translate(-50%,-50%) scale(var(--management-presentation-scale,1));
+  transform-origin: center; box-shadow: 0 30px 90px rgba(0,0,0,.28);
+}
+.management-page-presenting .management-presentation-content {
+  width: 100%; transform: scale(var(--management-content-scale,1));
+  transform-origin: top center;
+}
+
+body.management-presenting .management-area-nav {
+  position: relative; top: auto; margin: 0 0 8px; padding: 3px; border-radius: 12px;
+  grid-template-columns: repeat(5,minmax(0,1fr)); overflow: visible;
+}
+body.management-presenting .management-area-nav a { min-height: 38px; padding: 0 9px; border-radius: 9px; font-size: 9px; }
+body.management-presenting .management-header {
+  min-height: 58px; margin-bottom: 8px; grid-template-columns: 42px minmax(0,1fr) auto; gap: 12px;
+}
+body.management-presenting .management-title-icon { width: 42px; height: 42px; border-radius: 12px; }
+body.management-presenting .management-title-copy > span { margin: 0 0 3px; font-size: 7px; }
+body.management-presenting .management-title-copy h1 { font-size: 25px; line-height: 1; }
+body.management-presenting .management-title-copy p { margin: 5px 0 0; font-size: 9px; line-height: 1.25; }
+body.management-presenting .management-sync { min-width: 330px; grid-template-columns: auto auto; align-items: center; column-gap: 10px; row-gap: 3px; }
+body.management-presenting .management-sync > .live-indicator { grid-column: 1; grid-row: 1; min-height: 23px; font-size: 7px; }
+body.management-presenting .management-sync > small { grid-column: 1; grid-row: 2; justify-self: end; font-size: 7px; }
+body.management-presenting .management-sync-actions { grid-column: 2; grid-row: 1 / span 2; }
+body.management-presenting .management-sync .button { min-height: 32px; margin-top: 0; padding: 0 10px; font-size: 8px; }
+
+body.management-presenting .management-view-stack { gap: 8px; }
+body.management-presenting .management-kpi-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+body.management-presenting .management-kpi-grid .kpi-card { min-height: 82px; padding: 10px 12px; border-radius: 13px; }
+body.management-presenting .management-kpi-grid .kpi-top { font-size: 9px; }
+body.management-presenting .management-kpi-grid .kpi-icon { width: 25px; height: 25px; margin-top: -2px; border-radius: 8px; }
+body.management-presenting .management-kpi-grid .kpi-card > strong { font-size: 22px; }
+body.management-presenting .management-kpi-grid .kpi-card > small { margin-top: 2px; font-size: 7px; }
+body.management-presenting .management-two-columns,
+body.management-presenting .management-score-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+body.management-presenting .management-score-row { grid-template-columns: minmax(220px,.42fr) minmax(0,1.58fr); }
+body.management-presenting .management-panel { border-radius: 13px; }
+body.management-presenting .management-panel-head { min-height: 45px; padding: 8px 12px; gap: 10px; }
+body.management-presenting .management-panel-head span { margin-bottom: 2px; font-size: 6px; }
+body.management-presenting .management-panel-head h2 { font-size: 12px; }
+body.management-presenting .management-panel-head p { margin-top: 2px; font-size: 7px; line-height: 1.2; }
+body.management-presenting .management-panel-head .button { width: auto; min-height: 29px; padding: 0 9px; font-size: 7px; }
+body.management-presenting .management-chart-wrap { height: 155px; min-height: 155px; padding: 2px 7px 3px; overflow: hidden; }
+body.management-presenting .management-chart { width: 100%; height: 132px; min-width: 0; min-height: 132px; }
+body.management-presenting .chart-axis-value,
+body.management-presenting .chart-axis-label { font-size: 8px; }
+body.management-presenting .chart-legend { min-height: 18px; padding: 0 7px; gap: 10px; font-size: 7px; }
+body.management-presenting .chart-empty-state { position: absolute; inset: 20px 20px 34px 50px; width: auto; min-height: 0; margin: 0; font-size: 8px; }
+body.management-presenting .management-breakdown-list {
+  min-height: 155px; padding: 10px 12px; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 18px;
+}
+body.management-presenting .management-breakdown-list > div { gap: 4px; }
+body.management-presenting .management-breakdown-list > div > div:first-child,
+body.management-presenting .management-breakdown-list strong { font-size: 8px; }
+body.management-presenting .management-breakdown-track { height: 5px; }
+body.management-presenting .management-empty-panel { min-height: 155px; padding: 16px; font-size: 8px; }
+body.management-presenting .management-empty-large { min-height: 250px; }
+
+body.management-presenting .management-stage-kpis { padding: 8px 11px 0; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 6px; }
+body.management-presenting .management-stage-kpis article { min-height: 58px; padding: 7px 9px; border-radius: 9px; }
+body.management-presenting .management-stage-kpis span { font-size: 6px; }
+body.management-presenting .management-stage-kpis strong { font-size: 17px; }
+body.management-presenting .management-stage-kpis small { font-size: 6px; }
+body.management-presenting .management-score-card { min-height: 200px; padding: 18px; border-radius: 13px; }
+body.management-presenting .management-score-card > div { font-size: 8px; }
+body.management-presenting .management-score-card > strong { margin: 18px 0 5px; font-size: 40px; }
+body.management-presenting .management-score-card p { font-size: 7px; }
+
+body.management-presenting .management-funnel-panel { min-height: 0; }
+body.management-presenting .management-funnel-list { padding: 4px 13px 8px; }
+body.management-presenting .management-funnel-list article {
+  min-height: 43px; padding: 4px 0;
+  grid-template-columns: 28px minmax(130px,.9fr) minmax(180px,2fr) 65px 92px; gap: 10px;
+}
+body.management-presenting .management-funnel-copy { gap: 2px; }
+body.management-presenting .management-funnel-copy strong { font-size: 9px; }
+body.management-presenting .management-funnel-copy small { font-size: 6px; }
+body.management-presenting .management-funnel-bar { grid-column: auto; grid-row: auto; height: 7px; }
+body.management-presenting .management-funnel-values strong { font-size: 12px; }
+body.management-presenting .management-funnel-vgv strong { font-size: 9px; }
+body.management-presenting .management-funnel-values span { font-size: 6px; }
+
+body.management-presenting .management-work-list { padding: 4px 13px 8px; }
+body.management-presenting .management-work-list article {
+  min-height: 61px; padding: 7px 0;
+  grid-template-columns: minmax(220px,1.1fr) minmax(320px,1.5fr) minmax(110px,.45fr); gap: 16px;
+}
+body.management-presenting .management-work-title > div { width: 31px; height: 31px; border-radius: 9px; }
+body.management-presenting .management-work-title strong { font-size: 9px; }
+body.management-presenting .management-work-title small { font-size: 7px; }
+body.management-presenting .management-work-progress { grid-template-columns: 1fr 1fr; gap: 12px; }
+body.management-presenting .management-work-budget { grid-column: auto; display: grid; justify-content: normal; justify-items: end; }
+body.management-presenting .management-work-budget strong { font-size: 9px; }
+body.management-presenting .progress-wrap { gap: 4px; }
+body.management-presenting .progress-label { font-size: 8px; }
+body.management-presenting .progress-track { height: 5px; }
+body.management-presenting .management-loading,
+body.management-presenting .management-setup-error { min-height: 620px; }
