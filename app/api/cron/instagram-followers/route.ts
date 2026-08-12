@@ -26,23 +26,16 @@ export async function GET(request: Request) {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const expectedUsername = process.env.INSTAGRAM_USERNAME || "terralotusurbanismo";
-  if (!supabaseUrl || !serviceRoleKey || !accountId || !accessToken) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
-      { error: "Configure as variáveis do Supabase e da Instagram Graph API no ambiente do servidor." },
+      { error: "Configure as variáveis do Supabase no ambiente do servidor." },
       { status: 503 },
     );
   }
 
   try {
     const profile = await fetchInstagramFollowers({
-      accountId,
-      accessToken,
-      expectedUsername,
-      baseUrl: process.env.INSTAGRAM_GRAPH_BASE_URL,
-      apiVersion: process.env.INSTAGRAM_GRAPH_API_VERSION,
+      username: "terralotusurbanismo",
     });
     const referenceMonth = currentMonthSaoPaulo();
     const synchronizedAt = new Date().toISOString();
@@ -56,11 +49,11 @@ export async function GET(request: Request) {
       dimension_key: "total",
       dimension_label: null,
       value: profile.followersCount,
-      source: "Instagram Graph API",
+      source: "Instagram - perfil público",
       notes: `Seguidores do perfil @${profile.username}.`,
       metadata: {
-        account_id: profile.id,
         username: profile.username,
+        scrape_source: profile.source,
         synchronized_at: synchronizedAt,
       },
     }, {
@@ -73,6 +66,7 @@ export async function GET(request: Request) {
       month: referenceMonth,
       username: profile.username,
       followers: profile.followersCount,
+      source: profile.source,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha inesperada na sincronização do Instagram.";

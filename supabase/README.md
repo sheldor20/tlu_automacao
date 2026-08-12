@@ -15,6 +15,9 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 4. `migrations/20260811220000_rentals_and_department_access.sql`
 5. `migrations/20260812100000_operational_simplicity.sql`
 6. `migrations/20260812170000_management_indicators.sql`
+7. `migrations/20260812200000_asc_nps_catalog.sql`
+8. `migrations/20260812220000_instagram_followers_metric.sql`
+9. `migrations/20260812230000_finance_purchases_area.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -36,7 +39,7 @@ Esse SQL cria:
 - reaproveitamento de responsável, datas e documentos quando um negócio gera uma obra;
 - RLS por departamento, com menu e dados limitados às permissões de cada usuário;
 - buckets privados de evidências e arquivos.
-- painel gerencial com cinco visões, catálogo de indicadores e valores mensais;
+- painel gerencial com seis visões, incluindo Finanças e Compras, catálogo de indicadores e valores mensais;
 - resumos seguros de Novos Negócios, Obras e Aluguéis para a gestão;
 - atualização automática do painel por Supabase Realtime.
 

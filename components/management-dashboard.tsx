@@ -73,8 +73,16 @@ const managementAreas: Array<{
     label: "RH, Marketing e Clientes",
     shortLabel: "RH, Marketing e Clientes",
     eyebrow: "Pessoas e clientes",
-    description: "Aluguéis, clima organizacional e experiência dos clientes acompanhados no tempo.",
+    description: "Imóveis disponíveis, clima organizacional, audiência e experiência dos clientes.",
     icon: UsersRound,
+  },
+  {
+    slug: "financas-compras",
+    label: "Finanças e Compras",
+    shortLabel: "Finanças e Compras",
+    eyebrow: "Controle financeiro",
+    description: "Aluguéis, custo evitado e qualidade do processo de compras acompanhados mês a mês.",
+    icon: WalletCards,
   },
   {
     slug: "novos-negocios",
@@ -420,6 +428,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
           {area === "empresa" ? <CompanyView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
           {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
           {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
+          {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
           {area === "novos-negocios" ? <NewBusinessView stages={businessStages} /> : null}
           {area === "obras-engenharia" ? <EngineeringView constructions={constructions} /> : null}
         </>
@@ -505,16 +514,38 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
   return (
     <div className="management-view-stack management-people-view">
       <section className="management-kpi-grid management-people-kpis">
-        <KpiCard label="Saldo da conta de aluguéis" value={metricValue("saldo_conta_alugueis") === null ? "—" : currency(metricValue("saldo_conta_alugueis") || 0, true)} helper={metricHelper("saldo_conta_alugueis")} icon={<Landmark size={17} />} />
         <KpiCard label="Imóveis desocupados" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? `${rentals.total_properties} imóveis na carteira` : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
-        <KpiCard label="Recebido no mês (Aluguel)" value={metricValue("receita_alugueis_mes") === null ? "—" : currency(metricValue("receita_alugueis_mes") || 0, true)} helper={metricHelper("receita_alugueis_mes")} tone="success" icon={<BadgeDollarSign size={17} />} />
-        <KpiCard label="Gasto no mês (Aluguel)" value={metricValue("despesa_alugueis_mes") === null ? "—" : currency(metricValue("despesa_alugueis_mes") || 0, true)} helper={metricHelper("despesa_alugueis_mes")} icon={<WalletCards size={17} />} />
         <KpiCard label="Pesquisa de clima" value={metricValue("pesquisa_clima") === null ? "—" : `${displayNumber(metricValue("pesquisa_clima"))}/10`} helper={metricHelper("pesquisa_clima", "duas medições por ano")} icon={<UsersRound size={17} />} />
         <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availability }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: seriesFor("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
+      </section>
+    </div>
+  );
+}
+
+function FinancePurchasingView({ metricValue, metricHelper, seriesFor, months }: MetricViewProps) {
+  const rentalRevenue = seriesFor("receita_alugueis_mes");
+  const rentalExpense = seriesFor("despesa_alugueis_mes");
+  const rentalResult = months.map((_, index) => {
+    const revenue = rentalRevenue[index];
+    const expense = rentalExpense[index];
+    return revenue !== null && expense !== null ? revenue - expense : null;
+  });
+  return (
+    <div className="management-view-stack management-finance-view">
+      <section className="management-kpi-grid">
+        <KpiCard label="Saldo da conta de aluguéis" value={metricValue("saldo_conta_alugueis") === null ? "—" : currency(metricValue("saldo_conta_alugueis") || 0, true)} helper={metricHelper("saldo_conta_alugueis")} icon={<Landmark size={17} />} />
+        <KpiCard label="Recebido no mês (Aluguel)" value={metricValue("receita_alugueis_mes") === null ? "—" : currency(metricValue("receita_alugueis_mes") || 0, true)} helper={metricHelper("receita_alugueis_mes")} tone="success" icon={<BadgeDollarSign size={17} />} />
+        <KpiCard label="Gasto no mês (Aluguel)" value={metricValue("despesa_alugueis_mes") === null ? "—" : currency(metricValue("despesa_alugueis_mes") || 0, true)} helper={metricHelper("despesa_alugueis_mes")} icon={<WalletCards size={17} />} />
+        <KpiCard label="Custo evitado total" value={metricValue("custo_evitado_total") === null ? "—" : currency(metricValue("custo_evitado_total") || 0, true)} helper={metricHelper("custo_evitado_total")} tone="success" icon={<HandCoins size={17} />} />
+      </section>
+      <section className="management-three-columns">
+        <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Evolução do valor acumulado por competência.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: seriesFor("custo_evitado_total") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Resultado dos aluguéis</span><h2>Recebido menos gasto</h2><p>Resultado líquido mensal da operação de aluguéis.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Resultado", color: "#6f876e", values: rentalResult }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Conformidade de compras</span><h2>Compras sem orçamento</h2><p>Total de compras comparado às realizadas sem orçamento.</p></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Total de compras", color: "#8da087", values: seriesFor("compras_total") }, { label: "Sem orçamento", color: "#b96c62", values: seriesFor("compras_sem_orcamento") }]} /></article>
       </section>
     </div>
   );

@@ -257,12 +257,13 @@ export type ManagementAreaSlug =
   | "empresa"
   | "juridico-vendas-cobranca"
   | "rh-marketing-clientes"
+  | "financas-compras"
   | "novos-negocios"
   | "obras-engenharia";
 
 export type ManagementIndicatorValue = {
   id: string;
-  area: Extract<ManagementAreaSlug, "empresa" | "juridico-vendas-cobranca" | "rh-marketing-clientes">;
+  area: Extract<ManagementAreaSlug, "empresa" | "juridico-vendas-cobranca" | "rh-marketing-clientes" | "financas-compras">;
   metric_key: string;
   reference_month: string;
   dimension_key: string;

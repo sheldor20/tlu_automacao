@@ -56,9 +56,9 @@ export function TrendChart({
   fixedRange?: { min: number; max: number };
 }) {
   const gradientId = useId().replace(/:/g, "");
-  const width = 820;
-  const height = 280;
-  const padding = { left: 54, right: 24, top: 44, bottom: 42 };
+  const width = 680;
+  const height = 300;
+  const padding = { left: 58, right: 26, top: 48, bottom: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const calculatedBounds = chartBounds(series);
@@ -120,16 +120,16 @@ export function TrendChart({
               {path ? <path d={path} fill="none" stroke={item.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
               {validPoints.map((point) => {
                 const isCurrent = currentPoint?.index === point.index;
-                const label = `${isCurrent ? "Atual " : ""}${dataLabel(point.value)}`;
-                const labelWidth = Math.max(24, label.length * 6.2 + 12);
+                const label = dataLabel(point.value);
+                const labelWidth = Math.max(34, label.length * 8.4 + 16);
                 const labelX = isCurrent
                   ? clamp(x(point.index), padding.left + labelWidth / 2, width - padding.right - labelWidth / 2)
                   : x(point.index);
-                const preferredLabelY = y(point.value) + (seriesIndex % 2 === 0 ? -12 : 19);
-                const labelY = clamp(preferredLabelY, padding.top - 14, padding.top + chartHeight + 20);
+                const preferredLabelY = y(point.value) + (seriesIndex % 2 === 0 ? -16 : 23);
+                const labelY = clamp(preferredLabelY, padding.top - 16, padding.top + chartHeight + 23);
                 return (
                   <g key={`${item.label}-${point.index}`}>
-                    {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - 12} width={labelWidth} height="18" rx="9" className="chart-current-value-bg" /> : null}
+                    {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - 16} width={labelWidth} height="23" rx="11.5" className="chart-current-value-bg" /> : null}
                     <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text>
                     <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? 6 : 4} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth="3">
                       <title>{`${item.label}: ${point.value.toLocaleString("pt-BR")}`}</title>
@@ -158,9 +158,9 @@ export function GroupedBarChart({
   series: ChartSeries[];
   emptyLabel?: string;
 }) {
-  const width = 820;
-  const height = 280;
-  const padding = { left: 54, right: 24, top: 44, bottom: 42 };
+  const width = 680;
+  const height = 300;
+  const padding = { left: 58, right: 26, top: 48, bottom: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const bounds = chartBounds(series);
@@ -192,7 +192,7 @@ export function GroupedBarChart({
                 return (
                   <g key={item.label}>
                     <rect x={barX} y={barY} width={Math.max(barWidth - 3, 2)} height={barHeight} rx="4" fill={item.color} opacity={labelIndex === latestIndex ? 1 : .82}><title>{`${item.label}: ${value.toLocaleString("pt-BR")}`}</title></rect>
-                    <text x={barX + Math.max(barWidth - 3, 2) / 2} y={clamp(barY - 6 - seriesIndex * 10, padding.top - 10, padding.top + chartHeight - 6)} textAnchor="middle" className={`chart-data-label${labelIndex === latestIndex ? " chart-data-label-current-bar" : ""}`}>{dataLabel(value)}</text>
+                    <text x={barX + Math.max(barWidth - 3, 2) / 2} y={clamp(barY - 7 - seriesIndex * 14, padding.top - 12, padding.top + chartHeight - 7)} textAnchor="middle" className={`chart-data-label${labelIndex === latestIndex ? " chart-data-label-current-bar" : ""}`}>{dataLabel(value)}</text>
                   </g>
                 );
               })}
