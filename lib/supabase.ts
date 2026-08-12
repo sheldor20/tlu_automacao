@@ -57,6 +57,18 @@ export function friendlyError(error: unknown) {
   if (message.includes("invalid_supplies")) {
     return "Revise os insumos: preencha o nome, use valores positivos e mantenha a quantidade utilizada menor ou igual à quantidade total.";
   }
+  if (message.includes("construction_template_not_available") || message.includes("project_template_not_available")) {
+    return "O modelo selecionado não está disponível para este tipo de registro.";
+  }
+  if (message.includes("construction_already_structured")) {
+    return "Esta obra já possui etapas. O modelo só pode ser aplicado a uma estrutura vazia.";
+  }
+  if (message.includes("department_access_required")) {
+    return "Seu usuário não possui acesso a este departamento.";
+  }
+  if (message.includes("migration_requires_postgres_role")) {
+    return "Execute a migration no Supabase usando a role postgres.";
+  }
   if (message.includes("rented_requires_start_date")) {
     return "Informe o início da locação antes de marcar o imóvel como alugado.";
   }

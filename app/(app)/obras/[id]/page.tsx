@@ -1,30 +1,36 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, KpiCard, ProgressBar, StatusPill, Toast } from "@/components/ui";
+import { DetailTabs } from "@/components/detail-tabs";
 import { SupplyEditor } from "@/components/supply-editor";
 import { generateConstructionReport } from "@/lib/construction-report";
 import { currency, dateBr, monthBr } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
-import type { Construction, ConstructionBudget, ConstructionEvidence, ConstructionSupply, MacroStage, MicroStage } from "@/lib/types";
+import type { Construction, ConstructionBudget, ConstructionEvidence, ConstructionSourceFile, ConstructionSupply, ConstructionTemplate, MacroStage, MicroStage, UserProfile } from "@/lib/types";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Banknote,
   Camera,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
   FileDown,
+  Files,
+  History,
   Hammer,
   ImageIcon,
   Package,
   Plus,
   Save,
+  Settings2,
+  WalletCards,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 type UpdateRow = {
   id: string;
@@ -37,6 +43,16 @@ type UpdateRow = {
   evidence_url?: string;
 };
 
+type WorkTab = "resumo" | "etapas" | "financeiro" | "arquivos" | "atualizacoes";
+
+const workTabs = [
+  { key: "resumo", label: "Resumo", icon: <Settings2 size={16} /> },
+  { key: "etapas", label: "Etapas", icon: <Hammer size={16} /> },
+  { key: "financeiro", label: "Financeiro", icon: <WalletCards size={16} /> },
+  { key: "arquivos", label: "Arquivos", icon: <Files size={16} /> },
+  { key: "atualizacoes", label: "Atualizações", icon: <History size={16} /> },
+] satisfies Array<{ key: WorkTab; label: string; icon: ReactNode }>;
+
 export default function WorkDetailPage() {
   const params = useParams<{ id: string }>();
   const supabase = getSupabase();
@@ -45,6 +61,14 @@ export default function WorkDetailPage() {
   const [evidences, setEvidences] = useState<ConstructionEvidence[]>([]);
   const [budgets, setBudgets] = useState<ConstructionBudget[]>([]);
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
+  const [sourceFiles, setSourceFiles] = useState<ConstructionSourceFile[]>([]);
+  const [templates, setTemplates] = useState<ConstructionTemplate[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [activeTab, setActiveTab] = useState<WorkTab>(() => {
+    if (typeof window === "undefined") return "resumo";
+    const requested = new URLSearchParams(window.location.search).get("tab") as WorkTab | null;
+    return requested && workTabs.some((tab) => tab.key === requested) ? requested : "resumo";
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -55,23 +79,29 @@ export default function WorkDetailPage() {
   const [supplyMicro, setSupplyMicro] = useState<MicroStage | null>(null);
   const [progressMicro, setProgressMicro] = useState<MicroStage | null>(null);
   const [budgetDialog, setBudgetDialog] = useState(false);
+  const [templateDialog, setTemplateDialog] = useState(false);
+  const [templateId, setTemplateId] = useState("");
   const [macroForm, setMacroForm] = useState({ name: "", description: "" });
   const [microForm, setMicroForm] = useState({ name: "", description: "", supplies: [] as ConstructionSupply[] });
   const [supplyForm, setSupplyForm] = useState<ConstructionSupply[]>([]);
   const [progressForm, setProgressForm] = useState({ progress: "0", note: "", file: null as File | null });
   const [budgetForm, setBudgetForm] = useState({ reference_month: new Date().toISOString().slice(0, 7), planned_amount: "", realized_amount: "", notes: "" });
+  const [summaryForm, setSummaryForm] = useState({ name: "", type: "loteamento" as Construction["type"], start_date: "", expected_end_date: "", planned_budget: "", address: "", status: "planejamento" as Construction["status"], responsible_user_id: "", notes: "" });
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!supabase || !params.id) return;
     setLoading(true);
-    const [workResult, macroResult, microResult, evidenceResult, budgetResult, updateResult] = await Promise.all([
+    const [workResult, macroResult, microResult, evidenceResult, budgetResult, updateResult, sourceFileResult, templateResult, userResult] = await Promise.all([
       supabase.from("construction_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("construction_macro_stage_progress").select("*").eq("construction_id", params.id).order("position"),
       supabase.from("construction_micro_stages").select("*").order("position"),
       supabase.from("construction_evidence").select("*").eq("construction_id", params.id).order("captured_at", { ascending: false }),
       supabase.from("construction_budgets").select("*").eq("construction_id", params.id).order("reference_month", { ascending: false }),
       supabase.from("construction_update_feed").select("*").eq("construction_id", params.id).order("created_at", { ascending: false }).limit(20),
+      supabase.rpc("construction_source_files", { p_construction_id: params.id }),
+      supabase.from("construction_templates").select("*").eq("is_active", true).order("name"),
+      supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
     ]);
 
     if (workResult.error) {
@@ -91,12 +121,22 @@ export default function WorkDetailPage() {
       return { ...item, signed_url: data?.signedUrl };
     }));
     const urlByEvidence = new Map(signedEvidence.map((item) => [item.id, item.signed_url]));
-    setConstruction(workResult.data as Construction);
+    const work = workResult.data as Construction;
+    const sourceFileRows = (sourceFileResult.data || []) as ConstructionSourceFile[];
+    const signedSourceFiles = await Promise.all(sourceFileRows.map(async (item) => {
+      const { data } = await supabase.storage.from("project-files").createSignedUrl(item.file_path, 3600);
+      return { ...item, signed_url: data?.signedUrl };
+    }));
+    setConstruction(work);
+    setSummaryForm({ name: work.name, type: work.type, start_date: work.start_date, expected_end_date: work.expected_end_date || "", planned_budget: String(work.planned_budget || 0), address: work.address || "", status: work.status, responsible_user_id: work.responsible_user_id || "", notes: work.notes || "" });
     setMacros(assembled);
     setWeights(Object.fromEntries(assembled.map((item) => [item.id, String(item.weight_percent)])));
     setEvidences(signedEvidence);
     setBudgets((budgetResult.data || []) as ConstructionBudget[]);
     setUpdates(((updateResult.data || []) as UpdateRow[]).map((item) => ({ ...item, evidence_url: item.evidence_id ? urlByEvidence.get(item.evidence_id) : undefined })));
+    setSourceFiles(signedSourceFiles);
+    setTemplates(((templateResult.data || []) as ConstructionTemplate[]).filter((template) => template.type === work.type));
+    setUsers((userResult.data || []) as UserProfile[]);
     setLoading(false);
   }, [params.id, supabase]);
 
@@ -243,6 +283,41 @@ export default function WorkDetailPage() {
     await loadData();
   }
 
+  async function saveSummary(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !construction) return;
+    setSaving(true);
+    const { error } = await supabase.from("constructions").update({
+      name: summaryForm.name.trim(),
+      type: summaryForm.type,
+      start_date: summaryForm.start_date,
+      expected_end_date: summaryForm.expected_end_date || null,
+      planned_budget: Number(summaryForm.planned_budget || 0),
+      address: summaryForm.address.trim() || null,
+      status: summaryForm.status,
+      responsible_user_id: summaryForm.responsible_user_id || null,
+      notes: summaryForm.notes.trim() || null,
+    }).eq("id", construction.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Dados gerais da obra atualizados.", type: "success" });
+    await loadData();
+  }
+
+  async function applyTemplate(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !construction || !templateId) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("apply_construction_template", { p_construction_id: construction.id, p_template_id: templateId });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setTemplateDialog(false);
+    setTemplateId("");
+    setActiveTab("etapas");
+    setToast({ message: "Modelo aplicado. Macro e micro etapas foram criadas com os pesos prontos.", type: "success" });
+    await loadData();
+  }
+
   async function makeReport() {
     if (!construction) return;
     setReporting(true);
@@ -278,11 +353,30 @@ export default function WorkDetailPage() {
         <KpiCard label="Peso estruturado" value={`${weightTotal.toFixed(0)}%`} helper={weightTotal === 100 ? "estrutura válida" : "precisa somar 100%"} tone={weightTotal === 100 ? "success" : "warning"} icon={<Save size={17} />} />
       </section>
 
-      <div className="split-layout work-detail-grid">
-        <section className="content-card">
+      <DetailTabs tabs={workTabs} active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === "resumo" ? <section className="content-card detail-tab-panel">
+        <div className="content-card-head"><div><h2>Dados gerais</h2><p>Informações principais, prazo, responsável e orçamento previsto</p></div>{construction.source_business_id ? <StatusPill tone="info">Origem: Novo negócio</StatusPill> : <StatusPill tone="neutral">Obra avulsa</StatusPill>}</div>
+        <div className="content-card-body">
+          <form className="form-grid" onSubmit={saveSummary}>
+            <Field label="Nome da obra"><input value={summaryForm.name} onChange={(event) => setSummaryForm({ ...summaryForm, name: event.target.value })} maxLength={140} required /></Field>
+            <Field label="Tipo"><select value={summaryForm.type} onChange={(event) => setSummaryForm({ ...summaryForm, type: event.target.value as Construction["type"] })}><option value="loteamento">Loteamento</option><option value="construcao">Construção</option></select></Field>
+            <Field label="Status"><select value={summaryForm.status} onChange={(event) => setSummaryForm({ ...summaryForm, status: event.target.value as Construction["status"] })}><option value="planejamento">Planejamento</option><option value="em_andamento">Em andamento</option><option value="pausada">Pausada</option><option value="concluida">Concluída</option></select></Field>
+            <Field label="Responsável"><select value={summaryForm.responsible_user_id} onChange={(event) => setSummaryForm({ ...summaryForm, responsible_user_id: event.target.value })}><option value="">A definir</option>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}</select></Field>
+            <Field label="Data de início"><input type="date" value={summaryForm.start_date} onChange={(event) => setSummaryForm({ ...summaryForm, start_date: event.target.value })} required /></Field>
+            <Field label="Previsão de fim"><input type="date" min={summaryForm.start_date} value={summaryForm.expected_end_date} onChange={(event) => setSummaryForm({ ...summaryForm, expected_end_date: event.target.value })} /></Field>
+            <Field label="Orçamento previsto"><input type="number" min="0" step="0.01" value={summaryForm.planned_budget} onChange={(event) => setSummaryForm({ ...summaryForm, planned_budget: event.target.value })} /></Field>
+            <Field label="Localização"><input value={summaryForm.address} onChange={(event) => setSummaryForm({ ...summaryForm, address: event.target.value })} maxLength={260} /></Field>
+            <Field label="Observações" className="form-span-2"><textarea value={summaryForm.notes} onChange={(event) => setSummaryForm({ ...summaryForm, notes: event.target.value })} maxLength={5000} /></Field>
+            <div className="form-actions"><Button type="submit" loading={saving}><Save size={16} /> Salvar alterações</Button></div>
+          </form>
+        </div>
+      </section> : null}
+
+      {activeTab === "etapas" ? <section className="content-card detail-tab-panel">
           <div className="content-card-head"><div><h2>Etapas da obra</h2><p>O avanço geral considera o peso de cada macro etapa</p></div><Button variant="secondary" onClick={() => setMacroDialog(true)}><Plus size={16} /> Macro etapa</Button></div>
           {macros.length === 0 ? (
-            <EmptyState icon={<Hammer size={22} />} title="Estruture as etapas" description="Comece criando as macro etapas da obra. A primeira recebe peso de 100%, que pode ser redistribuído depois." action={<Button onClick={() => setMacroDialog(true)}><Plus size={16} /> Criar macro etapa</Button>} />
+            <EmptyState icon={<Hammer size={22} />} title="Estruture as etapas" description="Aplique um modelo pronto ou crie a estrutura manualmente." action={<div className="empty-actions"><Button onClick={() => setTemplateDialog(true)}><Plus size={16} /> Aplicar modelo</Button><Button variant="secondary" onClick={() => setMacroDialog(true)}>Criar manualmente</Button></div>} />
           ) : (
             <div className="macro-list">
               <div className={`weight-editor ${weightTotal === 100 ? "weight-valid" : "weight-invalid"}`}>
@@ -322,20 +416,30 @@ export default function WorkDetailPage() {
               })}
             </div>
           )}
+        </section> : null}
+
+      {activeTab === "financeiro" ? <section className="content-card detail-tab-panel">
+        <div className="content-card-head"><div><h2>Orçamento mensal</h2><p>Previsto versus realizado por competência</p></div><Button variant="secondary" onClick={() => setBudgetDialog(true)}><Plus size={16} /> Competência</Button></div>
+        {budgets.length ? <div className="budget-list budget-list-full">{budgets.map((budget) => <div key={budget.id}><div><strong>{monthBr(budget.reference_month)}</strong><span>{budget.notes || "Sem observações"}</span></div><div><small>Prev. {currency(budget.planned_amount, true)}</small><strong className={budget.realized_amount > budget.planned_amount ? "value-danger" : ""}>{currency(budget.realized_amount, true)}</strong></div></div>)}</div> : <EmptyState icon={<WalletCards size={22} />} title="Nenhuma competência" description="Registre o previsto e realizado de cada mês para acompanhar o orçamento." action={<Button onClick={() => setBudgetDialog(true)}><Plus size={16} /> Adicionar competência</Button>} />}
+      </section> : null}
+
+      {activeTab === "arquivos" ? <div className="detail-files-grid detail-tab-panel">
+        <section className="content-card">
+          <div className="content-card-head"><div><h2>Documentos do projeto</h2><p>Arquivos reaproveitados do projeto que originou a obra</p></div><Files size={18} /></div>
+          {sourceFiles.length ? <div className="project-files">{sourceFiles.map((item) => <a key={item.id} href={item.signed_url} target="_blank" rel="noreferrer"><Files size={22} /><div><strong>{item.file_name}</strong><span>{dateBr(item.created_at)}</span></div><ArrowUpRight size={15} /></a>)}</div> : <div className="mini-empty">Esta obra não possui documentos vinculados de um projeto-fonte.</div>}
         </section>
+        <section className="content-card">
+          <div className="content-card-head"><div><h2>Evidências da obra</h2><p>Fotos registradas nas atualizações de avanço</p></div><ImageIcon size={18} /></div>
+          {evidences.length ? <div className="evidence-gallery">{evidences.map((evidence) => <a key={evidence.id} href={evidence.signed_url} target="_blank" rel="noreferrer">{evidence.signed_url ? <Image src={evidence.signed_url} alt={evidence.file_name} width={220} height={150} unoptimized /> : <div className="update-placeholder"><Camera size={18} /></div>}<strong>{evidence.file_name}</strong><span>{dateBr(evidence.captured_at)}</span></a>)}</div> : <div className="mini-empty">Nenhuma evidência registrada.</div>}
+        </section>
+      </div> : null}
 
-        <div className="section-stack">
-          <section className="content-card">
-            <div className="content-card-head"><div><h2>Orçamento mensal</h2><p>Previsto versus realizado</p></div><button className="icon-button" onClick={() => setBudgetDialog(true)} aria-label="Adicionar competência"><Plus size={17} /></button></div>
-            {budgets.length ? <div className="budget-list">{budgets.map((budget) => <div key={budget.id}><div><strong>{monthBr(budget.reference_month)}</strong><span>{budget.notes || "Sem observações"}</span></div><div><small>Prev. {currency(budget.planned_amount, true)}</small><strong className={budget.realized_amount > budget.planned_amount ? "value-danger" : ""}>{currency(budget.realized_amount, true)}</strong></div></div>)}</div> : <div className="mini-empty">Nenhuma competência registrada.</div>}
-          </section>
-          <section className="content-card">
-            <div className="content-card-head"><div><h2>Últimas atualizações</h2><p>Evidências e avanços registrados</p></div><ImageIcon size={18} /></div>
-            {updates.length ? <div className="update-feed">{updates.slice(0, 6).map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}</span><small>{dateBr(update.created_at)}</small></div></article>)}</div> : <div className="mini-empty">As atualizações aparecerão após o primeiro registro de avanço.</div>}
-          </section>
-        </div>
-      </div>
+      {activeTab === "atualizacoes" ? <section className="content-card detail-tab-panel">
+        <div className="content-card-head"><div><h2>Últimas atualizações</h2><p>Evidências, percentuais e histórico recente</p></div><ImageIcon size={18} /></div>
+        {updates.length ? <div className="update-feed update-feed-full">{updates.map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}{update.note ? ` · ${update.note}` : ""}</span><small>{dateBr(update.created_at)}</small></div></article>)}</div> : <EmptyState icon={<History size={22} />} title="Sem atualizações" description="As atualizações aparecerão após o primeiro registro de avanço com evidência." />}
+      </section> : null}
 
+      <Dialog open={templateDialog} onClose={() => setTemplateDialog(false)} title="Aplicar modelo de etapas" description="A estrutura só pode ser aplicada enquanto a obra ainda não possui macro etapas."><form className="form-grid" onSubmit={applyTemplate}><Field label="Modelo"><select value={templateId} onChange={(event) => setTemplateId(event.target.value)} required><option value="">Selecione um modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></Field>{templateId ? <div className="template-preview"><strong>{templates.find((template) => template.id === templateId)?.name}</strong><p>{templates.find((template) => template.id === templateId)?.description}</p></div> : null}<div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTemplateDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!templateId}>Aplicar modelo</Button></div></form></Dialog>
       <Dialog open={macroDialog} onClose={() => setMacroDialog(false)} title="Nova macro etapa" description="Ex.: Terraplenagem, infraestrutura, fundações ou acabamento."><form className="form-grid" onSubmit={addMacro}><Field label="Nome"><input value={macroForm.name} onChange={(event) => setMacroForm({ ...macroForm, name: event.target.value })} required maxLength={120} /></Field><Field label="Descrição"><textarea value={macroForm.description} onChange={(event) => setMacroForm({ ...macroForm, description: event.target.value })} maxLength={1000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMacroDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
       <Dialog open={Boolean(microMacroId)} onClose={() => setMicroMacroId(null)} title="Nova micro etapa" description="Detalhe a execução. O cadastro de insumos é opcional." wide><form className="form-grid" onSubmit={addMicro}><Field label="Nome"><input value={microForm.name} onChange={(event) => setMicroForm({ ...microForm, name: event.target.value })} required maxLength={140} /></Field><Field label="Descrição"><textarea value={microForm.description} onChange={(event) => setMicroForm({ ...microForm, description: event.target.value })} /></Field><SupplyEditor value={microForm.supplies} onChange={(supplies) => setMicroForm({ ...microForm, supplies })} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMicroMacroId(null)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
       <Dialog open={Boolean(supplyMicro)} onClose={() => setSupplyMicro(null)} title={`Insumos · ${supplyMicro?.name || "micro etapa"}`} description="Atualize os valores e a quantidade utilizada. Os insumos são opcionais." wide><form className="form-grid" onSubmit={saveSupplies}><SupplyEditor value={supplyForm} onChange={setSupplyForm} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setSupplyMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar insumos</Button></div></form></Dialog>

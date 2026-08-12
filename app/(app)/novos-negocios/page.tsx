@@ -10,6 +10,7 @@ import {
   StatusPill,
   Toast,
 } from "@/components/ui";
+import { ListToolbar } from "@/components/list-toolbar";
 import { BRAZIL_STATES, BUSINESS_STAGES } from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
@@ -61,7 +62,7 @@ const emptyForm: BusinessForm = {
 
 type BusinessFilter = "current" | "archived";
 type BusinessAction = "archive" | "delete";
-type ProjectOption = Pick<Project, "id" | "name" | "status" | "archived_at">;
+type ProjectOption = Pick<Project, "id" | "name" | "status" | "archived_at" | "owner_name">;
 
 export default function NewBusinessPage() {
   const supabase = getSupabase();
@@ -69,6 +70,9 @@ export default function NewBusinessPage() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [history, setHistory] = useState<StageHistory[]>([]);
   const [filter, setFilter] = useState<BusinessFilter>("current");
+  const [query, setQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState<BusinessStage | "all">("all");
+  const [exceptionOnly, setExceptionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -82,7 +86,7 @@ export default function NewBusinessPage() {
     if (!supabase) return;
     setLoading(true);
     const [{ data: businessData, error }, { data: historyData }, { data: projectData, error: projectError }] = await Promise.all([
-      supabase.from("businesses").select("*").order("updated_at", { ascending: false }),
+      supabase.from("business_operational_summary").select("*").order("updated_at", { ascending: false }),
       supabase.from("business_stage_history").select("*").order("entered_at"),
       supabase.rpc("business_project_options"),
     ]);
@@ -105,7 +109,23 @@ export default function NewBusinessPage() {
 
   const currentBusinesses = useMemo(() => businesses.filter((business) => !business.archived_at), [businesses]);
   const archivedBusinesses = useMemo(() => businesses.filter((business) => Boolean(business.archived_at)), [businesses]);
-  const visibleBusinesses = filter === "current" ? currentBusinesses : archivedBusinesses;
+  const visibleBusinesses = useMemo(() => {
+    const source = filter === "current" ? currentBusinesses : archivedBusinesses;
+    const normalized = query.trim().toLocaleLowerCase("pt-BR");
+    return source.filter((business) => {
+      const matchesSearch = !normalized || [
+        business.name,
+        business.address,
+        business.city,
+        business.state,
+        business.project?.name,
+        business.project?.owner_name,
+      ].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
+      const matchesStage = stageFilter === "all" || business.stage === stageFilter;
+      const matchesException = !exceptionOnly || Number(business.days_in_stage || 0) >= 30;
+      return matchesSearch && matchesStage && matchesException;
+    });
+  }, [archivedBusinesses, currentBusinesses, exceptionOnly, filter, query, stageFilter]);
   const currentHistory = useMemo(() => {
     const ids = new Set(currentBusinesses.map((business) => business.id));
     return history.filter((item) => ids.has(item.business_id));
@@ -171,10 +191,10 @@ export default function NewBusinessPage() {
     setSaving(true);
     const payload = {
       project_id: form.project_id,
-      start_date: form.start_date,
-      address: form.address.trim(),
-      city: form.city.trim(),
-      state: form.state,
+      start_date: editing ? form.start_date : todayIso(),
+      address: editing ? form.address.trim() : "A definir",
+      city: editing ? form.city.trim() : "A definir",
+      state: editing ? form.state : "PR",
       latitude: form.latitude ? Number(form.latitude) : null,
       longitude: form.longitude ? Number(form.longitude) : null,
       potential_vgv: Number(form.potential_vgv || 0),
@@ -197,6 +217,19 @@ export default function NewBusinessPage() {
     });
     setDialogOpen(false);
     setSaving(false);
+    await loadData();
+  }
+
+  async function quickStageChange(business: Business, stage: BusinessStage) {
+    if (!supabase || business.stage === stage) return;
+    const previous = businesses;
+    setBusinesses((items) => items.map((item) => item.id === business.id ? { ...item, stage, days_in_stage: 0 } : item));
+    const { error } = await supabase.from("businesses").update({ stage }).eq("id", business.id);
+    if (error) {
+      setBusinesses(previous);
+      return setToast({ message: friendlyError(error), type: "error" });
+    }
+    setToast({ message: `Fase de ${business.name} atualizada.`, type: "success" });
     await loadData();
   }
 
@@ -303,6 +336,13 @@ export default function NewBusinessPage() {
           </div>
           <div className="segmented" aria-label="Filtrar negócios"><button type="button" className={filter === "current" ? "active" : ""} onClick={() => setFilter("current")}>Atuais · {currentBusinesses.length}</button><button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Arquivados · {archivedBusinesses.length}</button></div>
         </div>
+        <ListToolbar query={query} onQueryChange={setQuery}>
+          <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value as BusinessStage | "all")} aria-label="Filtrar por fase">
+            <option value="all">Todas as fases</option>
+            {BUSINESS_STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.shortLabel}</option>)}
+          </select>
+          <label className="filter-check"><input type="checkbox" checked={exceptionOnly} onChange={(event) => setExceptionOnly(event.target.checked)} /> Parados há 30+ dias</label>
+        </ListToolbar>
         {loading ? (
           <div className="list-loading">Carregando negócios…</div>
         ) : visibleBusinesses.length === 0 ? (
@@ -322,10 +362,10 @@ export default function NewBusinessPage() {
                 {visibleBusinesses.map((business) => {
                   const stage = BUSINESS_STAGES.find((item) => item.key === business.stage);
                   return (
-                    <tr key={business.id}>
-                      <td><strong>{business.name}</strong><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
-                      <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project ? "Projeto relacionado" : "Registro anterior à nova regra"}</small></td>
-                      <td><StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill></td>
+                    <tr key={business.id} className={Number(business.days_in_stage || 0) >= 30 ? "exception-row" : ""}>
+                      <td><strong>{business.name}</strong><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : Number(business.days_in_stage || 0) >= 30 ? `${business.days_in_stage} dias sem avançar` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
+                      <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project?.owner_name || (business.project ? "Projeto relacionado" : "Registro anterior à nova regra")}</small></td>
+                      <td>{business.archived_at ? <StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill> : <select className="quick-select" value={business.stage} onChange={(event) => void quickStageChange(business, event.target.value as BusinessStage)} aria-label={`Fase de ${business.name}`}>{BUSINESS_STAGES.map((option) => <option key={option.key} value={option.key}>{option.shortLabel}</option>)}</select>}</td>
                       <td><strong>{currency(business.potential_vgv)}</strong></td>
                       <td>{dateBr(business.start_date)}</td>
                       <td>
@@ -347,7 +387,7 @@ export default function NewBusinessPage() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         title={editing ? "Atualizar negócio" : "Novo negócio"}
-        description={editing ? "O nome é preservado; os demais dados podem ser atualizados." : "Inclua a oportunidade na primeira fase do funil."}
+        description={editing ? "Atualize os dados completos do negócio." : "Comece com o essencial. Os demais dados ficam disponíveis na edição."}
         wide
       >
         <form className="form-grid" onSubmit={saveBusiness}>
@@ -372,9 +412,9 @@ export default function NewBusinessPage() {
           <Field label="Nome do negócio">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={Boolean(editing)} maxLength={140} required />
           </Field>
-          <Field label="Data de início">
+          {editing ? <Field label="Data de início">
             <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required />
-          </Field>
+          </Field> : null}
           {editing ? (
             <Field label="Fase atual" hint="Ao chegar em Obra, o projeto aparece automaticamente no departamento de Obras.">
               <select value={form.stage} onChange={(event) => setForm({ ...form, stage: event.target.value as BusinessStage })}>
@@ -382,10 +422,10 @@ export default function NewBusinessPage() {
               </select>
             </Field>
           ) : null}
-          <Field label="VGV potencial">
-            <input type="number" min="0" step="0.01" value={form.potential_vgv} onChange={(event) => setForm({ ...form, potential_vgv: event.target.value })} placeholder="0,00" required />
+          <Field label="VGV potencial" hint={editing ? undefined : "Pode ficar em zero e ser atualizado depois."}>
+            <input type="number" min="0" step="0.01" value={form.potential_vgv} onChange={(event) => setForm({ ...form, potential_vgv: event.target.value })} placeholder="0,00" />
           </Field>
-          <Field label="Endereço" hint="Use o endereço principal do terreno ou empreendimento.">
+          {editing ? <><Field label="Endereço" hint="Use o endereço principal do terreno ou empreendimento.">
             <input value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} maxLength={220} placeholder="Rua, número ou referência" required />
           </Field>
           <Field label="Cidade">
@@ -404,7 +444,7 @@ export default function NewBusinessPage() {
           </Field>
           <Field label="Observações" hint="Informações rápidas para contextualizar a oportunidade." className="form-span-2">
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={2000} />
-          </Field>
+          </Field></> : null}
           <div className="form-actions">
             <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button type="submit" loading={saving} disabled={!form.project_id}>{editing ? "Salvar alterações" : "Criar negócio"}</Button>

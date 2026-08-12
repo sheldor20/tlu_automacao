@@ -1,18 +1,19 @@
 # TLU Automação
 
-Sistema de gestão integrada da Terra Lótus Urbanismo para Novos Negócios, Obras
-e Projetos.
+Sistema de gestão integrada da Terra Lótus Urbanismo para Novos Negócios, Obras,
+Projetos e Aluguéis.
 
 ## Módulos
 
 - **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa,
   arquivamento e transferência automática para Obras.
 - **Obras:** portfólio, orçamento mensal, macro e micro etapas, pesos, insumos
-  estruturados, evidências obrigatórias, arquivamento e relatório PDF.
+  estruturados, modelos prontos, evidências obrigatórias, arquivamento e relatório PDF.
 - **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
   alertas, comentários, arquivos, envolvidos e e-mail de status.
-- **Aluguéis:** imóveis, contratos, atualização direta de status e resultado
-  mensal líquido de comissão, com reajuste anual.
+- **Aluguéis:** imóveis, contratos, atualização direta de status e dados-base de
+  locação, comissão e reajuste.
+- **Hoje:** tarefas e exceções operacionais com ações rápidas por departamento.
 - **Administração:** criação de usuários e acesso a um ou mais departamentos,
   aplicado ao menu e às políticas RLS do Supabase.
 
@@ -34,4 +35,4 @@ O banco e o passo a passo de configuração estão em [supabase/README.md](supab
 - storage privado e URLs temporárias;
 - validação do token no endpoint de e-mail;
 - variáveis sensíveis apenas no servidor;
-- estrutura de departamentos preparada para níveis de acesso futuros.
+- acesso efetivo por departamento no menu, nas tabelas e nos arquivos privados.

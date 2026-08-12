@@ -24,7 +24,9 @@ export type Business = {
   archived_by: string | null;
   created_at: string;
   updated_at: string;
-  project?: Pick<Project, "id" | "name" | "status" | "archived_at"> | null;
+  current_stage_entered_at?: string | null;
+  days_in_stage?: number;
+  project?: Pick<Project, "id" | "name" | "status" | "archived_at" | "owner_name"> | null;
 };
 
 export type StageHistory = {
@@ -38,6 +40,10 @@ export type StageHistory = {
 export type Construction = {
   id: string;
   source_business_id: string | null;
+  source_project_id: string | null;
+  responsible_user_id: string | null;
+  responsible_name: string | null;
+  responsible_email: string | null;
   name: string;
   type: "loteamento" | "construcao";
   start_date: string;
@@ -52,8 +58,27 @@ export type Construction = {
   realized_total?: number;
   realized_current_month?: number;
   stage_weight_total?: number;
+  last_activity_at?: string;
   created_at: string;
   updated_at: string;
+};
+
+export type ConstructionTemplate = {
+  id: string;
+  name: string;
+  type: Construction["type"];
+  description: string | null;
+  is_active: boolean;
+  macro_count?: number;
+  micro_count?: number;
+};
+
+export type ProjectTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  task_count?: number;
 };
 
 export type MacroStage = {
@@ -222,3 +247,8 @@ export type ProjectFile = {
   created_at: string;
   signed_url?: string;
 };
+
+export type ConstructionSourceFile = Pick<
+  ProjectFile,
+  "id" | "file_path" | "file_name" | "mime_type" | "created_at" | "signed_url"
+>;
