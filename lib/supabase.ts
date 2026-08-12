@@ -35,7 +35,31 @@ export function storagePath(
 }
 
 export function friendlyError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "");
+  let message = "";
+
+  if (error instanceof Error) {
+    message = error.message;
+  } else if (typeof error === "string") {
+    message = error;
+  } else if (error && typeof error === "object") {
+    const supabaseError = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+      code?: unknown;
+    };
+    const parts = [supabaseError.message, supabaseError.details, supabaseError.hint]
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .map((value) => value.trim());
+
+    message = [...new Set(parts)].join(" ");
+    if (!message && typeof supabaseError.code === "string") {
+      message = `Código ${supabaseError.code}`;
+    }
+  } else {
+    message = String(error || "");
+  }
+
   if (message.includes("Invalid login credentials")) return "E-mail ou senha incorretos.";
   if (message.includes("Email not confirmed")) return "Confirme seu e-mail antes de entrar.";
   if (message.includes("duplicate key")) return "Esse registro já existe.";
