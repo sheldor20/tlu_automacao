@@ -30,10 +30,12 @@ export function TrendChart({
   labels,
   series,
   emptyLabel = "Aguardando dados mensais",
+  fixedRange,
 }: {
   labels: string[];
   series: ChartSeries[];
   emptyLabel?: string;
+  fixedRange?: { min: number; max: number };
 }) {
   const gradientId = useId().replace(/:/g, "");
   const width = 820;
@@ -41,7 +43,10 @@ export function TrendChart({
   const padding = { left: 54, right: 24, top: 24, bottom: 42 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const bounds = chartBounds(series);
+  const calculatedBounds = chartBounds(series);
+  const bounds = fixedRange
+    ? { min: fixedRange.min, max: fixedRange.max, hasData: calculatedBounds.hasData }
+    : calculatedBounds;
   const range = bounds.max - bounds.min || 1;
   const x = (index: number) => padding.left + (labels.length <= 1 ? chartWidth / 2 : index * chartWidth / (labels.length - 1));
   const y = (value: number) => padding.top + (bounds.max - value) * chartHeight / range;
