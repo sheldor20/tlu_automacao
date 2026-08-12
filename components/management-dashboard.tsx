@@ -101,13 +101,14 @@ function monthDate(key: string) {
   return new Date(`${key.slice(0, 10)}T12:00:00`);
 }
 
-function buildMonthRange(length = 12) {
-  const today = new Date();
-  return Array.from({ length }, (_, index) => {
-    const date = new Date(today.getFullYear(), today.getMonth() - (length - 1 - index), 1, 12);
+function buildCurrentYearMonths(year: number) {
+  const currentMonth = new Date().getMonth();
+  return Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(year, index, 1, 12);
     return {
       key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`,
       label: monthFormatter.format(date).replace(".", ""),
+      isCurrent: index === currentMonth,
     };
   });
 }
@@ -161,7 +162,8 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
   const presentationContentRef = useRef<HTMLDivElement | null>(null);
   const fullscreenRequestedRef = useRef(false);
   const currentArea = managementAreas.find((item) => item.slug === area);
-  const months = useMemo(() => buildMonthRange(12), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const months = useMemo(() => buildCurrentYearMonths(currentYear), [currentYear]);
 
   const loadData = useCallback(async (background = false) => {
     if (!supabase) return;
@@ -170,7 +172,12 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     setError("");
 
     const [valueResult, businessResult, constructionResult, rentalResult] = await Promise.all([
-      supabase.from("management_indicator_values").select("*").order("reference_month", { ascending: true }),
+      supabase
+        .from("management_indicator_values")
+        .select("*")
+        .gte("reference_month", `${currentYear}-01-01`)
+        .lt("reference_month", `${currentYear + 1}-01-01`)
+        .order("reference_month", { ascending: true }),
       supabase.rpc("management_business_funnel_snapshot"),
       supabase.rpc("management_construction_snapshot"),
       supabase.rpc("management_rental_snapshot"),
@@ -204,7 +211,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     }
     setLoading(false);
     setRefreshing(false);
-  }, [supabase]);
+  }, [currentYear, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -380,7 +387,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
       <header className="management-header">
         <div className="management-title-icon"><CurrentIcon size={24} /></div>
         <div className="management-title-copy">
-          <span>{currentArea.eyebrow}</span>
+          <span>{currentArea.eyebrow} · Ano {currentYear}</span>
           <h1>{currentArea.label}</h1>
           <p>{currentArea.description}</p>
         </div>
@@ -425,7 +432,7 @@ type MetricViewProps = {
   metricValue: (key: string) => number | null;
   metricHelper: (key: string, fallback?: string) => string;
   seriesFor: (key: string) => Array<number | null>;
-  months: Array<{ key: string; label: string }>;
+  months: Array<{ key: string; label: string; isCurrent: boolean }>;
 };
 
 function CompanyView({ metricValue, metricHelper, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
@@ -492,7 +499,8 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
 
 function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, rentals }: MetricViewProps & { rentals: ManagementRentalSnapshot | null }) {
   const availability = seriesFor("imoveis_disponiveis");
-  if (rentals) availability[availability.length - 1] = rentals.available_properties;
+  const currentMonthIndex = months.findIndex((month) => month.isCurrent);
+  if (rentals && currentMonthIndex >= 0) availability[currentMonthIndex] = rentals.available_properties;
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">

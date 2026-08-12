@@ -919,6 +919,12 @@ h1, h2, h3, p { margin-top: 0; }
 .chart-grid-line { stroke: #e9ece7; stroke-width: 1; stroke-dasharray: 4 5; }
 .chart-axis-value { fill: #89908b; font-size: 10px; }
 .chart-axis-label { fill: #7a837d; font-size: 10px; text-transform: capitalize; }
+.chart-axis-label-current { fill: var(--moss-800); font-weight: 850; }
+.chart-current-band { fill: #f0f4ef; stroke: #dce5da; stroke-width: 1; }
+.chart-data-label { fill: #536057; font-size: 9px; font-weight: 760; paint-order: stroke; stroke: white; stroke-width: 3px; stroke-linejoin: round; }
+.chart-data-label-current { fill: white; font-size: 9px; font-weight: 850; paint-order: normal; stroke: none; }
+.chart-data-label-current-bar { fill: var(--moss-850); font-weight: 850; }
+.chart-current-value-bg { fill: var(--moss-850); filter: drop-shadow(0 3px 5px rgba(31,46,35,.18)); }
 .chart-legend { min-height: 23px; padding: 0 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; color: var(--muted); font-size: 9px; font-weight: 670; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 8px; height: 8px; border-radius: 3px; }
@@ -1086,6 +1092,8 @@ body.management-presenting .management-chart-wrap { height: 155px; min-height: 1
 body.management-presenting .management-chart { width: 100%; height: 132px; min-width: 0; min-height: 132px; }
 body.management-presenting .chart-axis-value,
 body.management-presenting .chart-axis-label { font-size: 10px; }
+body.management-presenting .chart-data-label,
+body.management-presenting .chart-data-label-current { font-size: 10px; }
 body.management-presenting .chart-legend { min-height: 18px; padding: 0 7px; gap: 10px; font-size: 10px; }
 body.management-presenting .chart-empty-state { position: absolute; inset: 20px 20px 34px 50px; width: auto; min-height: 0; margin: 0; font-size: 10px; }
 body.management-presenting .management-breakdown-list {
