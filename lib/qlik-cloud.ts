@@ -1,6 +1,7 @@
 import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } from "puppeteer-core";
 import type { QlikTableSnapshot } from "@/lib/qlik-delinquency";
+import { isQlikAccountGatewayAction } from "@/lib/qlik-login";
 
 type QlikCloudCredentials = {
   username: string;
@@ -30,18 +31,6 @@ const USERNAME_SELECTORS = [
   "input[placeholder*='username' i]",
 ];
 const PASSWORD_SELECTORS = ["input[type='password']", "input[autocomplete='current-password']"];
-const LOGIN_GATEWAY_LABELS = [
-  "Qlik Account",
-  "Log in with Qlik",
-  "Sign in with Qlik",
-  "Continue with Qlik",
-  "Entrar com Qlik",
-  "Continuar com Qlik",
-  "Email",
-  "Log in",
-  "Sign in",
-  "Entrar",
-];
 
 async function firstVisible(scope: Page | Frame, selectors: string[]): Promise<ElementHandle<Element> | null> {
   for (const selector of selectors) {
@@ -60,6 +49,16 @@ async function firstButtonWithText(scope: Page | Frame, labels: string[]) {
       element.textContent || (element as HTMLInputElement).value || ""
     ).trim().toLocaleLowerCase("pt-BR"));
     if (normalizedLabels.some((expected) => label === expected || label.includes(expected))) return button;
+  }
+  return null;
+}
+
+async function firstQlikAccountGateway(scope: Page | Frame) {
+  for (const button of await scope.$$("button, input[type='submit'], [role='button']")) {
+    const label = await button.evaluate((element) => (
+      element.textContent || (element as HTMLInputElement).value || ""
+    ));
+    if (isQlikAccountGatewayAction(label)) return button;
   }
   return null;
 }
@@ -99,7 +98,7 @@ async function detectAuthenticationSurface(page: Page): Promise<AuthenticationSu
     if (username) return { frame, kind: "username", element: username };
     const password = await firstVisible(frame, PASSWORD_SELECTORS);
     if (password) return { frame, kind: "password", element: password };
-    const gateway = await firstButtonWithText(frame, LOGIN_GATEWAY_LABELS);
+    const gateway = await firstQlikAccountGateway(frame);
     if (gateway) return { frame, kind: "gateway", element: gateway };
   }
   return null;
