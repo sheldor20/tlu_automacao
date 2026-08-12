@@ -14,6 +14,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 3. `migrations/20260811203000_operational_archiving_supplies_and_user_directory.sql`
 4. `migrations/20260811220000_rentals_and_department_access.sql`
 5. `migrations/20260812100000_operational_simplicity.sql`
+6. `migrations/20260812170000_management_indicators.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -35,14 +36,42 @@ Esse SQL cria:
 - reaproveitamento de responsável, datas e documentos quando um negócio gera uma obra;
 - RLS por departamento, com menu e dados limitados às permissões de cada usuário;
 - buckets privados de evidências e arquivos.
+- painel gerencial com cinco visões, catálogo de indicadores e valores mensais;
+- resumos seguros de Novos Negócios, Obras e Aluguéis para a gestão;
+- atualização automática do painel por Supabase Realtime.
 
-## 2. Administrar usuários
+## 2. Alimentar os indicadores gerenciais
+
+As integrações e cargas futuras devem gravar em `management_indicator_values`.
+Cada competência usa sempre o primeiro dia do mês e o par
+`area + metric_key` deve existir em `management_metric_catalog`.
+
+Exemplo de atualização idempotente:
+
+```sql
+insert into public.management_indicator_values (
+  area, metric_key, reference_month, dimension_key, value, source
+) values (
+  'empresa', 'receita_consolidada', '2026-08-01', 'total', 1250000, 'ERP'
+)
+on conflict (area, metric_key, reference_month, dimension_key)
+do update set
+  value = excluded.value,
+  source = excluded.source,
+  updated_at = now();
+```
+
+Para abrir receitas ou despesas por plano de contas, use uma linha por conta,
+preenchendo `dimension_key` e `dimension_label`. O dashboard identifica a
+competência mais recente e monta a composição automaticamente.
+
+## 3. Administrar usuários
 
 Depois da migration, o usuário mais antigo do Supabase vira o administrador
 inicial. Entre no sistema e abra **Administração** para criar novos usuários e
 liberar um ou mais departamentos. Não habilite cadastro público no aplicativo.
 
-## 3. Configurar o Vercel
+## 4. Configurar o Vercel
 
 Em **Settings > Environment Variables** do projeto Vercel, adicione:
 
@@ -56,7 +85,7 @@ Use somente a chave pública (`anon`/publishable) no `NEXT_PUBLIC_*`. A chave
 `service_role` é usada somente pelo endpoint protegido do servidor para criar
 usuários. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável.
 
-## 4. Habilitar os e-mails de status
+## 5. Habilitar os e-mails de status
 
 Crie uma chave no Resend e adicione no Vercel:
 
