@@ -58,22 +58,48 @@ export default function TodayPage() {
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [taskResult, projectResult, workResult, rentalResult, businessResult] = await Promise.all([
+    setToast(null);
+    const [taskResult, projectResult, workResult, rentalResult, businessResult, businessHistoryResult] = await Promise.all([
       supabase.from("project_tasks").select("*").neq("status", "concluida").lte("due_date", new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)).order("due_date"),
       supabase.from("project_progress_summary").select("*").is("archived_at", null),
       supabase.from("construction_progress_summary").select("*").is("archived_at", null).neq("status", "concluida"),
       supabase.from("rentals").select("*").order("lease_end_date"),
-      supabase.from("business_operational_summary").select("*").is("archived_at", null).neq("stage", "obra"),
+      supabase.from("businesses").select("*").is("archived_at", null).neq("stage", "obra"),
+      supabase.from("business_stage_history").select("business_id,entered_at").is("exited_at", null),
     ]);
-    const firstError = taskResult.error || projectResult.error || workResult.error || rentalResult.error || businessResult.error;
-    if (firstError) setToast({ message: friendlyError(firstError), type: "error" });
+    const failedQueries = [
+      ["tarefas", taskResult.error],
+      ["projetos", projectResult.error],
+      ["obras", workResult.error],
+      ["aluguéis", rentalResult.error],
+      ["novos negócios", businessResult.error],
+      ["histórico dos negócios", businessHistoryResult.error],
+    ] as const;
+    const firstFailure = failedQueries.find(([, error]) => Boolean(error));
+    if (firstFailure) {
+      setToast({
+        message: `Não foi possível carregar ${firstFailure[0]}: ${friendlyError(firstFailure[1])}`,
+        type: "error",
+      });
+    }
     const projectRows = (projectResult.data || []) as Project[];
     const projectName = new Map(projectRows.map((project) => [project.id, project.name]));
+    const stageEnteredAt = new Map(
+      (businessHistoryResult.data || []).map((history) => [history.business_id, history.entered_at]),
+    );
+    const businessRows = ((businessResult.data || []) as Business[]).map((business) => {
+      const enteredAt = stageEnteredAt.get(business.id) || business.updated_at || business.created_at;
+      return {
+        ...business,
+        current_stage_entered_at: enteredAt,
+        days_in_stage: daysBetween(enteredAt),
+      };
+    });
     setTasks(((taskResult.data || []) as ProjectTask[]).map((task) => ({ ...task, project_name: projectName.get(task.project_id) || "Projeto" })));
     setProjects(projectRows);
     setWorks((workResult.data || []) as Construction[]);
     setRentals((rentalResult.data || []) as Rental[]);
-    setBusinesses((businessResult.data || []) as Business[]);
+    setBusinesses(businessRows);
     setLoading(false);
   }, [supabase]);
 
