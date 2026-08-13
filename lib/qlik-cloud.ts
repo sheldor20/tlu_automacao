@@ -1,6 +1,7 @@
 import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } from "puppeteer-core";
 import type { QlikTableSnapshot } from "@/lib/qlik-delinquency";
+import { extractQlikAppId } from "@/lib/qlik-engine";
 import { isQlikAccountGatewayAction } from "@/lib/qlik-login";
 
 type QlikCloudCredentials = {
@@ -189,64 +190,144 @@ async function authenticateIfNeeded(page: Page, credentials: QlikCloudCredential
   await submitVisibleForm(page, surface.frame);
 }
 
-async function applySelections(page: Page, filters: QlikCloudTableOptions["filters"]) {
-  await page.waitForFunction(() => typeof (window as Window & { require?: unknown }).require === "function", {
-    timeout: 120_000,
-  });
-  await page.evaluate(async (filters) => {
-    type QlikApp = {
-      clearAll: () => Promise<unknown>;
-      field: (name: string) => { selectValues: (values: string[], toggle?: boolean, softLock?: boolean) => Promise<unknown> };
+async function readQlikEngineSnapshot(
+  page: Page,
+  appId: string,
+  objectId: string,
+  filters: QlikCloudTableOptions["filters"],
+): Promise<QlikTableSnapshot> {
+  return page.evaluate(async ({ appId, objectId, filters }) => {
+    type RpcError = { code?: number; message?: string; parameter?: string };
+    type RpcResult = Record<string, unknown>;
+    type PendingCall = {
+      resolve: (result: RpcResult) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
     };
-    type QlikApi = { currApp: () => QlikApp };
-    const qlik = await new Promise<QlikApi>((resolve, reject) => {
-      const loader = (window as unknown as {
-        require: (dependencies: string[], ready: (api: QlikApi) => void, failed?: (error: unknown) => void) => void;
-      }).require;
-      loader(["js/qlik"], resolve, reject);
+    type HyperCubeCell = { qText?: string; qNum?: number };
+    type HyperCubeLayout = {
+      qDimensionInfo?: Array<{ qFallbackTitle?: string }>;
+      qMeasureInfo?: Array<{ qFallbackTitle?: string }>;
+      qSize?: { qcx?: number; qcy?: number };
+    };
+
+    const socketUrl = `wss://${window.location.host}/app/${encodeURIComponent(appId)}`;
+    const socket = new WebSocket(socketUrl);
+    const pending = new Map<number, PendingCall>();
+    let requestId = 0;
+
+    const closeWithError = (message: string) => {
+      for (const call of pending.values()) {
+        clearTimeout(call.timer);
+        call.reject(new Error(message));
+      }
+      pending.clear();
+    };
+
+    socket.onmessage = (event) => {
+      let response: { id?: number; result?: RpcResult; error?: RpcError };
+      try {
+        response = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (typeof response.id !== "number") return;
+      const call = pending.get(response.id);
+      if (!call) return;
+      clearTimeout(call.timer);
+      pending.delete(response.id);
+      if (response.error) {
+        call.reject(new Error(`Qlik Engine: ${response.error.message || "falha JSON-RPC"}${response.error.code ? ` (${response.error.code})` : ""}.`));
+        return;
+      }
+      call.resolve(response.result || {});
+    };
+    socket.onclose = (event) => closeWithError(`Qlik Engine: conexão encerrada (${event.code}${event.reason ? ` - ${event.reason}` : ""}).`);
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error("Qlik Engine: tempo esgotado ao abrir o WebSocket.")), 30_000);
+      socket.onopen = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error("Qlik Engine: não foi possível abrir o WebSocket autenticado."));
+      };
     });
-    const app = qlik.currApp();
-    await app.clearAll();
-    for (const filter of filters) {
-      await app.field(filter.field).selectValues([filter.value], false, true);
+
+    const call = (handle: number, method: string, params: RpcResult = {}) => new Promise<RpcResult>((resolve, reject) => {
+      const id = ++requestId;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`Qlik Engine: tempo esgotado em ${method}.`));
+      }, 45_000);
+      pending.set(id, { resolve, reject, timer });
+      socket.send(JSON.stringify({ jsonrpc: "2.0", id, handle, method, params }));
+    });
+
+    try {
+      const opened = await call(-1, "OpenDoc", { qDocName: appId });
+      const docHandle = (opened.qReturn as { qHandle?: number } | undefined)?.qHandle;
+      if (typeof docHandle !== "number") throw new Error("Qlik Engine: o aplicativo foi aberto sem um identificador de sessão.");
+
+      await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+      for (const filter of filters) {
+        const fieldResult = await call(docHandle, "GetField", { qFieldName: filter.field, qStateName: "$" });
+        const fieldHandle = (fieldResult.qReturn as { qHandle?: number } | undefined)?.qHandle;
+        if (typeof fieldHandle !== "number") throw new Error(`Qlik Engine: campo “${filter.field}” não encontrado.`);
+        const selected = await call(fieldHandle, "SelectValues", {
+          qFieldValues: [{ qText: filter.value }],
+          qToggleMode: false,
+          qSoftLock: true,
+        });
+        if (selected.qReturn !== true) throw new Error(`Qlik Engine: não foi possível aplicar “${filter.field} = ${filter.value}”.`);
+      }
+
+      const objectResult = await call(docHandle, "GetObject", { qId: objectId });
+      const objectHandle = (objectResult.qReturn as { qHandle?: number } | undefined)?.qHandle;
+      if (typeof objectHandle !== "number") throw new Error(`Qlik Engine: objeto “${objectId}” não encontrado.`);
+      const layoutResult = await call(objectHandle, "GetLayout");
+      const layout = (layoutResult.qLayout as { qHyperCube?: HyperCubeLayout } | undefined)?.qHyperCube;
+      if (!layout?.qSize) throw new Error(`Qlik Engine: o objeto “${objectId}” não contém uma tabela.`);
+
+      const headers = [
+        ...(layout.qDimensionInfo || []).map((item) => item.qFallbackTitle || ""),
+        ...(layout.qMeasureInfo || []).map((item) => item.qFallbackTitle || ""),
+      ];
+      const columnCount = layout.qSize.qcx || headers.length;
+      const rowCount = layout.qSize.qcy || 0;
+      if (!columnCount) throw new Error(`Qlik Engine: a tabela “${objectId}” não contém colunas.`);
+      const rows: string[][] = [];
+      const pageHeight = Math.max(1, Math.min(1_000, Math.floor(10_000 / columnCount)));
+      for (let top = 0; top < rowCount; top += pageHeight) {
+        const dataResult = await call(objectHandle, "GetHyperCubeData", {
+          qPath: "/qHyperCubeDef",
+          qPages: [{
+            qTop: top,
+            qLeft: 0,
+            qHeight: Math.min(pageHeight, rowCount - top),
+            qWidth: columnCount,
+          }],
+        });
+        const pages = dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined;
+        for (const matrixRow of pages?.[0]?.qMatrix || []) {
+          rows.push(matrixRow.map((cell) => cell.qText ?? (Number.isFinite(cell.qNum) ? String(cell.qNum) : "")));
+        }
+      }
+      return {
+        headers,
+        rows,
+        selections: Object.fromEntries(filters.map((filter) => [filter.field, filter.value])),
+      };
+    } finally {
+      socket.close(1000, "completed");
     }
-  }, filters.map((filter) => ({ ...filter })));
-}
-
-async function readSelections(page: Page, filters: QlikCloudTableOptions["filters"]) {
-  await page.waitForFunction((filters) => filters.every((filter) => {
-    const item = document.querySelector(`[data-tid="current-selections-item"][data-csid="${CSS.escape(filter.field)}"]`);
-    return item?.querySelector("[tid='current-selection-item-text']")?.textContent?.trim();
-  }), { timeout: 60_000 }, filters);
-
-  return page.evaluate((filters) => Object.fromEntries(filters.map((filter) => {
-    const item = document.querySelector(`[data-tid="current-selections-item"][data-csid="${CSS.escape(filter.field)}"]`);
-    const value = item?.querySelector("[tid='current-selection-item-text']")?.textContent?.trim() || "";
-    return [filter.field, value];
-  })), filters);
-}
-
-async function readTable(page: Page, objectId: string): Promise<Pick<QlikTableSnapshot, "headers" | "rows">> {
-  const objectSelector = `.qv-object-${objectId}`;
-  await page.waitForSelector(objectSelector, { visible: true, timeout: 120_000 });
-  await page.waitForSelector(`${objectSelector} tr[data-tid='qv-st-row']`, { visible: true, timeout: 60_000 });
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-
-  return page.$eval(objectSelector, (element, id) => {
-    const headerElements = Array.from(element.querySelectorAll<HTMLElement>(`th[id^="${CSS.escape(id)}-header-"]`));
-    const indexedHeaders = headerElements.map((header) => {
-      const match = header.id.match(/-header-(\d+)$/);
-      const title = header.querySelector<HTMLElement>(".qv-st-header-cell-title")?.innerText || header.innerText;
-      return { index: match ? Number(match[1]) : Number.MAX_SAFE_INTEGER, title: title.trim() };
-    }).sort((a, b) => a.index - b.index);
-
-    const rows = Array.from(element.querySelectorAll("tr[data-tid='qv-st-row']")).map((row) => (
-      Array.from(row.querySelectorAll<HTMLElement>("td[data-tid='qv-st-cell']")).map((cell) => (
-        (cell.querySelector<HTMLElement>(".qv-st-value-overflow")?.innerText || cell.innerText).trim()
-      ))
-    ));
-    return { headers: indexedHeaders.map((header) => header.title), rows };
-  }, objectId);
+  }, {
+    appId,
+    objectId,
+    filters: filters.map((filter) => ({ ...filter })),
+  });
 }
 
 async function launchBrowser(): Promise<Browser> {
@@ -313,11 +394,10 @@ export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Prom
     await page.emulateTimezone("America/Sao_Paulo");
     await page.goto(options.sheetUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
     await authenticateIfNeeded(page, options);
-    await page.waitForSelector(QLIK_READY_SELECTOR, { visible: true, timeout: 120_000 });
-    await applySelections(page, options.filters);
-    const selections = await readSelections(page, options.filters);
-    const table = await readTable(page, options.objectId);
-    return { ...table, selections };
+    await page.waitForFunction(() => !window.location.hostname.startsWith("login.") && /\/sense\/app\//i.test(window.location.pathname), {
+      timeout: 120_000,
+    });
+    return readQlikEngineSnapshot(page, extractQlikAppId(options.sheetUrl), options.objectId, options.filters);
   } finally {
     await browser.close();
   }
