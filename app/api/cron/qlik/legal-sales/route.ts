@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import type { QlikMetricSnapshot } from "@/lib/qlik-cloud";
 import {
   QLIK_LEGAL_SALES_APPS,
   QLIK_LEGAL_SALES_AREA,
   QLIK_LEGAL_SALES_CONNECTION_SLUG,
   QLIK_LEGAL_SALES_METRIC_KEYS,
+  QLIK_LEGAL_SALES_SCRAPE_BATCHES,
   QLIK_LEGAL_SALES_SOURCE,
   saoPauloYearMonth,
   toLegalSalesIndicatorRows,
@@ -19,6 +21,11 @@ function safeError(error: unknown) {
   if (!(error instanceof Error)) return "Falha inesperada sem mensagem técnica.";
   const code = "code" in error && typeof error.code === "string" ? ` [${error.code}]` : "";
   return `${error.name}${code}: ${error.message}`.slice(0, 2_500);
+}
+
+function isRecoverableBrowserClosure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /target closed|session closed|browser (?:has )?disconnected|connection closed|protocol error.*closed/i.test(message);
 }
 
 export async function GET(request: Request) {
@@ -80,16 +87,36 @@ export async function GET(request: Request) {
     .eq("slug", QLIK_LEGAL_SALES_CONNECTION_SLUG);
 
   let phase = "load-browser-runtime";
+  const completedBatches: string[][] = [];
+  const recoveredBatches: string[][] = [];
   try {
     const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
-    phase = "open-qlik-apps-and-read-indicators";
-    const rawSnapshots = await scrapeQlikCloudMetrics({
-      username,
-      password,
-      apps: QLIK_LEGAL_SALES_APPS,
-      year,
-      throughMonth: month,
-    });
+    const rawSnapshots: QlikMetricSnapshot[] = [];
+    for (const [batchIndex, app] of QLIK_LEGAL_SALES_SCRAPE_BATCHES.entries()) {
+      const metricKeys = app.metrics.map((metric) => metric.metricKey);
+      phase = `open-qlik-apps-and-read-indicators:batch-${batchIndex + 1}-of-${QLIK_LEGAL_SALES_SCRAPE_BATCHES.length}`;
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          rawSnapshots.push(...await scrapeQlikCloudMetrics({
+            username,
+            password,
+            apps: [app],
+            year,
+            throughMonth: month,
+          }));
+          completedBatches.push(metricKeys);
+          if (attempt === 2) recoveredBatches.push(metricKeys);
+          break;
+        } catch (error) {
+          if (attempt === 2 || !isRecoverableBrowserClosure(error)) throw error;
+          console.warn("Chromium encerrou o lote da carga Qlik; iniciando uma sessão limpa.", {
+            batch: batchIndex + 1,
+            metrics: metricKeys,
+          });
+        }
+      }
+    }
     phase = "validate-eight-indicators";
     const snapshots = validateLegalSalesSnapshots(rawSnapshots);
     const synchronizedAt = new Date().toISOString();
@@ -124,6 +151,8 @@ export async function GET(request: Request) {
           year,
           through_month: month,
           metrics: objects,
+          batches: completedBatches,
+          recovered_batches: recoveredBatches,
           duration_ms: Date.now() - startedAt,
         },
       }).eq("id", run.id),
@@ -160,6 +189,8 @@ export async function GET(request: Request) {
       ])),
       rows_read: snapshots.length,
       rows_written: Number(written) || rows.length,
+      batches: completedBatches.length,
+      recovered_batches: recoveredBatches,
       duration_ms: Date.now() - startedAt,
     });
   } catch (error) {
@@ -175,7 +206,14 @@ export async function GET(request: Request) {
         status: "error",
         error_message: message,
         finished_at: finishedAt,
-        details: { phase, year, through_month: month, duration_ms: Date.now() - startedAt },
+        details: {
+          phase,
+          year,
+          through_month: month,
+          completed_batches: completedBatches,
+          recovered_batches: recoveredBatches,
+          duration_ms: Date.now() - startedAt,
+        },
       }).eq("id", run.id),
       supabase.from("data_connections").update({
         last_error_at: finishedAt,
