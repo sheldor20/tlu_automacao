@@ -15,6 +15,7 @@ const monthly = new Set([
   "vendas_mes",
   "distratos_mes",
   "unidades_quitadas",
+  "unidades_sem_processo",
   "unidades_autorizadas_escrituracao",
 ]);
 
@@ -53,15 +54,19 @@ test("usa os campos de data reais para vendas e distratos", () => {
   assert.deepEqual([distratos?.periodStrategy, distratos?.dateField], ["date-field", "Data Distrato Venda"]);
 });
 
-test("monta o histórico acumulado de quitadas e autorizadas pelos campos de data", () => {
+test("consulta quitadas, sem processo e autorizadas no último dia disponível de cada mês", () => {
   const metrics = QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics);
   const quitadas = metrics.find((metric) => metric.metricKey === "unidades_quitadas");
+  const semProcesso = metrics.find((metric) => metric.metricKey === "unidades_sem_processo");
   const autorizadas = metrics.find((metric) => metric.metricKey === "unidades_autorizadas_escrituracao");
-  assert.deepEqual([quitadas?.periodStrategy, quitadas?.dateField], ["date-through-month", "Último Recebimento"]);
-  assert.deepEqual([autorizadas?.periodStrategy, autorizadas?.dateField], ["date-through-month", "Data Autorização Escritura"]);
+  for (const metric of [quitadas, semProcesso, autorizadas]) {
+    assert.equal(metric?.periodStrategy, "date-last-day");
+    assert.equal(metric?.dateField, "Data Posição");
+    assert.equal(metric?.exactDateField, true);
+  }
 });
 
-test("exige as cinco séries mensais, mantém posições atuais e deriva sem processo no histórico", () => {
+test("exige as seis séries mensais e mantém somente as demais posições como atuais", () => {
   const snapshots = createSnapshots();
   const validated = validateLegalSalesSnapshots(snapshots, now);
   assert.equal(validated.length, 50);

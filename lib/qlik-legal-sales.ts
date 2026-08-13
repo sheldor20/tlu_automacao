@@ -5,6 +5,37 @@ export const QLIK_LEGAL_SALES_SOURCE = "Qlik Cloud - Vendas e Escrituração";
 export const QLIK_LEGAL_SALES_AREA = "juridico-vendas-cobranca";
 
 const QLIK_TENANT = "https://terralotusurbanismo.us.qlikcloud.com";
+const POSITION_DATE_FIELDS = [
+  "Data Posição",
+  "Data Posicao",
+  "Data de Posição",
+  "Data de Posicao",
+  "Data da Posição",
+  "Data da Posicao",
+  "Data Referência",
+  "Data Referencia",
+  "Data de Referência",
+  "Data de Referencia",
+  "Data Competência",
+  "Data Competencia",
+  "Data Fechamento",
+  "Data Histórico",
+  "Data Historico",
+  "Data.Calendário.Data",
+  "Data.Calendario.Data",
+  "Calendário.Data",
+  "Calendario.Data",
+  "Data.autoCalendar.Date",
+  "Data",
+] as const;
+
+const monthEndPosition = {
+  mode: "monthly" as const,
+  periodStrategy: "date-last-day" as const,
+  dateField: POSITION_DATE_FIELDS[0],
+  dateFieldCandidates: POSITION_DATE_FIELDS.slice(1),
+  exactDateField: true,
+};
 
 export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
   {
@@ -44,27 +75,21 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
         sheetId: "cdc4d2c1-2344-49c8-a279-2b390061fa06",
         targetLabel: "Vendas quitadas",
         aliases: ["Unidades quitadas"],
-        mode: "monthly",
-        periodStrategy: "date-through-month",
-        dateField: "Último Recebimento",
-        dateFieldCandidates: ["Ultimo Recebimento", "Data Último Recebimento", "Data Ultimo Recebimento"],
+        ...monthEndPosition,
       },
       {
         metricKey: "unidades_sem_processo",
         sheetId: "b6e58857-ecec-46f7-bda7-e64bdc60a656",
         targetLabel: "Vendas sem proc escrituração",
         aliases: ["Vendas sem proc escrituracao", "Vendas sem processo de escrituração", "Sem processo"],
-        mode: "snapshot",
+        ...monthEndPosition,
       },
       {
         metricKey: "unidades_autorizadas_escrituracao",
         sheetId: "626f7856-4a17-40ee-bf06-2896e76c6083",
         targetLabel: "Vendas com aut de escritura",
         aliases: ["Vendas com autorização de escritura", "Autorizadas para escrituração"],
-        mode: "monthly",
-        periodStrategy: "date-through-month",
-        dateField: "Data Autorização Escritura",
-        dateFieldCandidates: ["Data Autorizacao Escritura"],
+        ...monthEndPosition,
       },
       {
         metricKey: "unidades_escrituracao_sem_registro",
@@ -114,25 +139,6 @@ export function validateLegalSalesSnapshots(snapshots: QlikMetricSnapshot[], now
   const modes = metricModes();
   const expectedKeys = new Set(QLIK_LEGAL_SALES_METRIC_KEYS);
   const enriched = snapshots.slice();
-  const byMetricMonth = new Map(enriched.map((snapshot) => [`${snapshot.metricKey}:${snapshot.referenceMonth}`, snapshot]));
-
-  for (const referenceMonth of expectedMonths.slice(0, -1)) {
-    const quitadas = byMetricMonth.get(`unidades_quitadas:${referenceMonth}`);
-    const autorizadas = byMetricMonth.get(`unidades_autorizadas_escrituracao:${referenceMonth}`);
-    const identity = `unidades_sem_processo:${referenceMonth}`;
-    if (quitadas && autorizadas && !byMetricMonth.has(identity)) {
-      enriched.push({
-        ...quitadas,
-        metricKey: "unidades_sem_processo",
-        targetLabel: "Vendas sem processo (histórico derivado)",
-        value: Math.max(quitadas.value - autorizadas.value, 0),
-        selections: {
-          cálculo: "unidades quitadas acumuladas - unidades autorizadas acumuladas",
-          competência: referenceMonth,
-        },
-      });
-    }
-  }
   const seen = new Set<string>();
 
   for (const snapshot of enriched) {

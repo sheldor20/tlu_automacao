@@ -25,6 +25,7 @@ export type QlikCloudMetricDefinition = {
   periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-last-day";
   dateField?: string;
   dateFieldCandidates?: ReadonlyArray<string>;
+  exactDateField?: boolean;
   filters?: ReadonlyArray<QlikCloudMetricFilter>;
 };
 
@@ -753,6 +754,19 @@ async function readQlikEngineMetrics(
         return found;
       };
 
+      const findExactField = (candidates: string[], kind: string) => {
+        const normalizedCandidates = new Set(candidates.map(normalize));
+        const found = fieldNames.find((field) => normalizedCandidates.has(normalize(field)));
+        if (!found) {
+          const availableDateFields = fieldNames.filter((field) => /data|posi|compet|refer/i.test(normalize(field)));
+          throw new Error(
+            `Qlik Engine: campo exato de ${kind} não encontrado. Candidatos: ${candidates.join(", ")}. `
+            + `Campos de data/posição disponíveis: ${availableDateFields.slice(0, 160).join(" | ") || "nenhum"}.`,
+          );
+        }
+        return found;
+      };
+
       const needsMonthlyFilters = metrics.some((metric) => (
         metric.mode === "monthly" && (!metric.periodStrategy || metric.periodStrategy === "filters")
       ));
@@ -1132,7 +1146,10 @@ async function readQlikEngineMetrics(
       ));
       const dateFields = new Map(dateFieldMetrics.map((metric) => {
         if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
-        return [metric.metricKey, findField([metric.dateField, ...(metric.dateFieldCandidates || [])], `data de ${metric.targetLabel}`)];
+        const candidates = [metric.dateField, ...(metric.dateFieldCandidates || [])];
+        return [metric.metricKey, metric.exactDateField
+          ? findExactField(candidates, `data de ${metric.targetLabel}`)
+          : findField(candidates, `data de ${metric.targetLabel}`)];
       }));
       const dateValues = new Map<string, FieldValue[]>();
       for (const fieldName of new Set(dateFields.values())) {

@@ -54,13 +54,18 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   assert.equal(expenseBreakdown?.objectId, "HgngyL");
 });
 
-test("exige todos os meses e calcula o resultado gerencial mês a mês", () => {
+test("exige todos os meses e calcula resultado e caixa disponível mês a mês", () => {
   const result = validateFinanceSnapshots(createSnapshots(), now);
-  assert.equal(result.length, 58);
+  assert.equal(result.length, 66);
   const august = result.find((item) => item.metricKey === "resultado_gerencial" && item.referenceMonth === "2026-08-01");
   const revenue = result.find((item) => item.metricKey === "receita_consolidada" && item.referenceMonth === "2026-08-01")!;
   const expense = result.find((item) => item.metricKey === "despesa_consolidada" && item.referenceMonth === "2026-08-01")!;
   assert.equal(august?.value, revenue.value - expense.value);
+  const availableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-08-01");
+  const cash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-08-01")!;
+  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-08-01")!;
+  assert.equal(availableCash?.value, cash.value - rentalCash.value);
+  assert.equal(availableCash?.selections.cálculo, "valor em caixa - saldo da conta de aluguéis");
 });
 
 test("recusa a carga inteira quando falta uma competência financeira", () => {
@@ -75,5 +80,6 @@ test("mapeia aluguéis para Finanças e Compras e consolidados para Empresa", ()
   const rows = toFinanceIndicatorRows(validateFinanceSnapshots(createSnapshots(), now), "2026-08-13T15:00:00.000Z");
   assert.equal(rows.find((row) => row.metric_key === "saldo_conta_alugueis")?.area, "financas-compras");
   assert.equal(rows.find((row) => row.metric_key === "receita_consolidada")?.area, "empresa");
+  assert.equal(rows.find((row) => row.metric_key === "caixa_disponivel")?.area, "empresa");
   assert.equal(rows.find((row) => row.metric_key === "receita_plano_contas")?.dimension_label, "Conta teste");
 });

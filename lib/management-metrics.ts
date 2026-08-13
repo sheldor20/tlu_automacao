@@ -7,7 +7,6 @@ export type DeedTractionPoint = {
 
 type DeedTractionInput = {
   semProcessoInformado: Array<number | null>;
-  quitadas: Array<number | null>;
   autorizadas: Array<number | null>;
 };
 
@@ -18,17 +17,13 @@ export function sumMetricSeries(values: Array<number | null>) {
 
 export function buildDeedTractionHistory({
   semProcessoInformado,
-  quitadas,
   autorizadas,
 }: DeedTractionInput): DeedTractionPoint[] {
-  const length = Math.max(semProcessoInformado.length, quitadas.length, autorizadas.length);
+  const length = Math.max(semProcessoInformado.length, autorizadas.length);
 
   return Array.from({ length }, (_, index) => {
     const autorizadasNoMes = autorizadas[index] ?? null;
-    const semProcessoNoMes = semProcessoInformado[index]
-      ?? (quitadas[index] !== null && quitadas[index] !== undefined && autorizadasNoMes !== null
-        ? Math.max(quitadas[index]! - autorizadasNoMes, 0)
-        : null);
+    const semProcessoNoMes = semProcessoInformado[index] ?? null;
     const base = semProcessoNoMes !== null && autorizadasNoMes !== null
       ? semProcessoNoMes + autorizadasNoMes
       : 0;

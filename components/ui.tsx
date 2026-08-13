@@ -100,15 +100,17 @@ export function KpiCard({
   helper,
   icon,
   tone = "default",
+  className = "",
 }: {
   label: string;
   value: string;
   helper?: string;
   icon?: ReactNode;
   tone?: "default" | "success" | "warning";
+  className?: string;
 }) {
   return (
-    <article className={`kpi-card kpi-${tone}`}>
+    <article className={`kpi-card kpi-${tone} ${className}`.trim()}>
       <div className="kpi-top">
         <span>{label}</span>
         {icon ? <span className="kpi-icon">{icon}</span> : null}
