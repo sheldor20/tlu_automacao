@@ -7,24 +7,22 @@ test("soma somente competências disponíveis e preserva ausência total", () =>
   assert.equal(sumMetricSeries([null, null]), null);
 });
 
-test("recompõe os meses sem posição informada usando quitadas menos autorizadas", () => {
+test("usa somente as posições mensais informadas pelo Qlik", () => {
   const history = buildDeedTractionHistory({
     semProcessoInformado: [null, null, 70],
-    quitadas: [100, 110, 120],
     autorizadas: [10, 20, 30],
   });
 
-  assert.deepEqual(history.map((point) => point.semProcesso), [90, 90, 70]);
+  assert.deepEqual(history.map((point) => point.semProcesso), [null, null, 70]);
   assert.deepEqual(history.map((point) => point.autorizadas), [10, 20, 30]);
-  assert.equal(history[0].taxa, 10);
-  assert.equal(history[1].taxa, 20 / 110 * 100);
+  assert.equal(history[0].taxa, null);
+  assert.equal(history[1].taxa, null);
   assert.equal(history[2].taxa, 30);
 });
 
 test("calcula a variação mensal em pontos percentuais sem inventar mês ausente", () => {
   const history = buildDeedTractionHistory({
     semProcessoInformado: [90, null, 70],
-    quitadas: [100, null, 100],
     autorizadas: [10, null, 30],
   });
 

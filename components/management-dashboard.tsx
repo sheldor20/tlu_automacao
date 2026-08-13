@@ -524,13 +524,24 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   const previousRevenue = previousMonth ? metricValueForMonth("receita_consolidada", previousMonth.key) : null;
   const previousExpense = previousMonth ? metricValueForMonth("despesa_consolidada", previousMonth.key) : null;
   const previousResult = previousMonth ? metricValueForMonth("resultado_gerencial", previousMonth.key) ?? (previousRevenue !== null && previousExpense !== null ? previousRevenue - previousExpense : null) : null;
+  const cash = metricValue("valor_caixa");
+  const availableCash = metricValue("caixa_disponivel");
+  const rentalCash = cash !== null && availableCash !== null ? cash - availableCash : null;
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
         <KpiCard label="Receita consolidada" value={revenue === null ? "—" : currency(revenue, true)} helper="acumulado no ano vigente" icon={<BadgeDollarSign size={17} />} />
         <KpiCard label="Despesas consolidadas" value={expense === null ? "—" : currency(expense, true)} helper="acumulado no ano vigente" icon={<WalletCards size={17} />} />
         <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={reportedResult === null && result !== null ? "calculado por receita menos despesas" : metricHelper("resultado_gerencial")} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
-        <KpiCard label="Valor em caixa" value={metricValue("valor_caixa") === null ? "—" : currency(metricValue("valor_caixa") || 0, true)} helper={`${metricHelper("valor_caixa")} · disponível para uso após descontar o saldo da conta de aluguéis`} icon={<Landmark size={17} />} />
+        <KpiCard
+          label="Valor em caixa disponível"
+          value={availableCash === null ? "—" : currency(availableCash)}
+          helper={cash === null || rentalCash === null
+            ? "caixa total menos a conta de aluguéis"
+            : `${currency(cash)} em caixa − ${currency(rentalCash)} da conta de aluguéis · ${metricHelper("caixa_disponivel")}`}
+          icon={<Landmark size={17} />}
+          className="management-kpi-full-money"
+        />
       </section>
       <section className="management-closed-month-summary">
         <div><span>Fechamento · {previousMonth?.label || "mês anterior"}</span><strong>Resultado do mês anterior</strong></div>
@@ -562,7 +573,6 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
   ] as const;
   const tractionHistory = buildDeedTractionHistory({
     semProcessoInformado: seriesFor("unidades_sem_processo"),
-    quitadas: seriesFor("unidades_quitadas"),
     autorizadas: seriesFor("unidades_autorizadas_escrituracao"),
   });
   const latestTractionIndex = tractionHistory.reduce((latest, point, index) => point.taxa === null ? latest : index, -1);
@@ -635,7 +645,7 @@ function FinancePurchasingView({ metricValueForMonth, seriesFor, months }: Metri
         <KpiCard label="Saldo da conta de aluguéis" value={closedValue("saldo_conta_alugueis") === null ? "—" : currency(closedValue("saldo_conta_alugueis") || 0, true)} helper={closedHelper} icon={<Landmark size={17} />} />
         <KpiCard label="Recebido no mês (Aluguel)" value={closedValue("receita_alugueis_mes") === null ? "—" : currency(closedValue("receita_alugueis_mes") || 0, true)} helper={closedHelper} tone="success" icon={<BadgeDollarSign size={17} />} />
         <KpiCard label="Gasto no mês (Aluguel)" value={closedValue("despesa_alugueis_mes") === null ? "—" : currency(closedValue("despesa_alugueis_mes") || 0, true)} helper={closedHelper} icon={<WalletCards size={17} />} />
-        <KpiCard label="Custo evitado total" value={avoidedCostTotal === null ? "—" : currency(avoidedCostTotal, true)} helper="acumulado no ano vigente" tone="success" icon={<HandCoins size={17} />} />
+        <KpiCard label="Custo evitado total" value={avoidedCostTotal === null ? "—" : currency(avoidedCostTotal)} helper="soma de todo o valor evitado no ano vigente" tone="success" icon={<HandCoins size={17} />} className="management-kpi-full-money" />
       </section>
       <section className="management-three-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Valor apurado em cada competência.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: avoidedCostSeries }]} /></article>
