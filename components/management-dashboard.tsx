@@ -534,13 +534,16 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
         <KpiCard label="Despesas consolidadas" value={expense === null ? "—" : currency(expense, true)} helper="acumulado no ano vigente" icon={<WalletCards size={17} />} />
         <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={reportedResult === null && result !== null ? "calculado por receita menos despesas" : metricHelper("resultado_gerencial")} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
         <KpiCard
-          label="Valor em caixa disponível"
-          value={availableCash === null ? "—" : currency(availableCash)}
-          helper={cash === null || rentalCash === null
-            ? "caixa total menos a conta de aluguéis"
-            : `${currency(cash)} em caixa − ${currency(rentalCash)} da conta de aluguéis · ${metricHelper("caixa_disponivel")}`}
+          label="Valor total em caixa"
+          value={cash === null ? "—" : currency(cash)}
+          helper={cash === null || rentalCash === null || availableCash === null
+            ? "aguardando o saldo da conta de aluguéis para calcular o disponível"
+            : <span className="management-cash-helper">
+                <span>Disponível para uso: <strong>{currency(availableCash)}</strong></span>
+                <span>{currency(cash)} total − {currency(rentalCash)} aluguéis · {metricHelper("valor_caixa")}</span>
+              </span>}
           icon={<Landmark size={17} />}
-          className="management-kpi-full-money"
+          className="management-kpi-full-money management-cash-total-card"
         />
       </section>
       <section className="management-closed-month-summary">

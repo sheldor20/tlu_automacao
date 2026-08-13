@@ -104,7 +104,7 @@ export function KpiCard({
 }: {
   label: string;
   value: string;
-  helper?: string;
+  helper?: ReactNode;
   icon?: ReactNode;
   tone?: "default" | "success" | "warning";
   className?: string;
