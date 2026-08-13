@@ -21,6 +21,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 10. `migrations/20260812240000_indicator_access_by_area.sql`
 11. `migrations/20260812250000_data_connections_and_qlik_delinquency.sql`
 12. `migrations/20260813110000_qlik_legal_sales_connection.sql`
+13. `migrations/20260813150000_qlik_finance_and_climate.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -48,6 +49,8 @@ Esse SQL cria:
 - acesso individual às seis visões de Indicadores, protegido também por RLS.
 - catálogo de conexões externas e histórico auditável das cargas do Qlik Cloud;
 - conexão semanal de estoque, vendas, distratos e posições de escrituração.
+- conexão semanal de saldos, receitas, despesas e planos de contas do Qlik Financeiro;
+- carga inicial idempotente da pesquisa de clima com nota 6,9.
 
 ## 2. Alimentar os indicadores gerenciais
 
@@ -95,7 +98,7 @@ Use somente a chave pública (`anon`/publishable) no `NEXT_PUBLIC_*`. A chave
 `service_role` é usada somente pelo endpoint protegido do servidor para criar
 usuários. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável.
 
-Para as cargas de inadimplência, vendas e escrituração, adicione também em **Production**:
+Para as cargas de inadimplência, vendas, escrituração e financeiro, adicione também em **Production**:
 
 ```env
 CRON_SECRET=um-segredo-longo-e-aleatorio

@@ -130,8 +130,10 @@ Qlik e alimenta oito indicadores da visão **Jurídico, Vendas e Cobrança**:
 
 - estoque mensal de unidades disponíveis;
 - vendas e distratos mensais;
-- posições atuais de unidades quitadas, sem processo, autorizadas para
-  escrituração, em escrituração sem registro e registradas.
+- histórico acumulado de unidades quitadas e autorizadas, com a série de
+  unidades sem processo derivada por competência;
+- posições atuais de unidades sem processo, em escrituração sem registro e
+  registradas.
 
 A carga localiza cada visualização pelo título e pelos nomes das medidas dentro
 da planilha, aplica os campos de ano e mês de janeiro até o mês vigente e valida
@@ -157,7 +159,47 @@ unset CRON_SECRET
 ```
 
 O JSON de sucesso traz `current` com os oito valores vigentes, `series` com os
-meses de estoque, vendas e distratos, além do total de linhas lidas e gravadas.
+meses de estoque, vendas, distratos, quitadas, sem processo e autorizadas, além
+do total de linhas lidas e gravadas.
+
+## Sincronização financeira no Qlik Cloud
+
+O endpoint `/api/cron/qlik/finance` reutiliza a autenticação protegida do Qlik
+e alimenta as visões **Empresa** e **Finanças e Compras**. A carga aplica os
+recortes de grupo, conta bancária, plano de contas e fluxo financeiro de cada
+indicador, percorre de janeiro ao mês vigente e grava:
+
+- saldo da conta de aluguéis, recebimentos e gastos de aluguel;
+- receitas, despesas, resultado gerencial e caixa mensais;
+- composição de receitas e despesas por plano de contas no mês anterior
+  fechado.
+
+Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
+resultado gerencial continua mensal e é calculado por receita menos despesa. A
+posição de saldo e caixa preserva no metadado a última data encontrada no mês.
+
+Não há novas variáveis de ambiente: são reutilizadas `QLIK_USERNAME`,
+`QLIK_PASSWORD`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` e
+`NEXT_PUBLIC_SUPABASE_URL`. O cron roda às segundas-feiras, 11:30 UTC (08:30 em
+Brasília), depois das outras cargas do Qlik.
+
+Depois do merge e do deploy, execute a migration
+`20260813150000_qlik_finance_and_climate.sql` no SQL Editor do Supabase. Ela
+também grava de forma idempotente a nota atual de clima `6,9`. Em seguida,
+dispare a primeira carga no Terminal do Mac:
+
+```bash
+read -s "CRON_SECRET?CRON_SECRET: "; echo
+curl --fail-with-body \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  "https://www.terralotus.space/api/cron/qlik/finance"
+unset CRON_SECRET
+```
+
+Se algum nome de campo ou visualização do aplicativo financeiro for diferente,
+o retorno informa a etapa, os candidatos procurados e os campos ou valores
+disponíveis no Qlik; nesse caso, envie o JSON completo para ajustar o mapeamento
+sem substituir a última carga válida.
 
 ## Segurança
 
