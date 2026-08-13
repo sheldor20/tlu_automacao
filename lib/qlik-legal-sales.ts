@@ -15,6 +15,7 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
       targetLabel: "Estoque disponível",
       aliases: ["Estoque disponivel", "Unidades disponíveis", "Unidades disponiveis"],
       mode: "monthly",
+      periodStrategy: "series",
     }],
   },
   {
