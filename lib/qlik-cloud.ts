@@ -22,7 +22,7 @@ export type QlikCloudMetricDefinition = {
   targetLabel: string;
   aliases?: ReadonlyArray<string>;
   mode: "monthly" | "snapshot" | "breakdown";
-  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-last-day";
+  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-last-day" | "date-last-business-day";
   dateField?: string;
   dateFieldCandidates?: ReadonlyArray<string>;
   exactDateField?: boolean;
@@ -1142,7 +1142,7 @@ async function readQlikEngineMetrics(
       }
 
       const dateFieldMetrics = metrics.filter((metric) => (
-        metric.mode === "monthly" && ["date-field", "date-through-month", "date-last-day"].includes(metric.periodStrategy || "")
+        metric.mode === "monthly" && ["date-field", "date-through-month", "date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "")
       ));
       const dateFields = new Map(dateFieldMetrics.map((metric) => {
         if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
@@ -1169,9 +1169,11 @@ async function readQlikEngineMetrics(
             if (metric.periodStrategy === "date-through-month") {
               return date.getTime() < Date.UTC(year, month, 1);
             }
-            return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
+            const belongsToMonth = date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
+            if (metric.periodStrategy !== "date-last-business-day") return belongsToMonth;
+            return belongsToMonth && date.getUTCDay() >= 1 && date.getUTCDay() <= 5;
           });
-          if (metric.periodStrategy === "date-last-day" && matchingDates.length) {
+          if (["date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "") && matchingDates.length) {
             const latestTimestamp = Math.max(...matchingDates.map(fieldValueDate).filter((date): date is Date => Boolean(date)).map((date) => date.getTime()));
             matchingDates = matchingDates.filter((value) => fieldValueDate(value)?.getTime() === latestTimestamp);
           }
@@ -1204,6 +1206,8 @@ async function readQlikEngineMetrics(
               ? `até o fim de ${referenceMonth} (${matchingDates.length} datas)`
               : metric.periodStrategy === "date-last-day"
                 ? `último dia disponível de ${referenceMonth} (${matchingDates.length} valor(es))`
+                : metric.periodStrategy === "date-last-business-day"
+                  ? `último dia útil disponível de ${referenceMonth} (${matchingDates.length} valor(es))`
                 : `${referenceMonth} (${matchingDates.length} datas)`,
             ...(lastSelectedDate ? { reference_date: lastSelectedDate } : {}),
           }));
