@@ -22,7 +22,7 @@ export type QlikCloudMetricDefinition = {
   targetLabel: string;
   aliases?: ReadonlyArray<string>;
   mode: "monthly" | "snapshot" | "breakdown";
-  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-last-day" | "date-last-business-day";
+  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-through-business-day" | "date-last-day" | "date-last-business-day";
   dateField?: string;
   dateFieldCandidates?: ReadonlyArray<string>;
   exactDateField?: boolean;
@@ -1142,7 +1142,7 @@ async function readQlikEngineMetrics(
       }
 
       const dateFieldMetrics = metrics.filter((metric) => (
-        metric.mode === "monthly" && ["date-field", "date-through-month", "date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "")
+        metric.mode === "monthly" && ["date-field", "date-through-month", "date-through-business-day", "date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "")
       ));
       const dateFields = new Map(dateFieldMetrics.map((metric) => {
         if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
@@ -1166,8 +1166,10 @@ async function readQlikEngineMetrics(
           let matchingDates = (dateValues.get(fieldName) || []).filter((value) => {
             const date = fieldValueDate(value);
             if (!date) return false;
-            if (metric.periodStrategy === "date-through-month") {
-              return date.getTime() < Date.UTC(year, month, 1);
+            if (["date-through-month", "date-through-business-day"].includes(metric.periodStrategy || "")) {
+              const isThroughMonth = date.getTime() < Date.UTC(year, month, 1);
+              if (metric.periodStrategy !== "date-through-business-day") return isThroughMonth;
+              return isThroughMonth && date.getUTCDay() >= 1 && date.getUTCDay() <= 5;
             }
             const belongsToMonth = date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
             if (metric.periodStrategy !== "date-last-business-day") return belongsToMonth;
@@ -1204,6 +1206,8 @@ async function readQlikEngineMetrics(
             ...selections,
             [fieldName]: metric.periodStrategy === "date-through-month"
               ? `até o fim de ${referenceMonth} (${matchingDates.length} datas)`
+              : metric.periodStrategy === "date-through-business-day"
+                ? `posição acumulada até o último dia útil de ${referenceMonth} (${matchingDates.length} datas)`
               : metric.periodStrategy === "date-last-day"
                 ? `último dia disponível de ${referenceMonth} (${matchingDates.length} valor(es))`
                 : metric.periodStrategy === "date-last-business-day"
