@@ -8,7 +8,7 @@ import {
   QLIK_LEGAL_SALES_METRIC_KEYS,
   QLIK_LEGAL_SALES_SCRAPE_BATCHES,
   QLIK_LEGAL_SALES_SOURCE,
-  saoPauloYearMonth,
+  lastClosedSaoPauloYearMonth,
   toLegalSalesIndicatorRows,
   validateLegalSalesSnapshots,
 } from "@/lib/qlik-legal-sales";
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "A conexão Qlik de vendas está pausada no catálogo de conexões." }, { status: 409 });
   }
 
-  const { year, month } = saoPauloYearMonth();
+  const { year, month } = lastClosedSaoPauloYearMonth();
   const triggerSource = (request.headers.get("user-agent") || "").toLowerCase().includes("vercel-cron")
     ? "cron"
     : "api";
@@ -180,6 +180,8 @@ export async function GET(request: Request) {
         "unidades_quitadas",
         "unidades_sem_processo",
         "unidades_autorizadas_escrituracao",
+        "unidades_escrituracao_sem_registro",
+        "unidades_registradas",
       ].map((metricKey) => [
         metricKey,
         snapshots.filter((snapshot) => snapshot.metricKey === metricKey).map((snapshot) => ({
