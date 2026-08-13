@@ -4,6 +4,7 @@ import {
   legalSalesReferenceMonths,
   QLIK_LEGAL_SALES_APPS,
   QLIK_LEGAL_SALES_METRIC_KEYS,
+  QLIK_LEGAL_SALES_SCRAPE_BATCHES,
   toLegalSalesIndicatorRows,
   validateLegalSalesSnapshots,
 } from "../lib/qlik-legal-sales.ts";
@@ -52,6 +53,15 @@ test("usa os campos de data reais para vendas e distratos", () => {
   const distratos = metrics.find((metric) => metric.metricKey === "distratos_mes");
   assert.deepEqual([vendas?.periodStrategy, vendas?.dateField], ["date-field", "Data Venda"]);
   assert.deepEqual([distratos?.periodStrategy, distratos?.dateField], ["date-field", "Data Distrato Venda"]);
+});
+
+test("divide a leitura em sessões curtas sem perder ou duplicar indicadores", () => {
+  assert.ok(QLIK_LEGAL_SALES_SCRAPE_BATCHES.length > QLIK_LEGAL_SALES_APPS.length);
+  assert.ok(QLIK_LEGAL_SALES_SCRAPE_BATCHES.every((app) => app.metrics.length >= 1 && app.metrics.length <= 2));
+  assert.deepEqual(
+    QLIK_LEGAL_SALES_SCRAPE_BATCHES.flatMap((app) => app.metrics.map((metric) => metric.metricKey)).sort(),
+    [...QLIK_LEGAL_SALES_METRIC_KEYS].sort(),
+  );
 });
 
 test("consulta quitadas, sem processo e autorizadas no último dia disponível de cada mês", () => {
