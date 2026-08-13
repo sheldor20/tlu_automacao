@@ -43,6 +43,9 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   assert.ok(balance?.filters?.some((filter) => filter.contains?.includes("alguel")));
   assert.ok(revenue?.filters?.some((filter) => filter.contains?.includes("aluguel de imóveis")));
   assert.ok(expense?.filters?.some((filter) => filter.label.includes("fluxo financeiro")));
+  assert.equal(expense?.targetLabel, "Pagamentos 💰");
+  assert.ok(expense?.aliases?.includes("IN: Desembolso Financeiro"));
+  assert.ok(metrics.find((metric) => metric.metricKey === "despesa_plano_contas")?.aliases?.includes("Fluxo Financeiro"));
 });
 
 test("exige todos os meses e calcula o resultado gerencial mês a mês", () => {
