@@ -31,7 +31,7 @@ const POSITION_DATE_FIELDS = [
 
 const monthEndPosition = {
   mode: "monthly" as const,
-  periodStrategy: "date-last-business-day" as const,
+  periodStrategy: "date-through-business-day" as const,
   dateField: POSITION_DATE_FIELDS[0],
   dateFieldCandidates: POSITION_DATE_FIELDS.slice(1),
   exactDateField: true,
@@ -131,6 +131,14 @@ export const QLIK_LEGAL_SALES_SCRAPE_BATCHES: ReadonlyArray<QlikCloudMetricApp> 
 export const QLIK_LEGAL_SALES_METRIC_KEYS = QLIK_LEGAL_SALES_APPS
   .flatMap((app) => app.metrics.map((metric) => metric.metricKey));
 
+const QLIK_DEED_POSITION_METRIC_KEYS = [
+  "unidades_quitadas",
+  "unidades_sem_processo",
+  "unidades_autorizadas_escrituracao",
+  "unidades_escrituracao_sem_registro",
+  "unidades_registradas",
+] as const;
+
 export function saoPauloYearMonth(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en", {
     year: "numeric",
@@ -191,6 +199,17 @@ export function validateLegalSalesSnapshots(snapshots: QlikMetricSnapshot[], now
     }
   }
 
+  const closedReferenceMonth = expectedMonths.at(-1)!;
+  const closedDeedPositions = QLIK_DEED_POSITION_METRIC_KEYS.map((metricKey) => enriched.find((snapshot) => (
+    snapshot.metricKey === metricKey && snapshot.referenceMonth === closedReferenceMonth
+  ))?.value ?? 0);
+  if (closedDeedPositions.every((value) => value === 0)) {
+    throw new Error(
+      `Qlik: as cinco posições de unidades vieram zeradas no fechamento ${closedReferenceMonth}. `
+      + "A carga foi bloqueada para não substituir os totais válidos.",
+    );
+  }
+
   return enriched.sort((a, b) => (
     a.referenceMonth.localeCompare(b.referenceMonth) || a.metricKey.localeCompare(b.metricKey)
   ));
@@ -205,8 +224,10 @@ export function toLegalSalesIndicatorRows(snapshots: QlikMetricSnapshot[], synch
     dimension_label: null,
     value: snapshot.value,
     source: QLIK_LEGAL_SALES_SOURCE,
-    notes: snapshot.mode === "monthly"
-      ? "Valor mensal consultado no Qlik Cloud."
+    notes: QLIK_DEED_POSITION_METRIC_KEYS.includes(snapshot.metricKey as typeof QLIK_DEED_POSITION_METRIC_KEYS[number])
+      ? "Posição acumulada até o último dia útil disponível do mês no Qlik Cloud."
+      : snapshot.mode === "monthly"
+        ? "Valor mensal consultado no Qlik Cloud."
       : "Posição atual consultada no Qlik Cloud.",
     metadata: {
       connection: QLIK_LEGAL_SALES_CONNECTION_SLUG,
