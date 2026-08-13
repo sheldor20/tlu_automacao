@@ -27,6 +27,8 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
         targetLabel: "Vendas",
         aliases: ["Vendas no mês", "Vendas no mes"],
         mode: "monthly",
+        periodStrategy: "date-field",
+        dateField: "Data Venda",
       },
       {
         metricKey: "distratos_mes",
@@ -34,6 +36,8 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
         targetLabel: "Distratos",
         aliases: ["Distratos no mês", "Distratos no mes"],
         mode: "monthly",
+        periodStrategy: "date-field",
+        dateField: "Data Distrato Venda",
       },
       {
         metricKey: "unidades_quitadas",
