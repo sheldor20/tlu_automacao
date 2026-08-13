@@ -61,6 +61,9 @@ export default function ProjectDetailPage() {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [linkedBusinesses, setLinkedBusinesses] = useState<LinkedBusiness[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [fullAccess, setFullAccess] = useState(true);
+  const [allowFiles, setAllowFiles] = useState(true);
+  const [allowUpdates, setAllowUpdates] = useState(true);
   const [activeTab, setActiveTab] = useState<ProjectTab>(() => {
     if (typeof window === "undefined") return "resumo";
     const requested = new URLSearchParams(window.location.search).get("tab") as ProjectTab | null;
@@ -83,7 +86,9 @@ export default function ProjectDetailPage() {
   const loadData = useCallback(async (silent = false) => {
     if (!supabase || !params.id) return;
     if (!silent) setLoading(true);
-    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult] = await Promise.all([
+    const { data: currentAuth } = await supabase.auth.getUser();
+    const currentUserId = currentAuth.user?.id || "00000000-0000-0000-0000-000000000000";
+    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("project_tasks").select("*").eq("project_id", params.id).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
@@ -91,6 +96,8 @@ export default function ProjectDetailPage() {
       supabase.from("project_files").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("businesses").select("id,name,stage,potential_vgv").eq("project_id", params.id).order("updated_at", { ascending: false }),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
+      supabase.from("profiles").select("is_admin").eq("user_id", currentUserId).maybeSingle(),
+      supabase.from("profile_project_permissions").select("access_scope,allow_files,allow_updates").eq("user_id", currentUserId).maybeSingle(),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
@@ -112,6 +119,10 @@ export default function ProjectDetailPage() {
     setFiles(signedFiles);
     setLinkedBusinesses((businessResult.data || []) as LinkedBusiness[]);
     setUsers((userResult.data || []) as UserProfile[]);
+    const administrator = Boolean(profileResult.data?.is_admin);
+    setFullAccess(administrator || permissionResult.data?.access_scope !== "assigned_tasks");
+    setAllowFiles(administrator || permissionResult.data?.allow_files !== false);
+    setAllowUpdates(administrator || permissionResult.data?.allow_updates !== false);
     setLoading(false);
   }, [params.id, supabase]);
 
@@ -289,6 +300,9 @@ export default function ProjectDetailPage() {
   if (loading) return <div className="detail-loading">Carregando projeto…</div>;
   if (!project) return <EmptyState icon={<ListTodo size={22} />} title="Projeto não encontrado" description="Verifique se o registro ainda existe e tente novamente." />;
 
+  const visibleTabs = projectTabs.filter((tab) => (tab.key !== "arquivos" || allowFiles) && (tab.key !== "atualizacoes" || allowUpdates));
+  const visibleActiveTab = (!allowFiles && activeTab === "arquivos") || (!allowUpdates && activeTab === "atualizacoes") ? "tarefas" : activeTab;
+
   return (
     <>
       <Link href="/projetos" className="detail-back"><ArrowLeft size={16} /> Voltar para Projetos</Link>
@@ -307,24 +321,24 @@ export default function ProjectDetailPage() {
         <div className="project-progress-numbers"><span><CheckCircle2 size={15} /> {stats.completed} concluídas</span><span><Clock3 size={15} /> {tasks.length - stats.completed} abertas</span><span className={stats.overdue ? "text-danger" : ""}><AlertTriangle size={15} /> {stats.overdue} atrasadas</span></div>
       </section>
 
-      <DetailTabs tabs={projectTabs} active={activeTab} onChange={setActiveTab} />
+      <DetailTabs tabs={visibleTabs} active={visibleActiveTab} onChange={setActiveTab} />
 
-      {activeTab === "resumo" ? <div className="section-stack detail-tab-panel">
+      {visibleActiveTab === "resumo" ? <div className="section-stack detail-tab-panel">
       <section className="content-card">
         <div className="content-card-head"><div><h2>Dados gerais</h2><p>Responsável, prazo, objetivo e situação do projeto</p></div></div>
         <div className="content-card-body"><form className="form-grid" onSubmit={saveSummary}>
-          <Field label="Status"><select value={summaryForm.status} onChange={(event) => setSummaryForm({ ...summaryForm, status: event.target.value as Project["status"] })}><option value="planejamento">Planejamento</option><option value="ativo">Ativo</option><option value="pausado">Pausado</option><option value="concluido">Concluído</option></select></Field>
-          <Field label="Responsável"><select value={summaryForm.owner_user_id} onChange={(event) => setSummaryForm({ ...summaryForm, owner_user_id: event.target.value })} required>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}</select></Field>
-          <Field label="Data de início"><input type="date" value={summaryForm.start_date} onChange={(event) => setSummaryForm({ ...summaryForm, start_date: event.target.value })} required /></Field>
-          <Field label="Previsão de fim"><input type="date" min={summaryForm.start_date} value={summaryForm.end_date} onChange={(event) => setSummaryForm({ ...summaryForm, end_date: event.target.value })} /></Field>
-          <Field label="Objetivo" className="form-span-2"><textarea value={summaryForm.objective} onChange={(event) => setSummaryForm({ ...summaryForm, objective: event.target.value })} maxLength={5000} /></Field>
-          <div className="form-actions"><Button type="submit" loading={saving}>Salvar alterações</Button></div>
+          <Field label="Status"><select value={summaryForm.status} onChange={(event) => setSummaryForm({ ...summaryForm, status: event.target.value as Project["status"] })} disabled={!fullAccess}><option value="planejamento">Planejamento</option><option value="ativo">Ativo</option><option value="pausado">Pausado</option><option value="concluido">Concluído</option></select></Field>
+          <Field label="Responsável"><select value={summaryForm.owner_user_id} onChange={(event) => setSummaryForm({ ...summaryForm, owner_user_id: event.target.value })} disabled={!fullAccess} required>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}</select></Field>
+          <Field label="Data de início"><input type="date" value={summaryForm.start_date} onChange={(event) => setSummaryForm({ ...summaryForm, start_date: event.target.value })} disabled={!fullAccess} required /></Field>
+          <Field label="Previsão de fim"><input type="date" min={summaryForm.start_date} value={summaryForm.end_date} onChange={(event) => setSummaryForm({ ...summaryForm, end_date: event.target.value })} disabled={!fullAccess} /></Field>
+          <Field label="Objetivo" className="form-span-2"><textarea value={summaryForm.objective} onChange={(event) => setSummaryForm({ ...summaryForm, objective: event.target.value })} disabled={!fullAccess} maxLength={5000} /></Field>
+          {fullAccess ? <div className="form-actions"><Button type="submit" loading={saving}>Salvar alterações</Button></div> : <div className="project-access-note form-span-2">Você visualiza este projeto por estar envolvido em uma tarefa. A gestão geral permanece com o responsável ou administrador.</div>}
         </form></div>
       </section>
 
       <section className="project-context-grid">
         <article className="objective-card"><span className="eyebrow">Objetivo do projeto</span><p>{project.objective}</p></article>
-        <article className="members-card"><div><span className="eyebrow">Envolvidos</span><div className="avatar-stack">{members.slice(0, 5).map((member) => <span title={`${member.name} · ${member.email}`} key={member.id}>{initials(member.name)}</span>)}{members.length > 5 ? <span>+{members.length - 5}</span> : null}</div></div><Button variant="ghost" onClick={() => setMemberDialog(true)}><UserPlus size={16} /> Adicionar</Button></article>
+        <article className="members-card"><div><span className="eyebrow">Envolvidos</span><div className="avatar-stack">{members.slice(0, 5).map((member) => <span title={`${member.name} · ${member.email}`} key={member.id}>{initials(member.name)}</span>)}{members.length > 5 ? <span>+{members.length - 5}</span> : null}</div></div>{fullAccess ? <Button variant="ghost" onClick={() => setMemberDialog(true)}><UserPlus size={16} /> Adicionar</Button> : null}</article>
       </section>
 
       <section className="content-card linked-businesses-card">
@@ -352,8 +366,8 @@ export default function ProjectDetailPage() {
       </section>
       </div> : null}
 
-      {activeTab === "tarefas" ? <section className="kanban-section detail-tab-panel">
-        <div className="section-title-row"><div><h2>Quadro de tarefas</h2><p>Arraste os cartões entre as colunas ou altere pelo seletor.</p></div><Button onClick={() => setTaskDialog(true)}><Plus size={17} /> Nova tarefa</Button></div>
+      {visibleActiveTab === "tarefas" ? <section className="kanban-section detail-tab-panel">
+        <div className="section-title-row"><div><h2>Quadro de tarefas</h2><p>{fullAccess ? "Arraste os cartões entre as colunas ou altere pelo seletor." : "Exibindo somente as tarefas em que você está envolvido."}</p></div>{fullAccess ? <Button onClick={() => setTaskDialog(true)}><Plus size={17} /> Nova tarefa</Button> : null}</div>
         <ProjectTaskBoard
           tasks={tasks}
           users={users}
@@ -364,14 +378,14 @@ export default function ProjectDetailPage() {
         />
       </section> : null}
 
-      {activeTab === "atualizacoes" || activeTab === "arquivos" ? <div className="detail-tab-panel">
-        {activeTab === "atualizacoes" ? <section className="content-card">
+      {visibleActiveTab === "atualizacoes" || visibleActiveTab === "arquivos" ? <div className="detail-tab-panel">
+        {visibleActiveTab === "atualizacoes" ? <section className="content-card">
           <div className="content-card-head"><div><h2>Comentários gerais</h2><p>Atualizações, decisões e contexto do projeto</p></div><MessageSquare size={18} /></div>
           <form className="comment-form" onSubmit={addComment}><textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Adicionar atualização ou comentário…" maxLength={2500} required /><div><small>O comentário ficará visível para todos os usuários.</small><Button type="submit" loading={saving} disabled={!comment.trim()}>Comentar</Button></div></form>
           <div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><span className="comment-avatar">{initials(item.author_name)}</span><div><div><strong>{item.author_name}</strong><small>{dateBr(item.created_at)}</small></div><p>{item.body}</p></div></article>) : <div className="mini-empty">Nenhum comentário ainda.</div>}</div>
         </section> : null}
-        {activeTab === "arquivos" ? <section className="content-card">
-          <div className="content-card-head"><div><h2>Arquivos e imagens</h2><p>Referências compartilhadas e reaproveitadas pela obra vinculada</p></div><Button variant="secondary" onClick={() => setFileDialog(true)}><Plus size={16} /> Arquivo</Button></div>
+        {visibleActiveTab === "arquivos" ? <section className="content-card">
+          <div className="content-card-head"><div><h2>Arquivos e imagens</h2><p>Referências compartilhadas e reaproveitadas pela obra vinculada</p></div>{allowFiles ? <Button variant="secondary" onClick={() => setFileDialog(true)}><Plus size={16} /> Arquivo</Button> : null}</div>
           {files.length ? <div className="project-files project-files-grid">{files.map((item) => { const isImage = item.mime_type?.startsWith("image/") && item.signed_url; return <a key={item.id} href={item.signed_url} target="_blank" rel="noreferrer" className={isImage ? "image-file" : "document-file"}>{isImage ? <Image src={item.signed_url!} alt={item.file_name} width={46} height={46} unoptimized /> : <File size={23} />}<div><strong>{item.file_name}</strong><span>{dateBr(item.created_at)}</span></div><Download size={15} /></a>; })}</div> : <EmptyState icon={<Paperclip size={21} />} title="Nenhum arquivo" description="Adicione imagens, PDFs ou documentos importantes para o projeto." action={<Button variant="secondary" onClick={() => setFileDialog(true)}><Upload size={16} /> Enviar arquivo</Button>} />}
         </section> : null}
       </div> : null}

@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/instagram-followers",
-      "schedule": "0 10 * * *"
+      "schedule": "0 10 * * 1"
     },
     {
       "path": "/api/cron/qlik/delinquency",

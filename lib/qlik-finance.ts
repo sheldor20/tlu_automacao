@@ -62,7 +62,7 @@ const balanceMetric = (
   targetLabel: "Saldo",
   aliases: ["Saldo bancário", "Saldo bancario", "Saldo atual", "Saldo da conta"],
   mode: "monthly",
-  periodStrategy: "date-field",
+  periodStrategy: "date-last-day",
   dateField: BALANCE_DATE_FIELDS[0],
   dateFieldCandidates: BALANCE_DATE_FIELDS.slice(1),
   filters,

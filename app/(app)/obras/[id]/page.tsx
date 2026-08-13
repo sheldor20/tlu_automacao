@@ -16,15 +16,18 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  Copy,
   FileDown,
   Files,
   History,
   Hammer,
   ImageIcon,
   Package,
+  Pencil,
   Plus,
   Save,
   Settings2,
+  Trash2,
   WalletCards,
   Upload,
 } from "lucide-react";
@@ -66,6 +69,7 @@ export default function WorkDetailPage() {
   const [sourceFiles, setSourceFiles] = useState<ConstructionSourceFile[]>([]);
   const [templates, setTemplates] = useState<ConstructionTemplate[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [publicToken, setPublicToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<WorkTab>(() => {
     if (typeof window === "undefined") return "resumo";
     const requested = new URLSearchParams(window.location.search).get("tab") as WorkTab | null;
@@ -77,6 +81,9 @@ export default function WorkDetailPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [weights, setWeights] = useState<Record<string, string>>({});
   const [macroDialog, setMacroDialog] = useState(false);
+  const [editingMacro, setEditingMacro] = useState<MacroStage | null>(null);
+  const [editingMicro, setEditingMicro] = useState<MicroStage | null>(null);
+  const [editingUpdate, setEditingUpdate] = useState<UpdateRow | null>(null);
   const [microMacroId, setMicroMacroId] = useState<string | null>(null);
   const [supplyMicro, setSupplyMicro] = useState<MicroStage | null>(null);
   const [progressMicro, setProgressMicro] = useState<MicroStage | null>(null);
@@ -85,6 +92,7 @@ export default function WorkDetailPage() {
   const [templateId, setTemplateId] = useState("");
   const [macroForm, setMacroForm] = useState({ name: "", description: "" });
   const [microForm, setMicroForm] = useState({ name: "", description: "", supplies: [] as ConstructionSupply[] });
+  const [updateEditForm, setUpdateEditForm] = useState({ progress: "0", note: "" });
   const [supplyForm, setSupplyForm] = useState<ConstructionSupply[]>([]);
   const [progressSupplies, setProgressSupplies] = useState<ConstructionSupply[]>([]);
   const [progressForm, setProgressForm] = useState({ progress: "0", note: "", file: null as File | null });
@@ -95,7 +103,7 @@ export default function WorkDetailPage() {
   const loadData = useCallback(async () => {
     if (!supabase || !params.id) return;
     setLoading(true);
-    const [workResult, macroResult, microResult, evidenceResult, budgetResult, updateResult, sourceFileResult, templateResult, userResult] = await Promise.all([
+    const [workResult, macroResult, microResult, evidenceResult, budgetResult, updateResult, sourceFileResult, templateResult, userResult, publicLinkResult] = await Promise.all([
       supabase.from("construction_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("construction_macro_stage_progress").select("*").eq("construction_id", params.id).order("position"),
       supabase.from("construction_micro_stages").select("*").order("position"),
@@ -105,6 +113,7 @@ export default function WorkDetailPage() {
       supabase.rpc("construction_source_files", { p_construction_id: params.id }),
       supabase.from("construction_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
+      supabase.from("construction_public_links").select("token").eq("construction_id", params.id).eq("active", true).maybeSingle(),
     ]);
 
     if (workResult.error) {
@@ -140,6 +149,7 @@ export default function WorkDetailPage() {
     setSourceFiles(signedSourceFiles);
     setTemplates(((templateResult.data || []) as ConstructionTemplate[]).filter((template) => template.type === work.type));
     setUsers((userResult.data || []) as UserProfile[]);
+    setPublicToken(publicLinkResult.data?.token || null);
     setLoading(false);
   }, [params.id, supabase]);
 
@@ -158,6 +168,16 @@ export default function WorkDetailPage() {
     })),
   )), [macros]);
 
+  function openNewMacro() {
+    setMacroForm({ name: "", description: "" });
+    setMacroDialog(true);
+  }
+
+  function openNewMicro(macroId: string) {
+    setMicroForm({ name: "", description: "", supplies: [] });
+    setMicroMacroId(macroId);
+  }
+
   async function addMacro(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !construction) return;
@@ -174,6 +194,48 @@ export default function WorkDetailPage() {
     setMacroDialog(false);
     setMacroForm({ name: "", description: "" });
     setToast({ message: "Macro etapa adicionada. Ajuste os pesos para somarem 100%.", type: "success" });
+    await loadData();
+  }
+
+  function openEditMacro(macro: MacroStage) {
+    setEditingMacro(macro);
+    setMacroForm({ name: macro.name, description: macro.description || "" });
+  }
+
+  async function saveMacro(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !editingMacro) return;
+    setSaving(true);
+    const { error } = await supabase.from("construction_macro_stages").update({ name: macroForm.name.trim(), description: macroForm.description.trim() || null }).eq("id", editingMacro.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setEditingMacro(null);
+    setMacroForm({ name: "", description: "" });
+    setToast({ message: "Etapa atualizada.", type: "success" });
+    await loadData();
+  }
+
+  async function deleteMacro(macro: MacroStage) {
+    if (!supabase || !construction || !window.confirm(`Excluir a etapa “${macro.name}”, suas microetapas, insumos e evidências?`)) return;
+    setSaving(true);
+    const { data: paths, error } = await supabase.rpc("delete_construction_macro_stage", { p_macro_stage_id: macro.id });
+    if (!error) {
+      const remaining = macros.filter((item) => item.id !== macro.id);
+      if (remaining.length) {
+        const total = remaining.reduce((sum, item) => sum + Number(item.weight_percent || 0), 0);
+        let distributed = 0;
+        const normalized = remaining.map((item, index) => {
+          const weight = index === remaining.length - 1 ? 100 - distributed : Number((total ? Number(item.weight_percent || 0) / total * 100 : 100 / remaining.length).toFixed(2));
+          distributed += weight;
+          return { id: item.id, weight };
+        });
+        await supabase.rpc("set_construction_stage_weights", { p_construction_id: construction.id, p_weights: normalized });
+      }
+      if (paths?.length) await supabase.storage.from("construction-evidence").remove(paths);
+    }
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Etapa excluída e pesos restantes recalculados.", type: "success" });
     await loadData();
   }
 
@@ -209,6 +271,37 @@ export default function WorkDetailPage() {
     setMicroMacroId(null);
     setMicroForm({ name: "", description: "", supplies: [] });
     setToast({ message: "Micro etapa adicionada.", type: "success" });
+    await loadData();
+  }
+
+  function openEditMicro(micro: MicroStage) {
+    setEditingMicro(micro);
+    setMicroForm({ name: micro.name, description: micro.description || "", supplies: (micro.supplies || []).map((item) => ({ ...item })) });
+  }
+
+  async function saveMicro(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !editingMicro) return;
+    setSaving(true);
+    const { error } = await supabase.from("construction_micro_stages").update({ name: microForm.name.trim(), description: microForm.description.trim() || null, supplies: microForm.supplies }).eq("id", editingMicro.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setEditingMicro(null);
+    setMicroForm({ name: "", description: "", supplies: [] });
+    setToast({ message: "Microetapa e insumos atualizados.", type: "success" });
+    await loadData();
+  }
+
+  async function deleteMicro(micro: MicroStage) {
+    if (!supabase || !window.confirm(`Excluir a microetapa “${micro.name}”, seus insumos e evidências?`)) return;
+    setSaving(true);
+    const { data: paths, error } = await supabase.rpc("delete_construction_micro_stage", { p_micro_stage_id: micro.id });
+    if (!error) {
+      if (paths?.length) await supabase.storage.from("construction-evidence").remove(paths);
+    }
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Microetapa excluída.", type: "success" });
     await loadData();
   }
 
@@ -286,6 +379,41 @@ export default function WorkDetailPage() {
     setProgressSupplies([]);
     setToast({ message: progressSupplies.length ? "Avanço e estoque dos insumos atualizados." : "Evidência registrada e avanço atualizado.", type: "success" });
     await loadData();
+  }
+
+  function openEditUpdate(update: UpdateRow) {
+    setEditingUpdate(update);
+    setUpdateEditForm({ progress: String(update.progress_percent), note: update.note || "" });
+  }
+
+  async function saveEditedUpdate(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !editingUpdate) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("edit_construction_progress_update", {
+      p_update_id: editingUpdate.id,
+      p_progress_percent: Number(updateEditForm.progress),
+      p_note: updateEditForm.note,
+    });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setEditingUpdate(null);
+    setToast({ message: "Atualização corrigida; o avanço atual foi recalculado quando aplicável.", type: "success" });
+    await loadData();
+  }
+
+  async function copyPublicLink() {
+    if (!supabase || !construction) return;
+    let token = publicToken;
+    if (!token) {
+      const { data, error } = await supabase.from("construction_public_links").upsert({ construction_id: construction.id, active: true }, { onConflict: "construction_id" }).select("token").single();
+      if (error) return setToast({ message: friendlyError(error), type: "error" });
+      token = data.token;
+      setPublicToken(token);
+    }
+    const url = `${window.location.origin}/obra-publica/${token}`;
+    await navigator.clipboard.writeText(url);
+    setToast({ message: "Link público copiado. Quem receber poderá atualizar avanço, estoque e fotos, sem acessar o financeiro.", type: "success" });
   }
 
   async function saveBudget(event: FormEvent) {
@@ -366,7 +494,7 @@ export default function WorkDetailPage() {
           <h1>{construction.name}</h1>
           <p>{construction.address || "Localização não informada"} · {dateBr(construction.start_date)} a {dateBr(construction.expected_end_date)}</p>
         </div>
-        <Button variant="secondary" onClick={makeReport} loading={reporting}><FileDown size={17} /> Gerar relatório PDF</Button>
+        <div className="work-header-actions"><Button variant="secondary" onClick={() => void copyPublicLink()}><Copy size={17} /> Copiar link de campo</Button><Button variant="secondary" onClick={makeReport} loading={reporting}><FileDown size={17} /> Gerar relatório PDF</Button></div>
       </header>
 
       <section className="kpi-grid">
@@ -397,9 +525,9 @@ export default function WorkDetailPage() {
       </section> : null}
 
       {activeTab === "etapas" ? <section className="content-card detail-tab-panel">
-          <div className="content-card-head"><div><h2>Etapas da obra</h2><p>O avanço geral considera o peso de cada macro etapa</p></div><Button variant="secondary" onClick={() => setMacroDialog(true)}><Plus size={16} /> Macro etapa</Button></div>
+          <div className="content-card-head"><div><h2>Etapas da obra</h2><p>O avanço geral considera o peso de cada macro etapa</p></div><Button variant="secondary" onClick={openNewMacro}><Plus size={16} /> Macro etapa</Button></div>
           {macros.length === 0 ? (
-            <EmptyState icon={<Hammer size={22} />} title="Estruture as etapas" description="Aplique um modelo pronto ou crie a estrutura manualmente." action={<div className="empty-actions"><Button onClick={() => setTemplateDialog(true)}><Plus size={16} /> Aplicar modelo</Button><Button variant="secondary" onClick={() => setMacroDialog(true)}>Criar manualmente</Button></div>} />
+            <EmptyState icon={<Hammer size={22} />} title="Estruture as etapas" description="Aplique um modelo pronto ou crie a estrutura manualmente." action={<div className="empty-actions"><Button onClick={() => setTemplateDialog(true)}><Plus size={16} /> Aplicar modelo</Button><Button variant="secondary" onClick={openNewMacro}>Criar manualmente</Button></div>} />
           ) : (
             <div className="macro-list">
               <div className={`weight-editor ${weightTotal === 100 ? "weight-valid" : "weight-invalid"}`}>
@@ -416,7 +544,7 @@ export default function WorkDetailPage() {
                         <div><h3>{macro.name}</h3><span>{macro.description || `${macro.micro_stages?.length || 0} microetapas de execução`}</span></div>
                         {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                       </button>
-                      <div className="macro-weight"><label>Peso</label><div><input type="number" min="0" max="100" step="0.1" value={weights[macro.id] ?? macro.weight_percent} onChange={(event) => setWeights({ ...weights, [macro.id]: event.target.value })} /><span>%</span></div></div>
+                      <div className="macro-controls"><div className="macro-weight"><label>Peso</label><div><input type="number" min="0" max="100" step="0.1" value={weights[macro.id] ?? macro.weight_percent} onChange={(event) => setWeights({ ...weights, [macro.id]: event.target.value })} /><span>%</span></div></div><button type="button" onClick={() => openEditMacro(macro)} title="Editar etapa"><Pencil size={15} /></button><button type="button" className="danger" onClick={() => void deleteMacro(macro)} title="Excluir etapa"><Trash2 size={15} /></button></div>
                     </div>
                     <div className="macro-progress"><ProgressBar value={Number(macro.progress_percent || 0)} label="Avanço da macro etapa" /></div>
                     {isOpen ? (
@@ -429,10 +557,10 @@ export default function WorkDetailPage() {
                               <ProgressBar value={micro.progress_percent} />
                             </div>
                             <div className="micro-supplies"><Package size={16} /><div><small>Insumos vinculados</small><strong>{micro.supplies?.length ? `${micro.supplies.length} item(ns)` : "Nenhum item"}</strong><span>{micro.supplies?.length ? `${micro.supplies.reduce((sum, item) => sum + remainingSupplyQuantity(item), 0).toLocaleString("pt-BR")} em estoque` : "Cadastro opcional"}</span></div></div>
-                            <div className="micro-actions"><Button variant="ghost" onClick={() => openSupplies(micro)}><Package size={15} /> Insumos</Button><Button variant="secondary" onClick={() => openProgress(micro)}><Camera size={15} /> Atualizar avanço</Button></div>
+                            <div className="micro-actions"><Button variant="ghost" onClick={() => openEditMicro(micro)}><Pencil size={15} /> Editar</Button><Button variant="ghost" onClick={() => openSupplies(micro)}><Package size={15} /> Insumos</Button><Button variant="secondary" onClick={() => openProgress(micro)}><Camera size={15} /> Atualizar</Button><button type="button" className="micro-delete" onClick={() => void deleteMicro(micro)} title="Excluir microetapa"><Trash2 size={15} /></button></div>
                           </div>
                         ))}
-                        <button className="add-micro" onClick={() => setMicroMacroId(macro.id)}><Plus size={15} /> Adicionar micro etapa</button>
+                        <button className="add-micro" onClick={() => openNewMicro(macro.id)}><Plus size={15} /> Adicionar micro etapa</button>
                       </div>
                     ) : null}
                   </article>
@@ -475,14 +603,17 @@ export default function WorkDetailPage() {
 
       {activeTab === "atualizacoes" ? <section className="content-card detail-tab-panel">
         <div className="content-card-head"><div><h2>Últimas atualizações</h2><p>Evidências, percentuais e histórico recente</p></div><ImageIcon size={18} /></div>
-        {updates.length ? <div className="update-feed update-feed-full">{updates.map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}{update.note ? ` · ${update.note}` : ""}</span><small>{dateBr(update.created_at)}</small></div></article>)}</div> : <EmptyState icon={<History size={22} />} title="Sem atualizações" description="As atualizações aparecerão após o primeiro registro de avanço com evidência." />}
+        {updates.length ? <div className="update-feed update-feed-full">{updates.map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}{update.note ? ` · ${update.note}` : ""}</span><small>{dateBr(update.created_at)}</small></div><button type="button" className="update-edit" onClick={() => openEditUpdate(update)}><Pencil size={15} /> Editar</button></article>)}</div> : <EmptyState icon={<History size={22} />} title="Sem atualizações" description="As atualizações aparecerão após o primeiro registro de avanço com evidência." />}
       </section> : null}
 
       <Dialog open={templateDialog} onClose={() => setTemplateDialog(false)} title="Aplicar modelo de etapas" description="A estrutura só pode ser aplicada enquanto a obra ainda não possui macro etapas."><form className="form-grid" onSubmit={applyTemplate}><Field label="Modelo"><select value={templateId} onChange={(event) => setTemplateId(event.target.value)} required><option value="">Selecione um modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></Field>{templateId ? <div className="template-preview"><strong>{templates.find((template) => template.id === templateId)?.name}</strong><p>{templates.find((template) => template.id === templateId)?.description}</p></div> : null}<div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTemplateDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!templateId}>Aplicar modelo</Button></div></form></Dialog>
       <Dialog open={macroDialog} onClose={() => setMacroDialog(false)} title="Nova macro etapa" description="Ex.: Terraplenagem, infraestrutura, fundações ou acabamento."><form className="form-grid" onSubmit={addMacro}><Field label="Nome"><input value={macroForm.name} onChange={(event) => setMacroForm({ ...macroForm, name: event.target.value })} required maxLength={120} /></Field><Field label="Descrição"><textarea value={macroForm.description} onChange={(event) => setMacroForm({ ...macroForm, description: event.target.value })} maxLength={1000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMacroDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
+      <Dialog open={Boolean(editingMacro)} onClose={() => setEditingMacro(null)} title="Editar etapa" description="Altere nome e descrição sem perder microetapas ou histórico."><form className="form-grid" onSubmit={saveMacro}><Field label="Nome"><input value={macroForm.name} onChange={(event) => setMacroForm({ ...macroForm, name: event.target.value })} required maxLength={120} /></Field><Field label="Descrição"><textarea value={macroForm.description} onChange={(event) => setMacroForm({ ...macroForm, description: event.target.value })} maxLength={1000} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingMacro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar etapa</Button></div></form></Dialog>
       <Dialog open={Boolean(microMacroId)} onClose={() => setMicroMacroId(null)} title="Nova micro etapa" description="Detalhe a execução. O cadastro de insumos é opcional." wide><form className="form-grid" onSubmit={addMicro}><Field label="Nome"><input value={microForm.name} onChange={(event) => setMicroForm({ ...microForm, name: event.target.value })} required maxLength={140} /></Field><Field label="Descrição"><textarea value={microForm.description} onChange={(event) => setMicroForm({ ...microForm, description: event.target.value })} /></Field><SupplyEditor value={microForm.supplies} onChange={(supplies) => setMicroForm({ ...microForm, supplies })} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMicroMacroId(null)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
+      <Dialog open={Boolean(editingMicro)} onClose={() => setEditingMicro(null)} title="Editar microetapa" description="Altere dados e insumos vinculados sem perder as atualizações." wide><form className="form-grid" onSubmit={saveMicro}><Field label="Nome"><input value={microForm.name} onChange={(event) => setMicroForm({ ...microForm, name: event.target.value })} required maxLength={140} /></Field><Field label="Descrição"><textarea value={microForm.description} onChange={(event) => setMicroForm({ ...microForm, description: event.target.value })} /></Field><SupplyEditor value={microForm.supplies} onChange={(supplies) => setMicroForm({ ...microForm, supplies })} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar microetapa</Button></div></form></Dialog>
       <Dialog open={Boolean(supplyMicro)} onClose={() => setSupplyMicro(null)} title={`Insumos · ${supplyMicro?.name || "micro etapa"}`} description="Atualize o total adquirido e o estoque atual. O consumo será recalculado automaticamente." wide><form className="form-grid" onSubmit={saveSupplies}><SupplyEditor value={supplyForm} onChange={setSupplyForm} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setSupplyMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar insumos</Button></div></form></Dialog>
       <Dialog open={Boolean(progressMicro)} onClose={() => setProgressMicro(null)} title={`Atualizar ${progressMicro?.name || "etapa"}`} description="Registre o avanço, a evidência e a posição atual do estoque."><form className="form-grid" onSubmit={updateProgress}><Field label="Novo avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={progressForm.progress} onChange={(event) => setProgressForm({ ...progressForm, progress: event.target.value })} /><strong>{progressForm.progress}%</strong></div></Field><Field label="Evidência fotográfica" hint="PNG, JPG ou WEBP. Evite imagens com dados pessoais."><label className="file-drop"><Upload size={20} /><span>{progressForm.file?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressForm({ ...progressForm, file: event.target.files?.[0] || null })} required /></label></Field>{progressSupplies.length ? <div className="progress-stock-editor form-span-2"><div><strong>Estoque após esta atualização</strong><span>Informe quanto restou de cada insumo. O sistema calcula o consumo automaticamente.</span></div>{progressSupplies.map((item, index) => <label key={`${item.name}-${index}`}><span>{item.name}<small>Total: {Number(item.total_quantity || 0).toLocaleString("pt-BR")}</small></span><input type="number" min="0" max={item.total_quantity} step="0.01" value={remainingSupplyQuantity(item)} onChange={(event) => setProgressSupplies((current) => current.map((supply, supplyIndex) => supplyIndex === index ? supplyWithRemainingQuantity(supply, Number(event.target.value)) : supply))} required /><small>{Number(item.used_quantity || 0).toLocaleString("pt-BR")} consumidos</small></label>)}</div> : null}<Field label="Comentário da atualização" className="form-span-2"><textarea value={progressForm.note} onChange={(event) => setProgressForm({ ...progressForm, note: event.target.value })} placeholder="O que foi executado desde a última atualização?" maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProgressMicro(null)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!progressForm.file}><Camera size={16} /> Registrar avanço e estoque</Button></div></form></Dialog>
+      <Dialog open={Boolean(editingUpdate)} onClose={() => setEditingUpdate(null)} title="Editar atualização" description="A foto é preservada. Se esta for a atualização mais recente da microetapa, o avanço atual também será corrigido."><form className="form-grid" onSubmit={saveEditedUpdate}><Field label="Avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={updateEditForm.progress} onChange={(event) => setUpdateEditForm({ ...updateEditForm, progress: event.target.value })} /><strong>{updateEditForm.progress}%</strong></div></Field><Field label="Comentário"><textarea value={updateEditForm.note} onChange={(event) => setUpdateEditForm({ ...updateEditForm, note: event.target.value })} maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingUpdate(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar correção</Button></div></form></Dialog>
       <Dialog open={budgetDialog} onClose={() => setBudgetDialog(false)} title="Atualizar orçamento mensal" description="Se o mês já existir, os valores serão atualizados."><form className="form-grid" onSubmit={saveBudget}><Field label="Mês de referência"><input type="month" value={budgetForm.reference_month} onChange={(event) => setBudgetForm({ ...budgetForm, reference_month: event.target.value })} required /></Field><Field label="Previsto no mês"><input type="number" min="0" step="0.01" value={budgetForm.planned_amount} onChange={(event) => setBudgetForm({ ...budgetForm, planned_amount: event.target.value })} required /></Field><Field label="Realizado no mês"><input type="number" min="0" step="0.01" value={budgetForm.realized_amount} onChange={(event) => setBudgetForm({ ...budgetForm, realized_amount: event.target.value })} required /></Field><Field label="Observações"><textarea value={budgetForm.notes} onChange={(event) => setBudgetForm({ ...budgetForm, notes: event.target.value })} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setBudgetDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar competência</Button></div></form></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
