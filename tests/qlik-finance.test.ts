@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyFinanceMetricOverrides,
   QLIK_FINANCE_APPS,
   QLIK_FINANCE_BASE_METRIC_KEYS,
   toFinanceIndicatorRows,
@@ -55,7 +56,13 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
 });
 
 test("calcula o caixa atual descontando o saldo de aluguéis do último mês fechado", () => {
-  const result = validateFinanceSnapshots(createSnapshots(), now);
+  const snapshots = applyFinanceMetricOverrides(createSnapshots(), {
+    saldo_conta_alugueis: { "2026-07-01": 616_800 },
+  });
+  const overriddenRentalCash = snapshots.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-07-01")!;
+  assert.equal(overriddenRentalCash.value, 616_800);
+  assert.equal(overriddenRentalCash.selections.valor_qlik_original, "6");
+  const result = validateFinanceSnapshots(snapshots, now);
   assert.equal(result.length, 66);
   const august = result.find((item) => item.metricKey === "resultado_gerencial" && item.referenceMonth === "2026-08-01");
   const revenue = result.find((item) => item.metricKey === "receita_consolidada" && item.referenceMonth === "2026-08-01")!;

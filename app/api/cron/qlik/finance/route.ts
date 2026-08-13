@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
+  applyFinanceMetricOverrides,
   QLIK_FINANCE_APPS,
   QLIK_FINANCE_CONNECTION_SLUG,
   QLIK_FINANCE_SOURCE,
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
   });
   const { data: connection, error: connectionError } = await supabase
     .from("data_connections")
-    .select("active")
+    .select("active, settings")
     .eq("slug", QLIK_FINANCE_CONNECTION_SLUG)
     .single();
   if (connectionError) {
@@ -87,7 +88,13 @@ export async function GET(request: Request) {
       throughMonth: month,
     });
     phase = "validate-finance-indicators";
-    const snapshots = validateFinanceSnapshots(rawSnapshots);
+    const snapshotsWithOverrides = applyFinanceMetricOverrides(
+      rawSnapshots,
+      connection.settings && typeof connection.settings === "object" && !Array.isArray(connection.settings)
+        ? connection.settings.metric_overrides
+        : null,
+    );
+    const snapshots = validateFinanceSnapshots(snapshotsWithOverrides);
     const synchronizedAt = new Date().toISOString();
     const rows = toFinanceIndicatorRows(snapshots, synchronizedAt);
     const companyRows = rows.filter((row) => row.area === "empresa");
@@ -126,6 +133,12 @@ export async function GET(request: Request) {
     ]);
 
     const currentReference = `${year}-${String(month).padStart(2, "0")}-01`;
+    const closedMonth = month > 1 ? month - 1 : 12;
+    const closedYear = month > 1 ? year : year - 1;
+    const closedReference = `${closedYear}-${String(closedMonth).padStart(2, "0")}-01`;
+    const currentCash = snapshots.find((snapshot) => snapshot.metricKey === "valor_caixa" && snapshot.referenceMonth === currentReference);
+    const rentalBalanceUsed = snapshots.find((snapshot) => snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === closedReference);
+    const availableCash = snapshots.find((snapshot) => snapshot.metricKey === "caixa_disponivel" && snapshot.referenceMonth === currentReference);
     return NextResponse.json({
       ok: true,
       connection: QLIK_FINANCE_CONNECTION_SLUG,
@@ -135,6 +148,13 @@ export async function GET(request: Request) {
       current: Object.fromEntries(snapshots
         .filter((snapshot) => snapshot.referenceMonth === currentReference && !snapshot.dimensionKey)
         .map((snapshot) => [snapshot.metricKey, snapshot.value])),
+      cash_calculation: {
+        reference_month: currentReference,
+        valor_caixa: currentCash?.value ?? null,
+        saldo_conta_alugueis_reference_month: closedReference,
+        saldo_conta_alugueis: rentalBalanceUsed?.value ?? null,
+        caixa_disponivel: availableCash?.value ?? null,
+      },
       rows_read: rawSnapshots.length,
       rows_written: written,
       duration_ms: Date.now() - startedAt,
