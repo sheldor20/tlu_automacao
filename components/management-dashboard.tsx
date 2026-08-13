@@ -4,7 +4,7 @@ import { GroupedBarChart, TrendChart } from "@/components/management-charts";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
-import { buildDeedTractionHistory } from "@/lib/management-metrics";
+import { buildDeedTractionHistory, sumMetricSeries } from "@/lib/management-metrics";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
   ManagementAreaSlug,
@@ -616,9 +616,11 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
   );
 }
 
-function FinancePurchasingView({ metricValue, metricValueForMonth, metricHelper, seriesFor, months }: MetricViewProps) {
+function FinancePurchasingView({ metricValueForMonth, seriesFor, months }: MetricViewProps) {
   const rentalRevenue = seriesFor("receita_alugueis_mes");
   const rentalExpense = seriesFor("despesa_alugueis_mes");
+  const avoidedCostSeries = seriesFor("custo_evitado_total");
+  const avoidedCostTotal = sumMetricSeries(avoidedCostSeries);
   const rentalResult = months.map((_, index) => {
     const revenue = rentalRevenue[index];
     const expense = rentalExpense[index];
@@ -633,10 +635,10 @@ function FinancePurchasingView({ metricValue, metricValueForMonth, metricHelper,
         <KpiCard label="Saldo da conta de aluguéis" value={closedValue("saldo_conta_alugueis") === null ? "—" : currency(closedValue("saldo_conta_alugueis") || 0, true)} helper={closedHelper} icon={<Landmark size={17} />} />
         <KpiCard label="Recebido no mês (Aluguel)" value={closedValue("receita_alugueis_mes") === null ? "—" : currency(closedValue("receita_alugueis_mes") || 0, true)} helper={closedHelper} tone="success" icon={<BadgeDollarSign size={17} />} />
         <KpiCard label="Gasto no mês (Aluguel)" value={closedValue("despesa_alugueis_mes") === null ? "—" : currency(closedValue("despesa_alugueis_mes") || 0, true)} helper={closedHelper} icon={<WalletCards size={17} />} />
-        <KpiCard label="Custo evitado total" value={metricValue("custo_evitado_total") === null ? "—" : currency(metricValue("custo_evitado_total") || 0, true)} helper={metricHelper("custo_evitado_total")} tone="success" icon={<HandCoins size={17} />} />
+        <KpiCard label="Custo evitado total" value={avoidedCostTotal === null ? "—" : currency(avoidedCostTotal, true)} helper="acumulado no ano vigente" tone="success" icon={<HandCoins size={17} />} />
       </section>
       <section className="management-three-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Evolução do valor acumulado por competência.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: seriesFor("custo_evitado_total") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Valor apurado em cada competência.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: avoidedCostSeries }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Resultado dos aluguéis</span><h2>Recebido menos gasto</h2><p>Resultado líquido mensal da operação de aluguéis.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Resultado", color: "#6f876e", values: rentalResult }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Conformidade de compras</span><h2>Compras sem orçamento</h2><p>Total de compras comparado às realizadas sem orçamento.</p></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Total de compras", color: "#8da087", values: seriesFor("compras_total") }, { label: "Sem orçamento", color: "#b96c62", values: seriesFor("compras_sem_orcamento") }]} /></article>
       </section>
