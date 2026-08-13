@@ -2,7 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
   QLIK_LEGAL_SALES_APPS,
+  QLIK_LEGAL_SALES_AREA,
   QLIK_LEGAL_SALES_CONNECTION_SLUG,
+  QLIK_LEGAL_SALES_METRIC_KEYS,
   QLIK_LEGAL_SALES_SOURCE,
   saoPauloYearMonth,
   toLegalSalesIndicatorRows,
@@ -98,9 +100,9 @@ export async function GET(request: Request) {
       p_connection_slug: QLIK_LEGAL_SALES_CONNECTION_SLUG,
       p_source: QLIK_LEGAL_SALES_SOURCE,
       p_rows: rows,
-      p_clear_area: null,
-      p_clear_metric_keys: null,
-      p_clear_from: null,
+      p_clear_area: QLIK_LEGAL_SALES_AREA,
+      p_clear_metric_keys: QLIK_LEGAL_SALES_METRIC_KEYS,
+      p_clear_from: `${year}-01-01`,
     });
     if (syncError) throw new Error(`Supabase: ${syncError.message}`);
 

@@ -4,6 +4,7 @@ import { GroupedBarChart, TrendChart } from "@/components/management-charts";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
+import { buildDeedTractionHistory } from "@/lib/management-metrics";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
   ManagementAreaSlug,
@@ -529,13 +530,13 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
         <KpiCard label="Receita consolidada" value={revenue === null ? "—" : currency(revenue, true)} helper="acumulado no ano vigente" icon={<BadgeDollarSign size={17} />} />
         <KpiCard label="Despesas consolidadas" value={expense === null ? "—" : currency(expense, true)} helper="acumulado no ano vigente" icon={<WalletCards size={17} />} />
         <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={reportedResult === null && result !== null ? "calculado por receita menos despesas" : metricHelper("resultado_gerencial")} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
-        <KpiCard label="Valor em caixa" value={metricValue("valor_caixa") === null ? "—" : currency(metricValue("valor_caixa") || 0, true)} helper={metricHelper("valor_caixa")} icon={<Landmark size={17} />} />
+        <KpiCard label="Valor em caixa" value={metricValue("valor_caixa") === null ? "—" : currency(metricValue("valor_caixa") || 0, true)} helper={`${metricHelper("valor_caixa")} · disponível para uso após descontar o saldo da conta de aluguéis`} icon={<Landmark size={17} />} />
       </section>
       <section className="management-closed-month-summary">
         <div><span>Fechamento · {previousMonth?.label || "mês anterior"}</span><strong>Resultado do mês anterior</strong></div>
-        <article><span>Receita</span><strong>{previousRevenue === null ? "—" : currency(previousRevenue, true)}</strong></article>
-        <article><span>Despesa</span><strong>{previousExpense === null ? "—" : currency(previousExpense, true)}</strong></article>
-        <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult, true)}</strong></article>
+        <article><span>Receita</span><strong>{previousRevenue === null ? "—" : currency(previousRevenue)}</strong></article>
+        <article><span>Despesa</span><strong>{previousExpense === null ? "—" : currency(previousExpense)}</strong></article>
+        <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult)}</strong></article>
       </section>
       <section className="management-two-columns">
         <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Evolução mensal</span><h2>Receitas e despesas</h2></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: revenueSeries }, { label: "Despesas", color: "#b3875b", values: expenseSeries }]} /></article>
@@ -559,6 +560,21 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
     ["Em escrituração", "unidades_escrituracao_sem_registro"],
     ["Registradas", "unidades_registradas"],
   ] as const;
+  const tractionHistory = buildDeedTractionHistory({
+    semProcessoInformado: seriesFor("unidades_sem_processo"),
+    quitadas: seriesFor("unidades_quitadas"),
+    autorizadas: seriesFor("unidades_autorizadas_escrituracao"),
+  });
+  const latestTractionIndex = tractionHistory.reduce((latest, point, index) => point.taxa === null ? latest : index, -1);
+  const latestTraction = latestTractionIndex >= 0 ? tractionHistory[latestTractionIndex] : null;
+  const percentage = (value: number | null) => value === null
+    ? "—"
+    : `${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}%`;
+  const percentagePointChange = (value: number | null) => {
+    if (value === null) return "base";
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)} p.p.`;
+  };
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
@@ -572,9 +588,10 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
         <article className="management-panel"><div className="management-panel-head"><div><span>Comercial</span><h2>Vendas, estoque e distratos</h2></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#9aab95", values: seriesFor("unidades_disponiveis") }, { label: "Vendas", color: "#405343", values: seriesFor("vendas_mes") }, { label: "Distratos", color: "#b96c62", values: seriesFor("distratos_mes") }]} /></article>
       </section>
       <section className="management-panel">
-        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>O foco é reduzir as unidades sem processo e aumentar as autorizações para escrituração.</p></div></div>
+        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Tração = autorizadas ÷ (sem processo + autorizadas). A variação compara o resultado com o mês anterior.</p></div>{latestTraction ? <div className="management-traction-current"><span>Tração atual</span><strong>{percentage(latestTraction.taxa)}</strong><small>{latestTraction.variacaoPontosPercentuais === null ? "base histórica" : `${percentagePointChange(latestTraction.variacaoPontosPercentuais)} vs. mês anterior`}</small></div> : null}</div>
         <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(metricValue(key))}</strong><small>{metricHelper(key)}</small></article>)}</div>
-        <GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: seriesFor("unidades_sem_processo") }, { label: "Autorizadas", color: "#405343", values: seriesFor("unidades_autorizadas_escrituracao") }]} />
+        <div className="management-traction-months">{tractionHistory.map((point, index) => point.taxa === null ? null : <article className={index === latestTractionIndex ? "current" : ""} key={months[index]?.key || index}><span>{months[index]?.label}</span><strong>{percentage(point.taxa)}</strong><small>{percentagePointChange(point.variacaoPontosPercentuais)}</small></article>)}</div>
+        <GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: tractionHistory.map((point) => point.semProcesso) }, { label: "Autorizadas", color: "#405343", values: tractionHistory.map((point) => point.autorizadas) }]} />
       </section>
     </div>
   );
