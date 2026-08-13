@@ -77,7 +77,7 @@ test("consulta as cinco posições de escritura no último dia útil disponível
   const emEscrituracao = metrics.find((metric) => metric.metricKey === "unidades_escrituracao_sem_registro");
   const registradas = metrics.find((metric) => metric.metricKey === "unidades_registradas");
   for (const metric of [quitadas, semProcesso, autorizadas, emEscrituracao, registradas]) {
-    assert.equal(metric?.periodStrategy, "date-last-business-day");
+    assert.equal(metric?.periodStrategy, "date-through-business-day");
     assert.equal(metric?.dateField, "Data Posição");
     assert.equal(metric?.exactDateField, true);
   }
@@ -100,6 +100,22 @@ test("recusa contagens negativas ou fracionárias", () => {
   const snapshots = createSnapshots();
   snapshots[0].value = 1.5;
   assert.throws(() => validateLegalSalesSnapshots(snapshots, now), /inteiro não negativo/i);
+});
+
+test("bloqueia a sincronização se as cinco posições do fechamento vierem zeradas", () => {
+  const deedKeys = new Set([
+    "unidades_quitadas",
+    "unidades_sem_processo",
+    "unidades_autorizadas_escrituracao",
+    "unidades_escrituracao_sem_registro",
+    "unidades_registradas",
+  ]);
+  const snapshots = createSnapshots().map((snapshot) => (
+    snapshot.referenceMonth === "2026-07-01" && deedKeys.has(snapshot.metricKey)
+      ? { ...snapshot, value: 0 }
+      : snapshot
+  ));
+  assert.throws(() => validateLegalSalesSnapshots(snapshots, now), /cinco posições.*zeradas.*não substituir/i);
 });
 
 test("converte a leitura em linhas auditáveis do painel", () => {
