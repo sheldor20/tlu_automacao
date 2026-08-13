@@ -685,8 +685,11 @@ async function readQlikEngineMetrics(
           score: item.labelScore * 10 + item.structureScore,
         })).sort((a, b) => b.score - a.score);
         if (!ranked.length) {
-          const available = candidates.flatMap((candidate) => candidate.labels.slice(0, 3)).slice(0, 30);
-          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” não encontrado na planilha ${metric.sheetId}. Títulos disponíveis: ${available.join(" | ") || "nenhum"}.`);
+          const available = candidates.slice(0, 40).map((candidate) => (
+            `${candidate.id} [tipo=${candidate.type}; dimensões=${candidate.dimensionCount}; medidas=${candidate.measureCount}; `
+            + `tamanho=${candidate.columnCount}x${candidate.rowCount}; rótulos=${candidate.labels.slice(0, 4).join(" / ") || "nenhum"}]`
+          ));
+          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” não encontrado na planilha ${metric.sheetId}. Objetos disponíveis: ${available.join(" | ") || "nenhum"}.`);
         }
         if (ranked.length > 1 && ranked[0].score === ranked[1].score) {
           const details = ranked.slice(0, 5).map(({ candidate, labelScore, structureScore }) => (
