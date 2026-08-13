@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   legalSalesReferenceMonths,
+  QLIK_LEGAL_SALES_APPS,
   QLIK_LEGAL_SALES_METRIC_KEYS,
   toLegalSalesIndicatorRows,
   validateLegalSalesSnapshots,
@@ -36,6 +37,14 @@ test("gera as competências de janeiro ao mês vigente em São Paulo", () => {
     "2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01",
     "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01",
   ]);
+});
+
+test("usa os campos de data reais para vendas e distratos", () => {
+  const metrics = QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics);
+  const vendas = metrics.find((metric) => metric.metricKey === "vendas_mes");
+  const distratos = metrics.find((metric) => metric.metricKey === "distratos_mes");
+  assert.deepEqual([vendas?.periodStrategy, vendas?.dateField], ["date-field", "Data Venda"]);
+  assert.deepEqual([distratos?.periodStrategy, distratos?.dateField], ["date-field", "Data Distrato Venda"]);
 });
 
 test("exige série completa dos três indicadores mensais e posição atual dos demais", () => {
