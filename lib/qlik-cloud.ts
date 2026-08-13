@@ -397,7 +397,8 @@ export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Prom
     await page.waitForFunction(() => !window.location.hostname.startsWith("login.") && /\/sense\/app\//i.test(window.location.pathname), {
       timeout: 120_000,
     });
-    return readQlikEngineSnapshot(page, extractQlikAppId(options.sheetUrl), options.objectId, options.filters);
+    const snapshot = await readQlikEngineSnapshot(page, extractQlikAppId(options.sheetUrl), options.objectId, options.filters);
+    return snapshot;
   } finally {
     await browser.close();
   }
