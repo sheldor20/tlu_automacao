@@ -732,13 +732,18 @@ async function readQlikEngineMetrics(
         qFieldList?: { qItems?: Array<{ qName?: string }> };
       } | undefined)?.qFieldList?.qItems || []).map((item) => item.qName || "").filter(Boolean);
 
-      const findField = (candidates: string[], kind: string) => {
+      const findFields = (candidates: string[]) => {
         const exact = candidates.map(normalize);
-        const found = fieldNames.find((field) => exact.includes(normalize(field)))
-          || fieldNames.find((field) => {
+        const exactMatches = fieldNames.filter((field) => exact.includes(normalize(field)));
+        const partialMatches = fieldNames.filter((field) => {
             const normalizedField = ` ${normalize(field)} `;
             return exact.some((candidate) => normalizedField.includes(` ${candidate} `));
           });
+        return [...new Set([...exactMatches, ...partialMatches])];
+      };
+
+      const findField = (candidates: string[], kind: string) => {
+        const found = findFields(candidates)[0];
         if (!found) {
           throw new Error(
             `Qlik Engine: campo de ${kind} não encontrado. Candidatos: ${candidates.join(", ")}. `
@@ -821,24 +826,45 @@ async function readQlikEngineMetrics(
       const applyMetricFilters = async (metric: QlikCloudMetricDefinition) => {
         const selections: Record<string, string> = {};
         for (const filter of metric.filters || []) {
-          const fieldName = findField([...filter.fieldCandidates], filter.label);
-          const available = await fieldValues(fieldName);
           const expectedValues = (filter.values || []).map(normalize);
           const expectedFragments = (filter.contains || []).map(normalize);
-          const matching = available.filter((value) => {
-            const actual = normalize(value.text);
-            return expectedValues.includes(actual)
-              || expectedFragments.some((fragment) => fragment && actual.includes(fragment));
-          });
-          if (!matching.length) {
+          const candidateFields = findFields([...filter.fieldCandidates]);
+          if (!candidateFields.length) {
             throw new Error(
-              `Qlik Engine: o filtro “${filter.label}” não encontrou valores em “${fieldName}”. `
-              + `Procurado: ${[...(filter.values || []), ...(filter.contains || [])].join(" | ") || "nenhum"}. `
-              + `Valores disponíveis: ${available.slice(0, 120).map((value) => value.text).join(" | ") || "nenhum"}.`,
+              `Qlik Engine: nenhum campo compatível foi encontrado para o filtro “${filter.label}”. `
+              + `Candidatos: ${filter.fieldCandidates.join(" | ")}. `
+              + `Campos disponíveis: ${fieldNames.slice(0, 160).join(" | ") || "nenhum"}.`,
             );
           }
-          await selectValues(fieldName, matching);
-          selections[fieldName] = matching.map((value) => value.text).join(" | ");
+
+          let selectedField = "";
+          let selectedValues: FieldValue[] = [];
+          const attempts: string[] = [];
+          for (const fieldName of candidateFields) {
+            const available = await fieldValues(fieldName);
+            const matching = available.filter((value) => {
+              const actual = normalize(value.text);
+              return expectedValues.includes(actual)
+                || expectedFragments.some((fragment) => fragment && actual.includes(fragment));
+            });
+            if (matching.length) {
+              selectedField = fieldName;
+              selectedValues = matching;
+              break;
+            }
+            if (attempts.length < 30) {
+              attempts.push(`${fieldName}: ${available.slice(0, 12).map((value) => value.text).join(", ") || "sem valores"}`);
+            }
+          }
+          if (!selectedField) {
+            throw new Error(
+              `Qlik Engine: o filtro “${filter.label}” não encontrou os valores procurados em nenhum campo compatível. `
+              + `Procurado: ${[...(filter.values || []), ...(filter.contains || [])].join(" | ") || "nenhum"}. `
+              + `Campos testados: ${attempts.join(" || ") || candidateFields.join(" | ")}.`,
+            );
+          }
+          await selectValues(selectedField, selectedValues);
+          selections[selectedField] = selectedValues.map((value) => value.text).join(" | ");
         }
         return selections;
       };

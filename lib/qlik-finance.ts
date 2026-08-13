@@ -34,7 +34,10 @@ const rentalGroupsFilter: QlikCloudMetricFilter = {
 
 const rentalBankAccountFilter: QlikCloudMetricFilter = {
   label: "conta bancária de aluguéis",
-  fieldCandidates: ["Conta Bancária", "Conta Bancaria", "Descrição Conta Bancária", "Descricao Conta Bancaria", "Conta"],
+  fieldCandidates: [
+    "Descrição Conta Banco", "Descricao Conta Banco", "Nome Conta Banco", "Conta Banco Descrição", "Conta Banco Descricao",
+    "Descrição Conta Bancária", "Descricao Conta Bancaria", "Nome da Conta", "Conta Bancária", "Conta Bancaria", "Conta",
+  ],
   contains: ["aluguel", "aluguéis", "alugueis", "alguel"],
 };
 

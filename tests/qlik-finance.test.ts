@@ -41,6 +41,7 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   const revenue = metrics.find((metric) => metric.metricKey === "receita_alugueis_mes");
   const expense = metrics.find((metric) => metric.metricKey === "despesa_alugueis_mes");
   assert.ok(balance?.filters?.some((filter) => filter.contains?.includes("alguel")));
+  assert.ok(balance?.filters?.some((filter) => filter.fieldCandidates.includes("Descrição Conta Banco")));
   assert.ok(revenue?.filters?.some((filter) => filter.contains?.includes("aluguel de imóveis")));
   assert.ok(expense?.filters?.some((filter) => filter.label.includes("fluxo financeiro")));
   assert.equal(expense?.targetLabel, "Pagamentos 💰");
