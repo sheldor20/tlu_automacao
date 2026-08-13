@@ -123,6 +123,13 @@ function buildCurrentYearMonths(year: number) {
   });
 }
 
+function previousClosedMonth(months: Array<{ key: string; label: string; isCurrent: boolean }>, year: number) {
+  const currentIndex = months.findIndex((month) => month.isCurrent);
+  if (currentIndex > 0) return months[currentIndex - 1];
+  const date = new Date(year - 1, 11, 1, 12);
+  return { key: `${year - 1}-12-01`, label: monthFormatter.format(date).replace(".", ""), isCurrent: false };
+}
+
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -143,14 +150,17 @@ function BreakdownList({
   const maximum = Math.max(...items.map((item) => item.value), 1);
   if (!items.length) return <div className="management-empty-panel"><BarChart3 size={20} /><span>{emptyLabel}</span></div>;
   return (
-    <div className="management-breakdown-list">
-      {items.map((item) => (
-        <div key={item.label}>
-          <div><span>{item.label}</span><strong>{currency(item.value, true)}</strong></div>
-          <div className="management-breakdown-track"><span style={{ width: `${Math.max(2, item.value / maximum * 100)}%` }} /></div>
-        </div>
-      ))}
-    </div>
+    <details className="management-breakdown-collapsible">
+      <summary><span>Ver composição completa</span><strong>{items.length} conta(s)</strong></summary>
+      <div className="management-breakdown-list">
+        {items.map((item) => (
+          <div key={item.label}>
+            <div><span>{item.label}</span><strong>{currency(item.value, true)}</strong></div>
+            <div className="management-breakdown-track"><span style={{ width: `${Math.max(2, item.value / maximum * 100)}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -215,7 +225,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         .from("management_indicator_values")
         .select("*")
         .eq("area", area)
-        .gte("reference_month", area === "empresa" ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
+        .gte("reference_month", area === "empresa" || area === "financas-compras" ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
         .lt("reference_month", `${currentYear + 1}-01-01`)
         .order("reference_month", { ascending: true }),
       area === "novos-negocios" ? supabase.rpc("management_business_funnel_snapshot") : Promise.resolve({ data: [], error: null }),
@@ -358,6 +368,10 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     return latestMetric(metricKey)?.value ?? null;
   }
 
+  function metricValueForMonth(metricKey: string, referenceMonth: string) {
+    return areaValues.find((item) => item.metric_key === metricKey && item.dimension_key === "total" && item.reference_month === referenceMonth)?.value ?? null;
+  }
+
   function metricHelper(metricKey: string, fallback = "aguardando primeira carga") {
     const metric = latestMetric(metricKey);
     const referenceDate = (metric?.metadata?.selections as Record<string, unknown> | undefined)?.reference_date;
@@ -465,10 +479,10 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         <section className="management-loading"><RefreshCw size={22} className="spin" /><span>Montando a visão gerencial…</span></section>
       ) : (
         <>
-          {area === "empresa" ? <CompanyView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
-          {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
-          {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
-          {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
+          {area === "empresa" ? <CompanyView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
+          {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
+          {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
+          {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
           {area === "novos-negocios" ? <NewBusinessView stages={businessStages} /> : null}
           {area === "obras-engenharia" ? <EngineeringView constructions={constructions} /> : null}
         </>
@@ -480,12 +494,13 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
 
 type MetricViewProps = {
   metricValue: (key: string) => number | null;
+  metricValueForMonth: (key: string, referenceMonth: string) => number | null;
   metricHelper: (key: string, fallback?: string) => string;
   seriesFor: (key: string) => Array<number | null>;
   months: Array<{ key: string; label: string; isCurrent: boolean }>;
 };
 
-function CompanyView({ metricValue, metricHelper, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
+function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
   const revenueSeries = seriesFor("receita_consolidada");
   const expenseSeries = seriesFor("despesa_consolidada");
   const sumSeries = (series: Array<number | null>) => {
@@ -504,6 +519,10 @@ function CompanyView({ metricValue, metricHelper, seriesFor, months, revenueBrea
     const monthExpense = seriesFor("despesa_consolidada")[index];
     return reported ?? (monthRevenue !== null && monthExpense !== null ? monthRevenue - monthExpense : null);
   });
+  const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
+  const previousRevenue = previousMonth ? metricValueForMonth("receita_consolidada", previousMonth.key) : null;
+  const previousExpense = previousMonth ? metricValueForMonth("despesa_consolidada", previousMonth.key) : null;
+  const previousResult = previousMonth ? metricValueForMonth("resultado_gerencial", previousMonth.key) ?? (previousRevenue !== null && previousExpense !== null ? previousRevenue - previousExpense : null) : null;
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
@@ -511,6 +530,12 @@ function CompanyView({ metricValue, metricHelper, seriesFor, months, revenueBrea
         <KpiCard label="Despesas consolidadas" value={expense === null ? "—" : currency(expense, true)} helper="acumulado no ano vigente" icon={<WalletCards size={17} />} />
         <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={reportedResult === null && result !== null ? "calculado por receita menos despesas" : metricHelper("resultado_gerencial")} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
         <KpiCard label="Valor em caixa" value={metricValue("valor_caixa") === null ? "—" : currency(metricValue("valor_caixa") || 0, true)} helper={metricHelper("valor_caixa")} icon={<Landmark size={17} />} />
+      </section>
+      <section className="management-closed-month-summary">
+        <div><span>Fechamento · {previousMonth?.label || "mês anterior"}</span><strong>Resultado do mês anterior</strong></div>
+        <article><span>Receita</span><strong>{previousRevenue === null ? "—" : currency(previousRevenue, true)}</strong></article>
+        <article><span>Despesa</span><strong>{previousExpense === null ? "—" : currency(previousExpense, true)}</strong></article>
+        <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult, true)}</strong></article>
       </section>
       <section className="management-two-columns">
         <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Evolução mensal</span><h2>Receitas e despesas</h2></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: revenueSeries }, { label: "Despesas", color: "#b3875b", values: expenseSeries }]} /></article>
@@ -549,7 +574,7 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
       <section className="management-panel">
         <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>O foco é reduzir as unidades sem processo e aumentar as autorizações para escrituração.</p></div></div>
         <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(metricValue(key))}</strong><small>{metricHelper(key)}</small></article>)}</div>
-        <GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Quitadas", color: "#9aab95", values: seriesFor("unidades_quitadas") }, { label: "Sem processo", color: "#b96c62", values: seriesFor("unidades_sem_processo") }, { label: "Autorizadas", color: "#405343", values: seriesFor("unidades_autorizadas_escrituracao") }]} />
+        <GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: seriesFor("unidades_sem_processo") }, { label: "Autorizadas", color: "#405343", values: seriesFor("unidades_autorizadas_escrituracao") }]} />
       </section>
     </div>
   );
@@ -574,7 +599,7 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
   );
 }
 
-function FinancePurchasingView({ metricValue, metricHelper, seriesFor, months }: MetricViewProps) {
+function FinancePurchasingView({ metricValue, metricValueForMonth, metricHelper, seriesFor, months }: MetricViewProps) {
   const rentalRevenue = seriesFor("receita_alugueis_mes");
   const rentalExpense = seriesFor("despesa_alugueis_mes");
   const rentalResult = months.map((_, index) => {
@@ -582,12 +607,15 @@ function FinancePurchasingView({ metricValue, metricHelper, seriesFor, months }:
     const expense = rentalExpense[index];
     return revenue !== null && expense !== null ? revenue - expense : null;
   });
+  const closedMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
+  const closedValue = (key: string) => closedMonth ? metricValueForMonth(key, closedMonth.key) : null;
+  const closedHelper = closedMonth ? `mês fechado · ${closedMonth.label}` : "mês anterior fechado";
   return (
     <div className="management-view-stack management-finance-view">
       <section className="management-kpi-grid">
-        <KpiCard label="Saldo da conta de aluguéis" value={metricValue("saldo_conta_alugueis") === null ? "—" : currency(metricValue("saldo_conta_alugueis") || 0, true)} helper={metricHelper("saldo_conta_alugueis")} icon={<Landmark size={17} />} />
-        <KpiCard label="Recebido no mês (Aluguel)" value={metricValue("receita_alugueis_mes") === null ? "—" : currency(metricValue("receita_alugueis_mes") || 0, true)} helper={metricHelper("receita_alugueis_mes")} tone="success" icon={<BadgeDollarSign size={17} />} />
-        <KpiCard label="Gasto no mês (Aluguel)" value={metricValue("despesa_alugueis_mes") === null ? "—" : currency(metricValue("despesa_alugueis_mes") || 0, true)} helper={metricHelper("despesa_alugueis_mes")} icon={<WalletCards size={17} />} />
+        <KpiCard label="Saldo da conta de aluguéis" value={closedValue("saldo_conta_alugueis") === null ? "—" : currency(closedValue("saldo_conta_alugueis") || 0, true)} helper={closedHelper} icon={<Landmark size={17} />} />
+        <KpiCard label="Recebido no mês (Aluguel)" value={closedValue("receita_alugueis_mes") === null ? "—" : currency(closedValue("receita_alugueis_mes") || 0, true)} helper={closedHelper} tone="success" icon={<BadgeDollarSign size={17} />} />
+        <KpiCard label="Gasto no mês (Aluguel)" value={closedValue("despesa_alugueis_mes") === null ? "—" : currency(closedValue("despesa_alugueis_mes") || 0, true)} helper={closedHelper} icon={<WalletCards size={17} />} />
         <KpiCard label="Custo evitado total" value={metricValue("custo_evitado_total") === null ? "—" : currency(metricValue("custo_evitado_total") || 0, true)} helper={metricHelper("custo_evitado_total")} tone="success" icon={<HandCoins size={17} />} />
       </section>
       <section className="management-three-columns">

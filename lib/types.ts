@@ -138,6 +138,13 @@ export type ProfileIndicatorArea = {
   area: ManagementAreaSlug;
 };
 
+export type ProfileProjectPermission = {
+  user_id: string;
+  access_scope: "full" | "assigned_tasks";
+  allow_files: boolean;
+  allow_updates: boolean;
+};
+
 export type RentalStatus = "alugado" | "desocupado" | "aguardando_reforma";
 export type LessorType = "pf" | "pj";
 

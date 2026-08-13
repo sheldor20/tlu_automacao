@@ -22,6 +22,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 11. `migrations/20260812250000_data_connections_and_qlik_delinquency.sql`
 12. `migrations/20260813110000_qlik_legal_sales_connection.sql`
 13. `migrations/20260813150000_qlik_finance_and_climate.sql`
+14. `migrations/20260813200000_operations_access_and_public_work_updates.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -51,6 +52,9 @@ Esse SQL cria:
 - conexão semanal de estoque, vendas, distratos e posições de escrituração.
 - conexão semanal de saldos, receitas, despesas e planos de contas do Qlik Financeiro;
 - carga inicial idempotente da pesquisa de clima com nota 6,9.
+- acesso completo ou restrito às tarefas envolvidas em Projetos, com permissões separadas para arquivos e atualizações;
+- links públicos revogáveis para atualização de avanço, estoque e fotos de Obras, sem exposição financeira;
+- edição segura do histórico de avanço e exclusão transacional de etapas e microetapas.
 
 ## 2. Alimentar os indicadores gerenciais
 
@@ -105,6 +109,19 @@ CRON_SECRET=um-segredo-longo-e-aleatorio
 QLIK_USERNAME=seu-usuario-do-qlik
 QLIK_PASSWORD=sua-senha-do-qlik
 ```
+
+Para os resumos executivos da pauta de Projetos e a leitura da captura semanal
+do Instagram, configure opcionalmente:
+
+```env
+OPENAI_API_KEY=sua-chave-da-api
+OPENAI_MEETING_MODEL=gpt-5.6
+OPENAI_VISION_MODEL=gpt-5.6
+```
+
+Sem `OPENAI_API_KEY`, a pauta continua sendo gerada com resumo determinístico e
+o Instagram tenta as superfícies públicas HTML/JSON. Capturas do Instagram são
+processadas somente em memória e não são gravadas.
 
 As credenciais são lidas apenas pelo endpoint no servidor e não são armazenadas
 nas tabelas. `data_connections` guarda somente a configuração não sensível;

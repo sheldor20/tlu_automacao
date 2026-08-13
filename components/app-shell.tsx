@@ -12,6 +12,8 @@ import {
   Home,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShieldCheck,
   TrendingUp,
   X,
@@ -51,6 +53,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [allowedIndicatorAreas, setAllowedIndicatorAreas] = useState<ManagementAreaSlug[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("terra-lotus-sidebar-collapsed") === "true"), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("terra-lotus-sidebar-collapsed", String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!supabase) {
@@ -178,7 +194,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-frame">
+    <div className={`app-frame${collapsed ? " app-frame-collapsed" : ""}`}>
       <main className="app-main"><div className="app-content">{children}</div></main>
 
       <button
@@ -190,6 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </button>
 
       <aside className={`side-nav ${mobileMenu ? "side-nav-open" : ""}`}>
+        <button type="button" className="side-collapse-button" onClick={toggleCollapsed} aria-label={collapsed ? "Expandir menu" : "Recolher menu"} title={collapsed ? "Expandir menu" : "Recolher menu"}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
         <div className="side-brand">
           <Image
             src="/logo-terra-lotus.png"
@@ -206,6 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link
             href={todayLink.href}
             className={pathname.startsWith(todayLink.href) ? "nav-link active" : "nav-link"}
+            title={todayLink.label}
             onClick={() => setMobileMenu(false)}
           >
             <CalendarDays size={19} />
@@ -215,6 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               href={resolvedIndicatorsLink.href}
               className={pathname.startsWith("/indicadores") ? "nav-link active" : "nav-link"}
+              title="Indicadores"
               onClick={() => setMobileMenu(false)}
             >
               <ChartNoAxesCombined size={19} />
@@ -229,6 +248,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={href}
                 href={href}
                 className={active ? "nav-link active" : "nav-link"}
+                title={label}
                 onClick={() => setMobileMenu(false)}
               >
                 <Icon size={19} />
@@ -244,6 +264,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               href={adminLink.href}
               className={pathname.startsWith(adminLink.href) ? "nav-link active" : "nav-link"}
+              title={adminLink.label}
               onClick={() => setMobileMenu(false)}
             >
               <ShieldCheck size={19} />

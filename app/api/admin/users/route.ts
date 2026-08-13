@@ -11,6 +11,11 @@ const indicatorAreaSchema = z.enum([
   "novos-negocios",
   "obras-engenharia",
 ]);
+const projectPermissionSchema = z.object({
+  access_scope: z.enum(["full", "assigned_tasks"]).default("full"),
+  allow_files: z.boolean().default(true),
+  allow_updates: z.boolean().default(true),
+}).default({ access_scope: "full", allow_files: true, allow_updates: true });
 
 const createUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
@@ -20,6 +25,7 @@ const createUserSchema = z.object({
   is_admin: z.boolean().default(false),
   departments: z.array(departmentSchema).max(5),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
+  project_permission: projectPermissionSchema,
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
@@ -36,6 +42,7 @@ const updateUserSchema = z.object({
   is_admin: z.boolean(),
   departments: z.array(departmentSchema).max(5),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
+  project_permission: projectPermissionSchema,
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
@@ -121,6 +128,24 @@ async function replaceIndicatorAreas(service: SupabaseClient, userId: string, in
   if (insertError) throw insertError;
 }
 
+async function replaceProjectPermission(
+  service: SupabaseClient,
+  userId: string,
+  hasProjects: boolean,
+  permission: z.infer<typeof projectPermissionSchema>,
+) {
+  if (!hasProjects) {
+    const { error } = await service.from("profile_project_permissions").delete().eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await service.from("profile_project_permissions").upsert({
+    user_id: userId,
+    ...permission,
+  });
+  if (error) throw error;
+}
+
 export async function POST(request: Request) {
   const context = await requireAdmin(request);
   if (context instanceof NextResponse) return context;
@@ -133,7 +158,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -162,6 +187,7 @@ export async function POST(request: Request) {
       created.user.id,
       departments.includes("indicadores") ? indicator_areas : [],
     );
+    await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos"), project_permission);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
     }
@@ -183,7 +209,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e selecione ao menos um departamento." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -224,6 +250,7 @@ export async function PATCH(request: Request) {
       user_id,
       departments.includes("indicadores") ? indicator_areas : [],
     );
+    await replaceProjectPermission(context.service, user_id, departments.includes("projetos"), project_permission);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";
     return NextResponse.json({ error: message }, { status: 500 });

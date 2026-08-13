@@ -1,10 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { fetchInstagramFollowers } from "@/lib/instagram-followers";
+import { fetchInstagramFollowers, fetchInstagramFollowersFromScreenshot } from "@/lib/instagram-followers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function currentMonthSaoPaulo() {
   const parts = new Intl.DateTimeFormat("en", {
@@ -34,9 +34,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const profile = await fetchInstagramFollowers({
-      username: "terralotusurbanismo",
-    });
+    const profile = await fetchInstagramFollowersFromScreenshot("terralotusurbanismo")
+      .catch(() => fetchInstagramFollowers({ username: "terralotusurbanismo" }));
     const referenceMonth = currentMonthSaoPaulo();
     const synchronizedAt = new Date().toISOString();
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -49,11 +48,12 @@ export async function GET(request: Request) {
       dimension_key: "total",
       dimension_label: null,
       value: profile.followersCount,
-      source: "Instagram - perfil público",
+      source: profile.source === "screenshot-vision" ? "Instagram - captura semanal" : "Instagram - perfil público",
       notes: `Seguidores do perfil @${profile.username}.`,
       metadata: {
         username: profile.username,
         scrape_source: profile.source,
+        screenshot_processed_in_memory: profile.source === "screenshot-vision",
         synchronized_at: synchronizedAt,
       },
     }, {

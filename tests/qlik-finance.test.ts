@@ -38,9 +38,12 @@ function createSnapshots() {
 test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   const metrics = QLIK_FINANCE_APPS.flatMap((app) => app.metrics);
   const balance = metrics.find((metric) => metric.metricKey === "saldo_conta_alugueis");
+  const cash = metrics.find((metric) => metric.metricKey === "valor_caixa");
   const revenue = metrics.find((metric) => metric.metricKey === "receita_alugueis_mes");
   const expense = metrics.find((metric) => metric.metricKey === "despesa_alugueis_mes");
   assert.ok(balance?.filters?.some((filter) => filter.contains?.includes("alguel")));
+  assert.equal(balance?.periodStrategy, "date-last-day");
+  assert.equal(cash?.periodStrategy, "date-last-day");
   assert.ok(balance?.filters?.some((filter) => filter.fieldCandidates.includes("Descrição Conta Banco")));
   assert.ok(revenue?.filters?.some((filter) => filter.contains?.includes("aluguel de imóveis")));
   assert.ok(expense?.filters?.some((filter) => filter.label.includes("fluxo financeiro")));

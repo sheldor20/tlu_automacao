@@ -5,6 +5,7 @@ import { ListToolbar } from "@/components/list-toolbar";
 import { UserSelect } from "@/components/user-select";
 import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
+import { generateMeetingAgendaPdf, type MeetingAgenda } from "@/lib/project-meeting-agenda";
 import type { Project, ProjectStatus, ProjectTemplate, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   FolderKanban,
+  FileDown,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -42,6 +44,8 @@ export default function ProjectsPage() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingAgenda, setGeneratingAgenda] = useState(false);
+  const [fullAccess, setFullAccess] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionProject, setActionProject] = useState<Project | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction>("archive");
@@ -51,11 +55,12 @@ export default function ProjectsPage() {
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [projectResult, userResult, templateResult, templateTaskResult] = await Promise.all([
+    const [projectResult, userResult, templateResult, templateTaskResult, permissionResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
+      supabase.rpc("project_permission_scope"),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
@@ -63,6 +68,7 @@ export default function ProjectsPage() {
     setProjects((projectResult.data || []) as Project[]);
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
+    setFullAccess(permissionResult.data !== "assigned_tasks");
     setLoading(false);
   }, [supabase]);
 
@@ -172,13 +178,33 @@ export default function ProjectsPage() {
     await loadData();
   }
 
+  async function generateAgenda() {
+    if (!supabase) return;
+    setGeneratingAgenda(true);
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch("/api/projects/meeting-agenda", { headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setGeneratingAgenda(false);
+      return setToast({ message: result.error || "Não foi possível gerar a pauta.", type: "error" });
+    }
+    try {
+      await generateMeetingAgendaPdf(result as MeetingAgenda);
+      setToast({ message: result.used_ai ? "Pauta resumida com IA gerada em PDF." : "Pauta gerada em PDF. Configure OPENAI_API_KEY para habilitar os resumos com IA.", type: "success" });
+    } catch (error) {
+      setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      setGeneratingAgenda(false);
+    }
+  }
+
   return (
     <>
       <PageIntro
         eyebrow="Departamento · Projetos"
         title="Projetos e entregas"
         description="Uma visão simples, combinando tarefas visuais com contexto, arquivos e colaboração."
-        action={<Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button>}
+        action={<div className="page-action-group">{fullAccess ? <Button variant="secondary" onClick={() => void generateAgenda()} loading={generatingAgenda}><FileDown size={18} /> Gerar pauta de reunião</Button> : null}{fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : null}</div>}
       />
 
       <section className="kpi-grid projects-kpis">
@@ -204,7 +230,7 @@ export default function ProjectsPage() {
             icon={filter === "current" ? <FolderKanban size={23} /> : <Archive size={23} />}
             title={filter === "current" ? "Crie o primeiro projeto" : "Nenhum projeto arquivado"}
             description={filter === "current" ? "Organize objetivo, responsáveis, tarefas, comentários e arquivos em uma visão única." : "Projetos arquivados aparecerão aqui e poderão ser restaurados."}
-            action={filter === "current" ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar projeto</Button> : undefined}
+            action={filter === "current" && fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar projeto</Button> : undefined}
           />
         ) : (
           <div className="project-list-view">
@@ -231,15 +257,15 @@ export default function ProjectsPage() {
                 </Link>
                 <div className="project-list-actions">
                   <Link href={`/projetos/${project.id}`} className="button button-secondary">Abrir <ArrowUpRight size={14} /></Link>
-                    <button
+                    {fullAccess ? <button
                       type="button"
                       onClick={() => project.archived_at ? void archiveProject(project) : requestAction(project, "archive")}
                       aria-label={project.archived_at ? `Restaurar ${project.name}` : `Arquivar ${project.name}`}
                       title={project.archived_at ? "Restaurar projeto" : "Arquivar projeto"}
                     >
                       {project.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                    </button>
-                    <button type="button" className="danger" onClick={() => requestAction(project, "delete")} aria-label={`Excluir ${project.name}`} title="Excluir projeto"><Trash2 size={16} /></button>
+                    </button> : null}
+                    {fullAccess ? <button type="button" className="danger" onClick={() => requestAction(project, "delete")} aria-label={`Excluir ${project.name}`} title="Excluir projeto"><Trash2 size={16} /></button> : null}
                 </div>
               </article>
             ))}

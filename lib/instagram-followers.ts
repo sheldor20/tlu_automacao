@@ -2,7 +2,7 @@ const INSTAGRAM_ORIGIN = "https://www.instagram.com";
 const INSTAGRAM_WEB_APP_ID = "936619743392459";
 const DEFAULT_TIMEOUT_MS = 8_000;
 
-type InstagramProfileSource = "public-json" | "public-html" | "public-embed";
+type InstagramProfileSource = "public-json" | "public-html" | "public-embed" | "browser-dom" | "screenshot-vision";
 
 export type InstagramProfile = {
   username: string;
@@ -101,7 +101,7 @@ function metaDescriptions(html: string) {
 export function parseInstagramPublicHtml(
   html: string,
   expectedUsername: string,
-  source: Extract<InstagramProfileSource, "public-html" | "public-embed"> = "public-html",
+  source: Extract<InstagramProfileSource, "public-html" | "public-embed" | "browser-dom"> = "public-html",
 ): InstagramProfile {
   if (!html.trim()) throw new Error("Instagram: página pública vazia.");
 
@@ -136,7 +136,7 @@ async function publicProfileAttempt({
 }: {
   url: string;
   username: string;
-  source: InstagramProfileSource;
+  source: Extract<InstagramProfileSource, "public-json" | "public-html" | "public-embed">;
   fetchImpl: typeof fetch;
   timeoutMs: number;
 }) {
@@ -207,4 +207,56 @@ export async function fetchInstagramFollowers({
   if (successful) return successful.value;
 
   throw new Error("Instagram: o perfil público não disponibilizou a contagem nesta execução. O último valor válido foi preservado.");
+}
+
+function outputText(payload: unknown) {
+  if (!payload || typeof payload !== "object") return "";
+  const response = payload as { output_text?: unknown; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
+  if (typeof response.output_text === "string") return response.output_text;
+  return (response.output || []).flatMap((item) => item.content || []).filter((item) => item.type === "output_text").map((item) => item.text || "").join("");
+}
+
+export async function fetchInstagramFollowersFromScreenshot(username = "terralotusurbanismo") {
+  const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
+    import("@sparticuz/chromium"),
+    import("puppeteer-core"),
+  ]);
+  chromium.setGraphicsMode = false;
+  const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath();
+  if (!executablePath) throw new Error("Instagram: Chromium indisponível para captura de tela.");
+  const browser = await puppeteer.launch({
+    args: await puppeteer.defaultArgs({ args: [...chromium.args, "--lang=pt-BR"], headless: "shell" }),
+    defaultViewport: { width: 1365, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false, isLandscape: true },
+    executablePath,
+    headless: "shell",
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setExtraHTTPHeaders({ "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8" });
+    await page.goto(`${INSTAGRAM_ORIGIN}/${encodeURIComponent(username)}/`, { waitUntil: "networkidle2", timeout: 40_000 });
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const screenshot = await page.screenshot({ type: "jpeg", quality: 78, fullPage: false, encoding: "base64" });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (apiKey) {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.OPENAI_VISION_MODEL || "gpt-5.6",
+          instructions: "Leia a captura do perfil do Instagram. Retorne somente a quantidade inteira de seguidores do perfil, sem texto. Converta abreviações como mil, k, mi ou m para número inteiro. Se a contagem não estiver visível, retorne NOT_FOUND.",
+          input: [{ role: "user", content: [{ type: "input_text", text: `Perfil esperado: @${username}` }, { type: "input_image", image_url: `data:image/jpeg;base64,${screenshot}`, detail: "high" }] }],
+          max_output_tokens: 80,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.ok) {
+        const raw = outputText(await response.json()).trim();
+        const numeric = raw.match(/[0-9][0-9.,\s]*(?:mil|mi|k|m)?/i)?.[0];
+        if (numeric) return { username, followersCount: normalizeCompactCount(numeric), source: "screenshot-vision" as const };
+      }
+    }
+    return parseInstagramPublicHtml(await page.content(), username, "browser-dom");
+  } finally {
+    await browser.close();
+  }
 }
