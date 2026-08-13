@@ -462,6 +462,10 @@ async function readQlikEngineMetrics(
       id: string;
       type: string;
       labels: string[];
+      dimensionCount: number;
+      measureCount: number;
+      columnCount: number;
+      rowCount: number;
     };
     type FieldValue = { text: string; number?: number };
 
@@ -615,8 +619,23 @@ async function readQlikEngineMetrics(
             const objectHandle = handleFrom(objectResult);
             if (typeof objectHandle !== "number") continue;
             const layoutResult = await call(objectHandle, "GetLayout");
-            const labels = labelsFromLayout(layoutResult.qLayout);
-            candidates.push({ id: info.qId!, type: info.qType || "unknown", labels });
+            const layout = layoutResult.qLayout as {
+              qHyperCube?: {
+                qDimensionInfo?: unknown[];
+                qMeasureInfo?: unknown[];
+                qSize?: { qcx?: number; qcy?: number };
+              };
+            } | undefined;
+            const labels = labelsFromLayout(layout);
+            candidates.push({
+              id: info.qId!,
+              type: info.qType || "unknown",
+              labels,
+              dimensionCount: layout?.qHyperCube?.qDimensionInfo?.length || 0,
+              measureCount: layout?.qHyperCube?.qMeasureInfo?.length || 0,
+              columnCount: layout?.qHyperCube?.qSize?.qcx || 0,
+              rowCount: layout?.qHyperCube?.qSize?.qcy || 0,
+            });
             try {
               addInfos(await call(objectHandle, "GetChildInfos"));
             } catch {
@@ -637,14 +656,28 @@ async function readQlikEngineMetrics(
         const expectedLabels = [metric.targetLabel, ...(metric.aliases || [])];
         const ranked = candidates.map((candidate) => ({
           candidate,
-          score: Math.max(0, ...candidate.labels.flatMap((label) => expectedLabels.map((expected) => scoreLabel(label, expected)))),
-        })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
+          labelScore: Math.max(0, ...candidate.labels.flatMap((label) => expectedLabels.map((expected) => scoreLabel(label, expected)))),
+          structureScore:
+            (/kpi|gauge/i.test(candidate.type) ? 400 : 0)
+            + (candidate.dimensionCount === 0 && candidate.measureCount > 0 ? 300 : 0)
+            + (candidate.measureCount === 1 ? 150 : 0)
+            + (candidate.columnCount === 1 ? 100 : 0)
+            + (candidate.rowCount === 1 ? 50 : 0),
+        })).filter((item) => item.labelScore > 0).map((item) => ({
+          ...item,
+          score: item.labelScore * 10 + item.structureScore,
+        })).sort((a, b) => b.score - a.score);
         if (!ranked.length) {
           const available = candidates.flatMap((candidate) => candidate.labels.slice(0, 3)).slice(0, 30);
           throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” não encontrado na planilha ${metric.sheetId}. Títulos disponíveis: ${available.join(" | ") || "nenhum"}.`);
         }
         if (ranked.length > 1 && ranked[0].score === ranked[1].score) {
-          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” ficou ambíguo entre os objetos ${ranked[0].candidate.id} e ${ranked[1].candidate.id}.`);
+          const details = ranked.slice(0, 5).map(({ candidate, labelScore, structureScore }) => (
+            `${candidate.id} [tipo=${candidate.type}; dimensões=${candidate.dimensionCount}; medidas=${candidate.measureCount}; `
+            + `tamanho=${candidate.columnCount}x${candidate.rowCount}; texto=${labelScore}; estrutura=${structureScore}; `
+            + `rótulos=${candidate.labels.slice(0, 4).join(" / ") || "nenhum"}]`
+          )).join(" | ");
+          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” continua ambíguo após priorizar KPIs de valor único. Candidatos: ${details}.`);
         }
         resolvedMetrics.set(metric.metricKey, ranked[0].candidate);
       }
