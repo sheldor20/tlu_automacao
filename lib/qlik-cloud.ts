@@ -693,8 +693,8 @@ async function readQlikEngineMetrics(
           qFieldListDef: {
             qShowSystem: false,
             qShowHidden: false,
-            qShowSemantic: false,
-            qShowSrcTables: false,
+            qShowSemantic: true,
+            qShowSrcTables: true,
           },
         },
       });
@@ -709,7 +709,12 @@ async function readQlikEngineMetrics(
         const exact = candidates.map(normalize);
         const found = fieldNames.find((field) => exact.includes(normalize(field)))
           || fieldNames.find((field) => exact.some((candidate) => normalize(field).includes(candidate)));
-        if (!found) throw new Error(`Qlik Engine: campo de ${kind} não encontrado. Candidatos: ${candidates.join(", ")}.`);
+        if (!found) {
+          throw new Error(
+            `Qlik Engine: campo de ${kind} não encontrado. Candidatos: ${candidates.join(", ")}. `
+            + `Campos disponíveis no aplicativo: ${fieldNames.slice(0, 160).join(" | ") || "nenhum"}.`,
+          );
+        }
         return found;
       };
 
@@ -952,7 +957,10 @@ async function readQlikEngineMetrics(
         await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
         await selectValue(yearField, selectedYear!);
         const aliases = monthAliases[month].map(normalize);
-        const selectedMonth = monthValues.find((value) => aliases.includes(normalize(value.text)))
+        const selectedMonth = monthValues.find((value) => {
+          const tokens = normalize(value.text).split(" ").filter(Boolean);
+          return aliases.some((alias) => tokens.includes(alias));
+        })
           || monthValues.find((value) => value.number === month);
         if (!selectedMonth) throw new Error(`Qlik Engine: o mês ${month} não existe no campo “${monthField}”.`);
         await selectValue(monthField, selectedMonth);
@@ -1098,7 +1106,11 @@ export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions): P
             options.year,
             options.throughMonth,
             options.yearFieldCandidates || ["Ano", "Ano Venda", "Ano da Venda", "Ano Competência", "Ano Competencia", "Year"],
-            options.monthFieldCandidates || ["Mês", "Mes", "Mês Venda", "Mes Venda", "Mês da Venda", "Mes da Venda", "Month"],
+            options.monthFieldCandidates || [
+              "Mês", "Mes", "Mês Venda", "Mes Venda", "Mês da Venda", "Mes da Venda", "Month",
+              "Mês Ano", "Mes Ano", "Ano Mês", "Ano Mes", "YearMonth", "MonthYear",
+              "Competência", "Competencia", "Período", "Periodo",
+            ],
           ));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
