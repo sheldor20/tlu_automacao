@@ -123,6 +123,42 @@ Na carga normal, erros também retornam o campo `phase`, que identifica se o
 problema ocorreu no navegador, na abertura do Qlik, na validação da tabela ou na
 gravação no Supabase. Nenhuma credencial é incluída nessas mensagens.
 
+## Sincronização de vendas e escrituração no Qlik Cloud
+
+O endpoint `/api/cron/qlik/legal-sales` usa a mesma autenticação protegida do
+Qlik e alimenta oito indicadores da visão **Jurídico, Vendas e Cobrança**:
+
+- estoque mensal de unidades disponíveis;
+- vendas e distratos mensais;
+- posições atuais de unidades quitadas, sem processo, autorizadas para
+  escrituração, em escrituração sem registro e registradas.
+
+A carga localiza cada visualização pelo título e pelos nomes das medidas dentro
+da planilha, aplica os campos de ano e mês de janeiro até o mês vigente e valida
+as oito séries antes de gravar. Se um título ficar ausente ou ambíguo, um mês não
+existir ou qualquer contagem não for inteira e não negativa, nenhuma linha da
+execução é persistida e o último painel válido permanece disponível.
+
+Não há novas credenciais para configurar: o endpoint reutiliza
+`QLIK_USERNAME`, `QLIK_PASSWORD`, `CRON_SECRET`,
+`SUPABASE_SERVICE_ROLE_KEY` e `NEXT_PUBLIC_SUPABASE_URL`. O cron roda toda
+segunda-feira às 11:00 UTC (08:00 em Brasília), depois da inadimplência.
+
+Depois do merge e do deploy, execute a migration
+`20260813110000_qlik_legal_sales_connection.sql` no SQL Editor do Supabase. No
+Mac, a primeira carga pode ser disparada no Terminal com:
+
+```bash
+read -s "CRON_SECRET?CRON_SECRET: "; echo
+curl --fail-with-body \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  "https://www.terralotus.space/api/cron/qlik/legal-sales"
+unset CRON_SECRET
+```
+
+O JSON de sucesso traz `current` com os oito valores vigentes, `series` com os
+meses de estoque, vendas e distratos, além do total de linhas lidas e gravadas.
+
 ## Segurança
 
 - sem cadastro público no front-end;

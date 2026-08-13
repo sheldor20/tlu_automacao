@@ -15,6 +15,40 @@ type QlikCloudTableOptions = QlikCloudCredentials & {
   filters: ReadonlyArray<{ field: string; value: string }>;
 };
 
+export type QlikCloudMetricDefinition = {
+  metricKey: string;
+  sheetId: string;
+  targetLabel: string;
+  aliases?: ReadonlyArray<string>;
+  mode: "monthly" | "snapshot";
+};
+
+export type QlikCloudMetricApp = {
+  entryUrl: string;
+  metrics: ReadonlyArray<QlikCloudMetricDefinition>;
+};
+
+type QlikCloudMetricOptions = QlikCloudCredentials & {
+  apps: ReadonlyArray<QlikCloudMetricApp>;
+  year: number;
+  throughMonth: number;
+  yearFieldCandidates?: ReadonlyArray<string>;
+  monthFieldCandidates?: ReadonlyArray<string>;
+};
+
+export type QlikMetricSnapshot = {
+  metricKey: string;
+  mode: QlikCloudMetricDefinition["mode"];
+  referenceMonth: string;
+  value: number;
+  appId: string;
+  sheetId: string;
+  objectId: string;
+  objectTitle: string;
+  targetLabel: string;
+  selections: Record<string, string>;
+};
+
 const QLIK_READY_SELECTOR = "[data-testid='top-bar-root'], #qv-stage-container";
 const USERNAME_SELECTORS = [
   "input[autocomplete='username']",
@@ -396,6 +430,391 @@ async function readQlikEngineSnapshot(
   });
 }
 
+async function readQlikEngineMetrics(
+  page: Page,
+  socketUrl: string,
+  appId: string,
+  metrics: ReadonlyArray<QlikCloudMetricDefinition>,
+  year: number,
+  throughMonth: number,
+  yearFieldCandidates: ReadonlyArray<string>,
+  monthFieldCandidates: ReadonlyArray<string>,
+): Promise<QlikMetricSnapshot[]> {
+  return page.evaluate(async ({
+    socketUrl,
+    appId,
+    metrics,
+    year,
+    throughMonth,
+    yearFieldCandidates,
+    monthFieldCandidates,
+  }) => {
+    type RpcError = { code?: number; message?: string };
+    type RpcResult = Record<string, unknown>;
+    type PendingCall = {
+      resolve: (result: RpcResult) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    };
+    type ObjectInfo = { qId?: string; qType?: string };
+    type HyperCubeCell = { qText?: string; qNum?: number; qIsNumeric?: boolean };
+    type ObjectCandidate = {
+      id: string;
+      type: string;
+      labels: string[];
+    };
+    type FieldValue = { text: string; number?: number };
+
+    const normalize = (value: string) => value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, " ")
+      .trim()
+      .toLowerCase();
+    const monthAliases: Record<number, string[]> = {
+      1: ["1", "01", "jan", "janeiro"],
+      2: ["2", "02", "fev", "fevereiro"],
+      3: ["3", "03", "mar", "marco"],
+      4: ["4", "04", "abr", "abril"],
+      5: ["5", "05", "mai", "maio"],
+      6: ["6", "06", "jun", "junho"],
+      7: ["7", "07", "jul", "julho"],
+      8: ["8", "08", "ago", "agosto"],
+      9: ["9", "09", "set", "setembro"],
+      10: ["10", "out", "outubro"],
+      11: ["11", "nov", "novembro"],
+      12: ["12", "dez", "dezembro"],
+    };
+
+    const socket = new WebSocket(socketUrl);
+    const pending = new Map<number, PendingCall>();
+    let requestId = 0;
+
+    const closeWithError = (message: string) => {
+      for (const pendingCall of pending.values()) {
+        clearTimeout(pendingCall.timer);
+        pendingCall.reject(new Error(message));
+      }
+      pending.clear();
+    };
+    socket.onmessage = (event) => {
+      let response: { id?: number; result?: RpcResult; error?: RpcError };
+      try {
+        response = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (typeof response.id !== "number") return;
+      const pendingCall = pending.get(response.id);
+      if (!pendingCall) return;
+      clearTimeout(pendingCall.timer);
+      pending.delete(response.id);
+      if (response.error) {
+        pendingCall.reject(new Error(`Qlik Engine: ${response.error.message || "falha JSON-RPC"}${response.error.code ? ` (${response.error.code})` : ""}.`));
+        return;
+      }
+      pendingCall.resolve(response.result || {});
+    };
+    socket.onclose = (event) => closeWithError(`Qlik Engine: conexão encerrada (${event.code}${event.reason ? ` - ${event.reason}` : ""}).`);
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error("Qlik Engine: tempo esgotado ao abrir o WebSocket.")), 30_000);
+      socket.onopen = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error("Qlik Engine: não foi possível abrir o WebSocket autenticado."));
+      };
+    });
+
+    const call = (handle: number, method: string, params: RpcResult = {}) => new Promise<RpcResult>((resolve, reject) => {
+      const id = ++requestId;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`Qlik Engine: tempo esgotado em ${method}.`));
+      }, 45_000);
+      pending.set(id, { resolve, reject, timer });
+      socket.send(JSON.stringify({ jsonrpc: "2.0", id, handle, method, params }));
+    });
+
+    const handleFrom = (result: RpcResult) => (
+      (result.qReturn as { qHandle?: number } | undefined)?.qHandle
+    );
+
+    const labelsFromLayout = (layout: unknown) => {
+      const labels: string[] = [];
+      const visited = new Set<unknown>();
+      const visit = (value: unknown, key = "", depth = 0) => {
+        if (depth > 7 || value === null || value === undefined) return;
+        if (typeof value === "string") {
+          if (/(title|label|subtitle|description|fallback)/i.test(key) && value.trim()) labels.push(value.trim());
+          return;
+        }
+        if (typeof value !== "object" || visited.has(value)) return;
+        visited.add(value);
+        if (Array.isArray(value)) {
+          value.slice(0, 100).forEach((item) => visit(item, key, depth + 1));
+          return;
+        }
+        Object.entries(value as Record<string, unknown>).forEach(([childKey, child]) => visit(child, childKey, depth + 1));
+      };
+      visit(layout);
+      return [...new Set(labels)];
+    };
+
+    const scoreLabel = (actual: string, expected: string) => {
+      const actualNormalized = normalize(actual);
+      const expectedNormalized = normalize(expected);
+      if (!actualNormalized || !expectedNormalized) return 0;
+      if (actualNormalized === expectedNormalized) return 1_000;
+      if (actualNormalized.startsWith(expectedNormalized) || expectedNormalized.startsWith(actualNormalized)) return 800;
+      if (actualNormalized.includes(expectedNormalized) || expectedNormalized.includes(actualNormalized)) return 700;
+      const tokens = expectedNormalized.split(" ").filter((token) => token.length > 2);
+      return tokens.length && tokens.every((token) => actualNormalized.includes(token)) ? 500 + tokens.length : 0;
+    };
+
+    const parseLocalizedNumber = (value: string) => {
+      const cleaned = value.trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".").replace(/[^-\d.]/g, "");
+      const parsed = Number(cleaned);
+      return cleaned && Number.isFinite(parsed) ? parsed : null;
+    };
+
+    try {
+      const opened = await call(-1, "OpenDoc", { qDocName: appId });
+      const docHandle = handleFrom(opened);
+      if (typeof docHandle !== "number") throw new Error("Qlik Engine: o aplicativo foi aberto sem um identificador de sessão.");
+
+      const sheetCache = new Map<string, ObjectCandidate[]>();
+      const candidateObjects = async (sheetId: string) => {
+        const cached = sheetCache.get(sheetId);
+        if (cached) return cached;
+        const sheetResult = await call(docHandle, "GetObject", { qId: sheetId });
+        const sheetHandle = handleFrom(sheetResult);
+        if (typeof sheetHandle !== "number") throw new Error(`Qlik Engine: planilha “${sheetId}” não encontrada.`);
+
+        const queue: ObjectInfo[] = [];
+        const knownIds = new Set<string>([sheetId]);
+        const candidates: ObjectCandidate[] = [];
+        const addInfos = (result: RpcResult) => {
+          const infos = (result.qInfos as ObjectInfo[] | undefined) || [];
+          for (const info of infos) {
+            if (info.qId && !knownIds.has(info.qId)) {
+              knownIds.add(info.qId);
+              queue.push(info);
+            }
+          }
+        };
+        addInfos(await call(sheetHandle, "GetChildInfos"));
+
+        while (queue.length) {
+          const info = queue.shift()!;
+          try {
+            const objectResult = await call(docHandle, "GetObject", { qId: info.qId! });
+            const objectHandle = handleFrom(objectResult);
+            if (typeof objectHandle !== "number") continue;
+            const layoutResult = await call(objectHandle, "GetLayout");
+            const labels = labelsFromLayout(layoutResult.qLayout);
+            candidates.push({ id: info.qId!, type: info.qType || "unknown", labels });
+            try {
+              addInfos(await call(objectHandle, "GetChildInfos"));
+            } catch {
+              // Visualizações sem filhos podem rejeitar GetChildInfos; elas continuam válidas.
+            }
+          } catch {
+            // Objetos auxiliares sem permissão de leitura não impedem a busca dos KPIs.
+          }
+        }
+        if (!candidates.length) throw new Error(`Qlik Engine: a planilha “${sheetId}” não retornou visualizações filhas.`);
+        sheetCache.set(sheetId, candidates);
+        return candidates;
+      };
+
+      const resolvedMetrics = new Map<string, ObjectCandidate>();
+      for (const metric of metrics) {
+        const candidates = await candidateObjects(metric.sheetId);
+        const expectedLabels = [metric.targetLabel, ...(metric.aliases || [])];
+        const ranked = candidates.map((candidate) => ({
+          candidate,
+          score: Math.max(0, ...candidate.labels.flatMap((label) => expectedLabels.map((expected) => scoreLabel(label, expected)))),
+        })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
+        if (!ranked.length) {
+          const available = candidates.flatMap((candidate) => candidate.labels.slice(0, 3)).slice(0, 30);
+          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” não encontrado na planilha ${metric.sheetId}. Títulos disponíveis: ${available.join(" | ") || "nenhum"}.`);
+        }
+        if (ranked.length > 1 && ranked[0].score === ranked[1].score) {
+          throw new Error(`Qlik Engine: indicador “${metric.targetLabel}” ficou ambíguo entre os objetos ${ranked[0].candidate.id} e ${ranked[1].candidate.id}.`);
+        }
+        resolvedMetrics.set(metric.metricKey, ranked[0].candidate);
+      }
+
+      const fieldListResult = await call(docHandle, "CreateSessionObject", {
+        qProp: {
+          qInfo: { qType: "terra-lotus-field-list" },
+          qFieldListDef: {
+            qShowSystem: false,
+            qShowHidden: false,
+            qShowSemantic: false,
+            qShowSrcTables: false,
+          },
+        },
+      });
+      const fieldListHandle = handleFrom(fieldListResult);
+      if (typeof fieldListHandle !== "number") throw new Error("Qlik Engine: não foi possível criar a lista de campos.");
+      const fieldListLayout = await call(fieldListHandle, "GetLayout");
+      const fieldNames = ((fieldListLayout.qLayout as {
+        qFieldList?: { qItems?: Array<{ qName?: string }> };
+      } | undefined)?.qFieldList?.qItems || []).map((item) => item.qName || "").filter(Boolean);
+
+      const findField = (candidates: string[], kind: string) => {
+        const exact = candidates.map(normalize);
+        const found = fieldNames.find((field) => exact.includes(normalize(field)))
+          || fieldNames.find((field) => exact.some((candidate) => normalize(field).includes(candidate)));
+        if (!found) throw new Error(`Qlik Engine: campo de ${kind} não encontrado. Candidatos: ${candidates.join(", ")}.`);
+        return found;
+      };
+
+      const needsMonthlyFilters = metrics.some((metric) => metric.mode === "monthly");
+      const yearField = needsMonthlyFilters ? findField([...yearFieldCandidates], "ano") : "";
+      const monthField = needsMonthlyFilters ? findField([...monthFieldCandidates], "mês") : "";
+
+      const fieldValues = async (fieldName: string): Promise<FieldValue[]> => {
+        const result = await call(docHandle, "CreateSessionObject", {
+          qProp: {
+            qInfo: { qType: "terra-lotus-field-values" },
+            qListObjectDef: {
+              qStateName: "$",
+              qDef: { qFieldDefs: [fieldName] },
+              qInitialDataFetch: [{ qTop: 0, qLeft: 0, qHeight: 500, qWidth: 1 }],
+            },
+          },
+        });
+        const handle = handleFrom(result);
+        if (typeof handle !== "number") throw new Error(`Qlik Engine: não foi possível ler os valores de “${fieldName}”.`);
+        const layoutResult = await call(handle, "GetLayout");
+        const listObject = (layoutResult.qLayout as {
+          qListObject?: { qDataPages?: Array<{ qMatrix?: HyperCubeCell[][] }> };
+        } | undefined)?.qListObject;
+        let matrix = listObject?.qDataPages?.[0]?.qMatrix || [];
+        if (!matrix.length) {
+          const dataResult = await call(handle, "GetListObjectData", {
+            qPath: "/qListObjectDef",
+            qPages: [{ qTop: 0, qLeft: 0, qHeight: 500, qWidth: 1 }],
+          });
+          matrix = (dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix || [];
+        }
+        return matrix.map((row) => ({
+          text: row[0]?.qText || "",
+          number: Number.isFinite(row[0]?.qNum) ? row[0]?.qNum : undefined,
+        })).filter((value) => value.text);
+      };
+
+      const yearValues = needsMonthlyFilters ? await fieldValues(yearField) : [];
+      const monthValues = needsMonthlyFilters ? await fieldValues(monthField) : [];
+      const selectedYear = yearValues.find((value) => normalize(value.text) === String(year));
+      if (needsMonthlyFilters && !selectedYear) {
+        throw new Error(`Qlik Engine: o ano ${year} não existe no campo “${yearField}”.`);
+      }
+
+      const selectValue = async (fieldName: string, value: FieldValue) => {
+        const fieldResult = await call(docHandle, "GetField", { qFieldName: fieldName, qStateName: "$" });
+        const fieldHandle = handleFrom(fieldResult);
+        if (typeof fieldHandle !== "number") throw new Error(`Qlik Engine: campo “${fieldName}” não encontrado.`);
+        const selected = await call(fieldHandle, "SelectValues", {
+          qFieldValues: [{ qText: value.text }],
+          qToggleMode: false,
+          qSoftLock: true,
+        });
+        if (selected.qReturn !== true) throw new Error(`Qlik Engine: não foi possível selecionar “${fieldName} = ${value.text}”.`);
+      };
+
+      const readMetric = async (metric: QlikCloudMetricDefinition, referenceMonth: string, selections: Record<string, string>) => {
+        const object = resolvedMetrics.get(metric.metricKey)!;
+        const objectResult = await call(docHandle, "GetObject", { qId: object.id });
+        const objectHandle = handleFrom(objectResult);
+        if (typeof objectHandle !== "number") throw new Error(`Qlik Engine: objeto “${object.id}” não encontrado.`);
+        const layoutResult = await call(objectHandle, "GetLayout");
+        const hyperCube = (layoutResult.qLayout as {
+          qHyperCube?: {
+            qDimensionInfo?: unknown[];
+            qMeasureInfo?: unknown[];
+            qSize?: { qcx?: number; qcy?: number };
+          };
+        } | undefined)?.qHyperCube;
+        if (!hyperCube?.qSize?.qcx || !hyperCube.qSize.qcy) {
+          throw new Error(`Qlik Engine: “${metric.targetLabel}” não retornou dados para ${referenceMonth}.`);
+        }
+        const dataResult = await call(objectHandle, "GetHyperCubeData", {
+          qPath: "/qHyperCubeDef",
+          qPages: [{ qTop: 0, qLeft: 0, qHeight: 1, qWidth: hyperCube.qSize.qcx }],
+        });
+        const cells = (dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix?.[0] || [];
+        const dimensionCount = hyperCube.qDimensionInfo?.length || 0;
+        const measureCells = cells.slice(dimensionCount).length ? cells.slice(dimensionCount) : cells;
+        let value: number | null = null;
+        for (const cell of measureCells) {
+          if (Number.isFinite(cell.qNum)) {
+            value = cell.qNum!;
+            break;
+          }
+          const parsed = parseLocalizedNumber(cell.qText || "");
+          if (parsed !== null) {
+            value = parsed;
+            break;
+          }
+        }
+        if (value === null) throw new Error(`Qlik Engine: “${metric.targetLabel}” retornou um valor não numérico em ${referenceMonth}.`);
+        return {
+          metricKey: metric.metricKey,
+          mode: metric.mode,
+          referenceMonth,
+          value,
+          appId,
+          sheetId: metric.sheetId,
+          objectId: object.id,
+          objectTitle: object.labels[0] || metric.targetLabel,
+          targetLabel: metric.targetLabel,
+          selections,
+        };
+      };
+
+      const snapshots: QlikMetricSnapshot[] = [];
+      const monthlyMetrics = metrics.filter((metric) => metric.mode === "monthly");
+      for (let month = 1; month <= throughMonth && monthlyMetrics.length; month += 1) {
+        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        await selectValue(yearField, selectedYear!);
+        const aliases = monthAliases[month].map(normalize);
+        const selectedMonth = monthValues.find((value) => aliases.includes(normalize(value.text)))
+          || monthValues.find((value) => value.number === month);
+        if (!selectedMonth) throw new Error(`Qlik Engine: o mês ${month} não existe no campo “${monthField}”.`);
+        await selectValue(monthField, selectedMonth);
+        const referenceMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+        const selections = { [yearField]: selectedYear!.text, [monthField]: selectedMonth.text };
+        for (const metric of monthlyMetrics) snapshots.push(await readMetric(metric, referenceMonth, selections));
+      }
+
+      const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot");
+      if (snapshotMetrics.length) {
+        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
+        for (const metric of snapshotMetrics) snapshots.push(await readMetric(metric, referenceMonth, {}));
+      }
+      return snapshots;
+    } finally {
+      socket.close(1000, "completed");
+    }
+  }, {
+    socketUrl,
+    appId,
+    metrics: metrics.map((metric) => ({ ...metric, aliases: metric.aliases ? [...metric.aliases] : [] })),
+    year,
+    throughMonth,
+    yearFieldCandidates: [...yearFieldCandidates],
+    monthFieldCandidates: [...monthFieldCandidates],
+  });
+}
+
 async function launchBrowser(): Promise<Browser> {
   chromium.setGraphicsMode = false;
   const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath();
@@ -475,6 +894,56 @@ export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Prom
     }
   } finally {
     if (socketObserver) await socketObserver.stop();
+    await browser.close();
+  }
+}
+
+export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions): Promise<QlikMetricSnapshot[]> {
+  if (!Number.isInteger(options.year) || options.year < 2000 || options.year > 2100) {
+    throw new Error(`Qlik: ano inválido para a sincronização: ${options.year}.`);
+  }
+  if (!Number.isInteger(options.throughMonth) || options.throughMonth < 1 || options.throughMonth > 12) {
+    throw new Error(`Qlik: mês final inválido para a sincronização: ${options.throughMonth}.`);
+  }
+  const browser = await launchBrowser();
+  const snapshots: QlikMetricSnapshot[] = [];
+  try {
+    for (const app of options.apps) {
+      const page = await browser.newPage();
+      let socketObserver: Awaited<ReturnType<typeof observeNativeQlikSocket>> | null = null;
+      try {
+        const appId = extractQlikAppId(app.entryUrl);
+        socketObserver = await observeNativeQlikSocket(page, appId);
+        page.setDefaultTimeout(45_000);
+        await page.emulateTimezone("America/Sao_Paulo");
+        await page.goto(app.entryUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+        await authenticateIfNeeded(page, options);
+        await page.waitForFunction(() => !window.location.hostname.startsWith("login.") && /\/sense\/app\//i.test(window.location.pathname), {
+          timeout: 120_000,
+        });
+        const socketUrl = await socketObserver.waitForAuthenticatedUrl();
+        try {
+          snapshots.push(...await readQlikEngineMetrics(
+            page,
+            socketUrl,
+            appId,
+            app.metrics,
+            options.year,
+            options.throughMonth,
+            options.yearFieldCandidates || ["Ano", "Ano Venda", "Ano da Venda", "Ano Competência", "Ano Competencia", "Year"],
+            options.monthFieldCandidates || ["Mês", "Mes", "Mês Venda", "Mes Venda", "Mês da Venda", "Mes da Venda", "Month"],
+          ));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`${message} WebSockets observados: ${socketObserver.summary()}`);
+        }
+      } finally {
+        if (socketObserver) await socketObserver.stop();
+        await page.close().catch(() => undefined);
+      }
+    }
+    return snapshots;
+  } finally {
     await browser.close();
   }
 }

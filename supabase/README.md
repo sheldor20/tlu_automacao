@@ -20,6 +20,7 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 9. `migrations/20260812230000_finance_purchases_area.sql`
 10. `migrations/20260812240000_indicator_access_by_area.sql`
 11. `migrations/20260812250000_data_connections_and_qlik_delinquency.sql`
+12. `migrations/20260813110000_qlik_legal_sales_connection.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -45,7 +46,8 @@ Esse SQL cria:
 - resumos seguros de Novos Negócios, Obras e Aluguéis para a gestão;
 - atualização automática do painel por Supabase Realtime.
 - acesso individual às seis visões de Indicadores, protegido também por RLS.
-- catálogo de conexões externas e histórico auditável das cargas do Qlik Cloud.
+- catálogo de conexões externas e histórico auditável das cargas do Qlik Cloud;
+- conexão semanal de estoque, vendas, distratos e posições de escrituração.
 
 ## 2. Alimentar os indicadores gerenciais
 
@@ -93,7 +95,7 @@ Use somente a chave pública (`anon`/publishable) no `NEXT_PUBLIC_*`. A chave
 `service_role` é usada somente pelo endpoint protegido do servidor para criar
 usuários. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável.
 
-Para a carga de inadimplência, adicione também em **Production**:
+Para as cargas de inadimplência, vendas e escrituração, adicione também em **Production**:
 
 ```env
 CRON_SECRET=um-segredo-longo-e-aleatorio
