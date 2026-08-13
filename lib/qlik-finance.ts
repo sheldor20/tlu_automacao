@@ -149,6 +149,30 @@ export const QLIK_FINANCE_RENTAL_METRIC_KEYS = [
   "despesa_alugueis_mes",
 ] as const;
 
+type FinanceMetricOverrides = Record<string, Record<string, number>>;
+
+export function applyFinanceMetricOverrides(
+  snapshots: QlikMetricSnapshot[],
+  overrides: unknown,
+) {
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) return snapshots;
+  const metricOverrides = overrides as FinanceMetricOverrides;
+  return snapshots.map((snapshot) => {
+    const overrideValue = metricOverrides[snapshot.metricKey]?.[snapshot.referenceMonth];
+    if (typeof overrideValue !== "number" || !Number.isFinite(overrideValue)) return snapshot;
+    return {
+      ...snapshot,
+      value: overrideValue,
+      selections: {
+        ...snapshot.selections,
+        ajuste_validado: "valor financeiro validado manualmente",
+        valor_qlik_original: String(snapshot.value),
+        valor_validado: String(overrideValue),
+      },
+    };
+  });
+}
+
 export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = new Date()) {
   const expenseKeys = new Set(["despesa_alugueis_mes", "despesa_consolidada", "despesa_plano_contas"]);
   const normalizedSnapshots = snapshots.map((snapshot) => (
@@ -240,7 +264,9 @@ export function toFinanceIndicatorRows(snapshots: QlikMetricSnapshot[], synchron
     dimension_label: snapshot.dimensionLabel || null,
     value: snapshot.value,
     source: QLIK_FINANCE_SOURCE,
-    notes: snapshot.mode === "breakdown"
+    notes: snapshot.selections.ajuste_validado
+      ? "Valor validado manualmente; o retorno original do Qlik permanece nos metadados."
+      : snapshot.mode === "breakdown"
       ? "Composição do mês anterior fechado consultada no Qlik Cloud."
       : snapshot.metricKey === "resultado_gerencial"
         ? "Calculado por receita mensal menos despesa mensal."
