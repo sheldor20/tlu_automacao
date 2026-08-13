@@ -31,7 +31,7 @@ const POSITION_DATE_FIELDS = [
 
 const monthEndPosition = {
   mode: "monthly" as const,
-  periodStrategy: "date-last-day" as const,
+  periodStrategy: "date-last-business-day" as const,
   dateField: POSITION_DATE_FIELDS[0],
   dateFieldCandidates: POSITION_DATE_FIELDS.slice(1),
   exactDateField: true,
@@ -96,14 +96,14 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
         sheetId: "8b69801a-0e28-4d6f-86a9-a2b04bbd2485",
         targetLabel: "Escrituradas / não registradas",
         aliases: ["Escrituradas nao registradas", "Em escrituração sem registro"],
-        mode: "snapshot",
+        ...monthEndPosition,
       },
       {
         metricKey: "unidades_registradas",
         sheetId: "63544267-64b1-4568-8498-a8217f2c04a6",
         targetLabel: "Registradas",
         aliases: ["Vendas registradas", "Unidades registradas"],
-        mode: "snapshot",
+        ...monthEndPosition,
       },
     ],
   },
@@ -148,13 +148,22 @@ export function legalSalesReferenceMonths(now = new Date()) {
   return Array.from({ length: month }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}-01`);
 }
 
+export function lastClosedSaoPauloYearMonth(now = new Date()) {
+  const { year, month } = saoPauloYearMonth(now);
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+}
+
+export function legalSalesClosedReferenceMonths(now = new Date()) {
+  const { year, month } = lastClosedSaoPauloYearMonth(now);
+  return Array.from({ length: month }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}-01`);
+}
+
 function metricModes() {
   return new Map(QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics.map((metric) => [metric.metricKey, metric.mode])));
 }
 
 export function validateLegalSalesSnapshots(snapshots: QlikMetricSnapshot[], now = new Date()) {
-  const expectedMonths = legalSalesReferenceMonths(now);
-  const currentMonth = expectedMonths.at(-1)!;
+  const expectedMonths = legalSalesClosedReferenceMonths(now);
   const modes = metricModes();
   const expectedKeys = new Set(QLIK_LEGAL_SALES_METRIC_KEYS);
   const enriched = snapshots.slice();
@@ -174,7 +183,7 @@ export function validateLegalSalesSnapshots(snapshots: QlikMetricSnapshot[], now
 
   for (const metricKey of expectedKeys) {
     const mode = modes.get(metricKey);
-    const requiredMonths = mode === "monthly" ? expectedMonths : [currentMonth];
+    const requiredMonths = mode === "monthly" ? expectedMonths : [expectedMonths.at(-1)!];
     for (const referenceMonth of requiredMonths) {
       if (!seen.has(`${metricKey}:${referenceMonth}`)) {
         throw new Error(`Qlik: “${metricKey}” não retornou valor para ${referenceMonth}. Nenhum dado foi gravado.`);

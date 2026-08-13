@@ -4,7 +4,7 @@ import { GroupedBarChart, TrendChart } from "@/components/management-charts";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
-import { buildDeedTractionHistory, sumMetricSeries } from "@/lib/management-metrics";
+import { sumMetricSeries } from "@/lib/management-metrics";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
   ManagementAreaSlug,
@@ -226,7 +226,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         .from("management_indicator_values")
         .select("*")
         .eq("area", area)
-        .gte("reference_month", area === "empresa" || area === "financas-compras" ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
+        .gte("reference_month", ["empresa", "financas-compras", "juridico-vendas-cobranca"].includes(area) ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
         .lt("reference_month", `${currentYear + 1}-01-01`)
         .order("reference_month", { ascending: true }),
       area === "novos-negocios" ? supabase.rpc("management_business_funnel_snapshot") : Promise.resolve({ data: [], error: null }),
@@ -382,6 +382,19 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     return metric ? `competência ${competenceFormatter.format(monthDate(metric.reference_month))}` : fallback;
   }
 
+  function metricHelperForMonth(metricKey: string, referenceMonth: string, fallback = "aguardando primeira carga") {
+    const metric = areaValues.find((item) => (
+      item.metric_key === metricKey
+      && item.dimension_key === "total"
+      && item.reference_month === referenceMonth
+    ));
+    const referenceDate = (metric?.metadata?.selections as Record<string, unknown> | undefined)?.reference_date;
+    if (metric && typeof referenceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+      return `posição em ${referenceDateFormatter.format(new Date(`${referenceDate}T12:00:00`))}`;
+    }
+    return metric ? `competência ${competenceFormatter.format(monthDate(metric.reference_month))}` : fallback;
+  }
+
   function seriesFor(metricKey: string) {
     return months.map((month) => areaValues.find((item) => item.metric_key === metricKey && item.dimension_key === "total" && item.reference_month === month.key)?.value ?? null);
   }
@@ -481,7 +494,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
       ) : (
         <>
           {area === "empresa" ? <CompanyView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
-          {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
+          {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} metricHelperForMonth={metricHelperForMonth} seriesFor={seriesFor} months={months} /> : null}
           {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
           {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
           {area === "novos-negocios" ? <NewBusinessView stages={businessStages} /> : null}
@@ -564,9 +577,17 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   );
 }
 
-function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: MetricViewProps) {
-  const sales = metricValue("vendas_mes");
-  const cancellations = metricValue("distratos_mes");
+function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metricHelperForMonth, months }: MetricViewProps & {
+  metricHelperForMonth: (key: string, referenceMonth: string, fallback?: string) => string;
+}) {
+  const closedMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
+  const closedMonthIndex = months.findIndex((month) => month.key === closedMonth.key);
+  const chartMonths = closedMonthIndex >= 0 ? months.slice(0, closedMonthIndex + 1) : [closedMonth];
+  const closedValue = (key: string) => metricValueForMonth(key, closedMonth.key);
+  const closedHelper = (key: string) => metricHelperForMonth(key, closedMonth.key, `aguardando fechamento de ${closedMonth.label}`);
+  const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
+  const sales = closedValue("vendas_mes");
+  const cancellations = closedValue("distratos_mes");
   const deedMetrics = [
     ["Quitadas", "unidades_quitadas"],
     ["Sem processo", "unidades_sem_processo"],
@@ -574,37 +595,22 @@ function LegalSalesView({ metricValue, metricHelper, seriesFor, months }: Metric
     ["Em escrituração", "unidades_escrituracao_sem_registro"],
     ["Registradas", "unidades_registradas"],
   ] as const;
-  const tractionHistory = buildDeedTractionHistory({
-    semProcessoInformado: seriesFor("unidades_sem_processo"),
-    autorizadas: seriesFor("unidades_autorizadas_escrituracao"),
-  });
-  const latestTractionIndex = tractionHistory.reduce((latest, point, index) => point.taxa === null ? latest : index, -1);
-  const latestTraction = latestTractionIndex >= 0 ? tractionHistory[latestTractionIndex] : null;
-  const percentage = (value: number | null) => value === null
-    ? "—"
-    : `${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}%`;
-  const percentagePointChange = (value: number | null) => {
-    if (value === null) return "base";
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)} p.p.`;
-  };
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
         <KpiCard label="Eficiência da cobrança" value={displayNumber(metricValue("eficiencia_cobranca"), "%")} helper={metricHelper("eficiencia_cobranca")} tone="success" icon={<Gauge size={17} />} />
         <KpiCard label="Inadimplência total" value={metricValue("inadimplencia_total") === null ? "—" : currency(metricValue("inadimplencia_total") || 0, true)} helper={metricHelper("inadimplencia_total")} icon={<HandCoins size={17} />} />
-        <KpiCard label="Unidades disponíveis" value={displayNumber(metricValue("unidades_disponiveis"))} helper={metricHelper("unidades_disponiveis")} icon={<Building2 size={17} />} />
-        <KpiCard label="Vendas no mês" value={displayNumber(sales)} helper={cancellations === null ? metricHelper("vendas_mes") : `${displayNumber(cancellations)} distrato(s) no mês`} icon={<ShoppingCart size={17} />} />
+        <KpiCard label="Unidades disponíveis" value={displayNumber(closedValue("unidades_disponiveis"))} helper={closedHelper("unidades_disponiveis")} icon={<Building2 size={17} />} />
+        <KpiCard label="Vendas no mês" value={displayNumber(sales)} helper={cancellations === null ? closedHelper("vendas_mes") : `${displayNumber(cancellations)} distrato(s) · fechamento ${closedMonth.label}`} icon={<ShoppingCart size={17} />} />
       </section>
       <section className="management-two-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Cobrança</span><h2>Eficiência mês a mês</h2></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Eficiência (%)", color: "#405343", values: seriesFor("eficiencia_cobranca") }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Comercial</span><h2>Vendas, estoque e distratos</h2></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#9aab95", values: seriesFor("unidades_disponiveis") }, { label: "Vendas", color: "#405343", values: seriesFor("vendas_mes") }, { label: "Distratos", color: "#b96c62", values: seriesFor("distratos_mes") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Cobrança</span><h2>Eficiência mês a mês</h2></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Eficiência (%)", color: "#405343", values: closedSeries("eficiencia_cobranca") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Comercial</span><h2>Vendas, estoque e distratos</h2><p>Histórico até o último mês fechado · {closedMonth.label}.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#9aab95", values: closedSeries("unidades_disponiveis") }, { label: "Vendas", color: "#405343", values: closedSeries("vendas_mes") }, { label: "Distratos", color: "#b96c62", values: closedSeries("distratos_mes") }]} /></article>
       </section>
       <section className="management-panel">
-        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Tração = autorizadas ÷ (sem processo + autorizadas). A variação compara o resultado com o mês anterior.</p></div>{latestTraction ? <div className="management-traction-current"><span>Tração atual</span><strong>{percentage(latestTraction.taxa)}</strong><small>{latestTraction.variacaoPontosPercentuais === null ? "base histórica" : `${percentagePointChange(latestTraction.variacaoPontosPercentuais)} vs. mês anterior`}</small></div> : null}</div>
-        <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(metricValue(key))}</strong><small>{metricHelper(key)}</small></article>)}</div>
-        <div className="management-traction-months">{tractionHistory.map((point, index) => point.taxa === null ? null : <article className={index === latestTractionIndex ? "current" : ""} key={months[index]?.key || index}><span>{months[index]?.label}</span><strong>{percentage(point.taxa)}</strong><small>{percentagePointChange(point.variacaoPontosPercentuais)}</small></article>)}</div>
-        <GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: tractionHistory.map((point) => point.semProcesso) }, { label: "Autorizadas", color: "#405343", values: tractionHistory.map((point) => point.autorizadas) }]} />
+        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Posições no último dia útil disponível de cada mês, até o fechamento de {closedMonth.label}.</p></div></div>
+        <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(closedValue(key))}</strong><small>{closedHelper(key)}</small></article>)}</div>
+        <GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: closedSeries("unidades_sem_processo") }, { label: "Autorizadas", color: "#405343", values: closedSeries("unidades_autorizadas_escrituracao") }]} />
       </section>
     </div>
   );

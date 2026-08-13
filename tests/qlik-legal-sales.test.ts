@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  legalSalesReferenceMonths,
+  lastClosedSaoPauloYearMonth,
+  legalSalesClosedReferenceMonths,
   QLIK_LEGAL_SALES_APPS,
   QLIK_LEGAL_SALES_METRIC_KEYS,
   QLIK_LEGAL_SALES_SCRAPE_BATCHES,
@@ -18,11 +19,13 @@ const monthly = new Set([
   "unidades_quitadas",
   "unidades_sem_processo",
   "unidades_autorizadas_escrituracao",
+  "unidades_escrituracao_sem_registro",
+  "unidades_registradas",
 ]);
 
 function createSnapshots(): QlikMetricSnapshot[] {
   return QLIK_LEGAL_SALES_METRIC_KEYS.flatMap((metricKey, metricIndex) => {
-    const months = monthly.has(metricKey) ? legalSalesReferenceMonths(now) : ["2026-08-01"];
+    const months = monthly.has(metricKey) ? legalSalesClosedReferenceMonths(now) : ["2026-07-01"];
     return months.map((referenceMonth, monthIndex) => ({
       metricKey,
       mode: monthly.has(metricKey) ? "monthly" : "snapshot",
@@ -40,11 +43,13 @@ function createSnapshots(): QlikMetricSnapshot[] {
   });
 }
 
-test("gera as competências de janeiro ao mês vigente em São Paulo", () => {
-  assert.deepEqual(legalSalesReferenceMonths(now), [
+test("gera somente as competências até o último mês fechado em São Paulo", () => {
+  assert.deepEqual(lastClosedSaoPauloYearMonth(now), { year: 2026, month: 7 });
+  assert.deepEqual(legalSalesClosedReferenceMonths(now), [
     "2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01",
-    "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01",
+    "2026-05-01", "2026-06-01", "2026-07-01",
   ]);
+  assert.deepEqual(lastClosedSaoPauloYearMonth(new Date("2027-01-10T12:00:00-03:00")), { year: 2026, month: 12 });
 });
 
 test("usa os campos de data reais para vendas e distratos", () => {
@@ -64,23 +69,25 @@ test("divide a leitura em sessões curtas sem perder ou duplicar indicadores", (
   );
 });
 
-test("consulta quitadas, sem processo e autorizadas no último dia disponível de cada mês", () => {
+test("consulta as cinco posições de escritura no último dia útil disponível de cada mês", () => {
   const metrics = QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics);
   const quitadas = metrics.find((metric) => metric.metricKey === "unidades_quitadas");
   const semProcesso = metrics.find((metric) => metric.metricKey === "unidades_sem_processo");
   const autorizadas = metrics.find((metric) => metric.metricKey === "unidades_autorizadas_escrituracao");
-  for (const metric of [quitadas, semProcesso, autorizadas]) {
-    assert.equal(metric?.periodStrategy, "date-last-day");
+  const emEscrituracao = metrics.find((metric) => metric.metricKey === "unidades_escrituracao_sem_registro");
+  const registradas = metrics.find((metric) => metric.metricKey === "unidades_registradas");
+  for (const metric of [quitadas, semProcesso, autorizadas, emEscrituracao, registradas]) {
+    assert.equal(metric?.periodStrategy, "date-last-business-day");
     assert.equal(metric?.dateField, "Data Posição");
     assert.equal(metric?.exactDateField, true);
   }
 });
 
-test("exige as seis séries mensais e mantém somente as demais posições como atuais", () => {
+test("exige as oito séries mensais somente até o mês fechado", () => {
   const snapshots = createSnapshots();
   const validated = validateLegalSalesSnapshots(snapshots, now);
-  assert.equal(validated.length, 50);
-  assert.equal(validated.filter((snapshot) => snapshot.metricKey === "unidades_sem_processo").length, 8);
+  assert.equal(validated.length, 56);
+  assert.equal(validated.filter((snapshot) => snapshot.metricKey === "unidades_sem_processo").length, 7);
   assert.throws(
     () => validateLegalSalesSnapshots(snapshots.filter((snapshot) => !(
       snapshot.metricKey === "vendas_mes" && snapshot.referenceMonth === "2026-04-01"
