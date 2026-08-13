@@ -5,6 +5,7 @@ import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
 import { sumMetricSeries } from "@/lib/management-metrics";
+import { monthsThroughLastClosed } from "@/lib/management-period";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
   ManagementAreaSlug,
@@ -21,7 +22,6 @@ import {
   Building2,
   Camera,
   CircleDollarSign,
-  Clock3,
   Gauge,
   HandCoins,
   HardHat,
@@ -616,10 +616,9 @@ function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metric
   );
 }
 
-function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, rentals }: MetricViewProps & { rentals: ManagementRentalSnapshot | null }) {
-  const availability = seriesFor("imoveis_disponiveis");
-  const currentMonthIndex = months.findIndex((month) => month.isCurrent);
-  if (rentals && currentMonthIndex >= 0) availability[currentMonthIndex] = rentals.available_properties;
+function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, months, rentals }: MetricViewProps & { rentals: ManagementRentalSnapshot | null }) {
+  const chartMonths = monthsThroughLastClosed(months);
+  const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
   return (
     <div className="management-view-stack management-people-view">
       <section className="management-kpi-grid management-people-kpis">
@@ -628,19 +627,21 @@ function PeopleClientsView({ metricValue, metricHelper, seriesFor, months, renta
         <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
       </section>
       <section className="management-two-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availability }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: seriesFor("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2><p>Histórico até o último mês fechado.</p></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: closedSeries("imoveis_disponiveis") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5, até o último mês fechado.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: closedSeries("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
       </section>
     </div>
   );
 }
 
-function FinancePurchasingView({ metricValueForMonth, seriesFor, months }: MetricViewProps) {
-  const rentalRevenue = seriesFor("receita_alugueis_mes");
-  const rentalExpense = seriesFor("despesa_alugueis_mes");
-  const avoidedCostSeries = seriesFor("custo_evitado_total");
+function FinancePurchasingView({ metricValueForMonth, months }: MetricViewProps) {
+  const chartMonths = monthsThroughLastClosed(months);
+  const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
+  const rentalRevenue = closedSeries("receita_alugueis_mes");
+  const rentalExpense = closedSeries("despesa_alugueis_mes");
+  const avoidedCostSeries = closedSeries("custo_evitado_total");
   const avoidedCostTotal = sumMetricSeries(avoidedCostSeries);
-  const rentalResult = months.map((_, index) => {
+  const rentalResult = chartMonths.map((_, index) => {
     const revenue = rentalRevenue[index];
     const expense = rentalExpense[index];
     return revenue !== null && expense !== null ? revenue - expense : null;
@@ -657,9 +658,9 @@ function FinancePurchasingView({ metricValueForMonth, seriesFor, months }: Metri
         <KpiCard label="Custo evitado total" value={avoidedCostTotal === null ? "—" : currency(avoidedCostTotal)} helper="soma de todo o valor evitado no ano vigente" tone="success" icon={<HandCoins size={17} />} className="management-kpi-full-money" />
       </section>
       <section className="management-three-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Valor apurado em cada competência.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: avoidedCostSeries }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Resultado dos aluguéis</span><h2>Recebido menos gasto</h2><p>Resultado líquido mensal da operação de aluguéis.</p></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Resultado", color: "#6f876e", values: rentalResult }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Conformidade de compras</span><h2>Compras sem orçamento</h2><p>Total de compras comparado às realizadas sem orçamento.</p></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Total de compras", color: "#8da087", values: seriesFor("compras_total") }, { label: "Sem orçamento", color: "#b96c62", values: seriesFor("compras_sem_orcamento") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Economia gerada</span><h2>Custo evitado mês a mês</h2><p>Valor apurado até o último mês fechado.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Custo evitado", color: "#405343", values: avoidedCostSeries }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Resultado dos aluguéis</span><h2>Recebido menos gasto</h2><p>Resultado líquido mensal até o último mês fechado.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Resultado", color: "#6f876e", values: rentalResult }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Conformidade de compras</span><h2>Compras sem orçamento</h2><p>Total de compras e compras sem orçamento até o último mês fechado.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Total de compras", color: "#8da087", values: closedSeries("compras_total") }, { label: "Sem orçamento", color: "#b96c62", values: closedSeries("compras_sem_orcamento") }]} /></article>
       </section>
     </div>
   );
@@ -672,16 +673,12 @@ function NewBusinessView({ stages }: { stages: ManagementBusinessStageSnapshot[]
   }));
   const totalAreas = orderedStages.reduce((sum, item) => sum + item.snapshot.area_count, 0);
   const totalVgv = orderedStages.reduce((sum, item) => sum + item.snapshot.potential_vgv, 0);
-  const inWorks = orderedStages.find((item) => item.key === "obra")?.snapshot.area_count || 0;
-  const weightedDays = totalAreas ? orderedStages.reduce((sum, item) => sum + item.snapshot.average_days * item.snapshot.area_count, 0) / totalAreas : 0;
   const maxVgv = Math.max(...orderedStages.map((item) => item.snapshot.potential_vgv), 1);
   return (
     <div className="management-view-stack">
-      <section className="management-kpi-grid">
+      <section className="management-kpi-grid management-kpi-grid-two">
         <KpiCard label="Áreas no pipeline" value={String(totalAreas)} helper="negócios ativos no funil" icon={<BriefcaseBusiness size={17} />} />
         <KpiCard label="VGV potencial" value={currency(totalVgv, true)} helper="soma de todo o pipeline" icon={<CircleDollarSign size={17} />} />
-        <KpiCard label="Conversão até obra" value={`${totalAreas ? (inWorks / totalAreas * 100).toFixed(0) : 0}%`} helper={`${inWorks} área(s) em obra`} tone="success" icon={<TrendingUp size={17} />} />
-        <KpiCard label="Tempo médio por fase" value={`${weightedDays.toFixed(0)} dias`} helper="média ponderada do funil" icon={<Clock3 size={17} />} />
       </section>
       <section className="management-panel management-funnel-panel">
         <div className="management-panel-head"><div><span>Pipeline em tempo real</span><h2>Áreas versus VGV por etapa</h2><p>Os valores abaixo refletem diretamente o funil de Novos Negócios.</p></div><Link className="button button-secondary" href="/novos-negocios">Abrir operação <ArrowUpRight size={16} /></Link></div>
@@ -720,9 +717,12 @@ function EngineeringView({ constructions }: { constructions: ManagementConstruct
           <div className="management-work-list">
             {constructions.map((item) => (
               <article key={item.id}>
-                <div className="management-work-title"><div><HardHat size={18} /></div><span><strong>{item.name}</strong><small>{currency(item.realized_total, true)} realizado de {currency(item.planned_budget, true)}</small></span></div>
+                <div className="management-work-title"><div><HardHat size={18} /></div><span><strong>{item.name}</strong><small>Acompanhamento físico e financeiro</small></span></div>
                 <div className="management-work-progress"><ProgressBar label="Evolução física" value={item.physical_progress} /><ProgressBar label="Evolução financeira" value={item.financial_progress} /></div>
-                <div className="management-work-budget"><span>Orçamento</span><strong>{currency(item.planned_budget, true)}</strong></div>
+                <div className="management-work-budget">
+                  <div className={item.realized_total > item.planned_budget ? "is-over-budget" : ""}><span>Orçamento</span><strong>{currency(item.planned_budget, true)}</strong></div>
+                  <div><span>Realizado</span><strong>{currency(item.realized_total, true)}</strong></div>
+                </div>
               </article>
             ))}
           </div>
