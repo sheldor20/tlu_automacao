@@ -187,6 +187,10 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
   }
 
   const enriched = normalizedSnapshots.slice();
+  const currentReferenceMonth = expectedMonths.at(-1);
+  const previousClosedReferenceMonth = expectedMonths.length > 1
+    ? expectedMonths.at(-2)
+    : currentReferenceMonth;
   for (const referenceMonth of expectedMonths) {
     const revenue = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "receita_consolidada" && snapshot.referenceMonth === referenceMonth);
     const expense = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "despesa_consolidada" && snapshot.referenceMonth === referenceMonth);
@@ -201,7 +205,12 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
     }
 
     const cash = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "valor_caixa" && snapshot.referenceMonth === referenceMonth);
-    const rentalCash = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === referenceMonth);
+    const rentalReferenceMonth = referenceMonth === currentReferenceMonth
+      ? previousClosedReferenceMonth
+      : referenceMonth;
+    const rentalCash = normalizedSnapshots.find((snapshot) => (
+      snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === rentalReferenceMonth
+    ));
     if (cash && rentalCash) {
       enriched.push({
         ...cash,
@@ -209,10 +218,11 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
         targetLabel: "Caixa disponível calculado",
         value: cash.value - rentalCash.value,
         selections: {
-          cálculo: "valor em caixa - saldo da conta de aluguéis",
+          cálculo: "valor em caixa atual - saldo da conta de aluguéis do último mês fechado",
           competência: referenceMonth,
           valor_caixa: String(cash.value),
           saldo_conta_alugueis: String(rentalCash.value),
+          saldo_conta_alugueis_competência: rentalCash.referenceMonth,
         },
       });
     }
@@ -235,7 +245,7 @@ export function toFinanceIndicatorRows(snapshots: QlikMetricSnapshot[], synchron
       : snapshot.metricKey === "resultado_gerencial"
         ? "Calculado por receita mensal menos despesa mensal."
         : snapshot.metricKey === "caixa_disponivel"
-          ? "Calculado por valor em caixa menos saldo da conta de aluguéis."
+          ? "Calculado por valor em caixa atual menos saldo da conta de aluguéis do último mês fechado."
         : "Valor mensal consultado no Qlik Cloud.",
     metadata: {
       connection: QLIK_FINANCE_CONNECTION_SLUG,

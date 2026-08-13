@@ -54,7 +54,7 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   assert.equal(expenseBreakdown?.objectId, "HgngyL");
 });
 
-test("exige todos os meses e calcula resultado e caixa disponível mês a mês", () => {
+test("calcula o caixa atual descontando o saldo de aluguéis do último mês fechado", () => {
   const result = validateFinanceSnapshots(createSnapshots(), now);
   assert.equal(result.length, 66);
   const august = result.find((item) => item.metricKey === "resultado_gerencial" && item.referenceMonth === "2026-08-01");
@@ -63,9 +63,13 @@ test("exige todos os meses e calcula resultado e caixa disponível mês a mês",
   assert.equal(august?.value, revenue.value - expense.value);
   const availableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-08-01");
   const cash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-08-01")!;
-  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-08-01")!;
+  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-07-01")!;
   assert.equal(availableCash?.value, cash.value - rentalCash.value);
-  assert.equal(availableCash?.selections.cálculo, "valor em caixa - saldo da conta de aluguéis");
+  assert.equal(availableCash?.selections.cálculo, "valor em caixa atual - saldo da conta de aluguéis do último mês fechado");
+  assert.equal(availableCash?.selections.saldo_conta_alugueis_competência, "2026-07-01");
+  const julyAvailableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-07-01")!;
+  const julyCash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-07-01")!;
+  assert.equal(julyAvailableCash.value, julyCash.value - rentalCash.value);
 });
 
 test("recusa a carga inteira quando falta uma competência financeira", () => {
