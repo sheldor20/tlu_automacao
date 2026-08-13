@@ -12,6 +12,7 @@ import {
   toLegalSalesIndicatorRows,
   validateLegalSalesSnapshots,
 } from "@/lib/qlik-legal-sales";
+import { isRecoverableQlikBrowserError } from "@/lib/qlik-retry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,11 +22,6 @@ function safeError(error: unknown) {
   if (!(error instanceof Error)) return "Falha inesperada sem mensagem técnica.";
   const code = "code" in error && typeof error.code === "string" ? ` [${error.code}]` : "";
   return `${error.name}${code}: ${error.message}`.slice(0, 2_500);
-}
-
-function isRecoverableBrowserClosure(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /target closed|session closed|browser (?:has )?disconnected|connection closed|protocol error.*closed/i.test(message);
 }
 
 export async function GET(request: Request) {
@@ -109,11 +105,13 @@ export async function GET(request: Request) {
           if (attempt === 2) recoveredBatches.push(metricKeys);
           break;
         } catch (error) {
-          if (attempt === 2 || !isRecoverableBrowserClosure(error)) throw error;
-          console.warn("Chromium encerrou o lote da carga Qlik; iniciando uma sessão limpa.", {
+          if (attempt === 2 || !isRecoverableQlikBrowserError(error)) throw error;
+          console.warn("A sessão do Qlik falhou durante o lote; iniciando uma tentativa limpa.", {
             batch: batchIndex + 1,
             metrics: metricKeys,
+            error: error instanceof Error ? error.message : String(error),
           });
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
         }
       }
     }
