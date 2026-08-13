@@ -18,6 +18,7 @@ type QlikCloudTableOptions = QlikCloudCredentials & {
 export type QlikCloudMetricDefinition = {
   metricKey: string;
   sheetId: string;
+  objectId?: string;
   targetLabel: string;
   aliases?: ReadonlyArray<string>;
   mode: "monthly" | "snapshot" | "breakdown";
@@ -666,6 +667,17 @@ async function readQlikEngineMetrics(
       const resolvedMetrics = new Map<string, ObjectCandidate>();
       for (const metric of metrics) {
         const candidates = await candidateObjects(metric.sheetId);
+        if (metric.objectId) {
+          const pinned = candidates.find((candidate) => candidate.id === metric.objectId);
+          if (!pinned) {
+            throw new Error(
+              `Qlik Engine: o objeto fixado “${metric.objectId}” para “${metric.targetLabel}” não existe na planilha ${metric.sheetId}. `
+              + `IDs disponíveis: ${candidates.slice(0, 120).map((candidate) => candidate.id).join(" | ") || "nenhum"}.`,
+            );
+          }
+          resolvedMetrics.set(metric.metricKey, pinned);
+          continue;
+        }
         const expectedLabels = [metric.targetLabel, ...(metric.aliases || [])];
         const ranked = candidates.map((candidate) => ({
           candidate,

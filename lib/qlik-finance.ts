@@ -118,6 +118,7 @@ export const QLIK_FINANCE_APPS: ReadonlyArray<QlikCloudMetricApp> = [{
     {
       metricKey: "despesa_plano_contas",
       sheetId: EXPENSE_SHEET,
+      objectId: "HgngyL",
       targetLabel: "Despesas por plano de contas",
       aliases: ["Despesa por plano de contas", "Plano de contas", "Fluxo Financeiro", "Pagamentos 💰", "CAP"],
       mode: "breakdown",
