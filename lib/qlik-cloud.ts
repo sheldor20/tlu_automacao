@@ -20,9 +20,18 @@ export type QlikCloudMetricDefinition = {
   sheetId: string;
   targetLabel: string;
   aliases?: ReadonlyArray<string>;
-  mode: "monthly" | "snapshot";
-  periodStrategy?: "filters" | "series" | "date-field";
+  mode: "monthly" | "snapshot" | "breakdown";
+  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month";
   dateField?: string;
+  dateFieldCandidates?: ReadonlyArray<string>;
+  filters?: ReadonlyArray<QlikCloudMetricFilter>;
+};
+
+export type QlikCloudMetricFilter = {
+  label: string;
+  fieldCandidates: ReadonlyArray<string>;
+  values?: ReadonlyArray<string>;
+  contains?: ReadonlyArray<string>;
 };
 
 export type QlikCloudMetricApp = {
@@ -49,6 +58,8 @@ export type QlikMetricSnapshot = {
   objectTitle: string;
   targetLabel: string;
   selections: Record<string, string>;
+  dimensionKey?: string;
+  dimensionLabel?: string;
 };
 
 const QLIK_READY_SELECTOR = "[data-testid='top-bar-root'], #qv-stage-container";
@@ -659,7 +670,7 @@ async function readQlikEngineMetrics(
         const ranked = candidates.map((candidate) => ({
           candidate,
           labelScore: Math.max(0, ...candidate.labels.flatMap((label) => expectedLabels.map((expected) => scoreLabel(label, expected)))),
-          structureScore: metric.periodStrategy === "series"
+          structureScore: metric.periodStrategy === "series" || metric.mode === "breakdown"
             ? (candidate.dimensionCount > 0 && candidate.measureCount > 0 ? 450 : 0)
               + (candidate.rowCount > 1 ? 250 : 0)
               + (candidate.measureCount === 1 ? 150 : 0)
@@ -728,7 +739,10 @@ async function readQlikEngineMetrics(
       const yearField = needsMonthlyFilters ? findField([...yearFieldCandidates], "ano") : "";
       const monthField = needsMonthlyFilters ? findField([...monthFieldCandidates], "mês") : "";
 
+      const fieldValuesCache = new Map<string, FieldValue[]>();
       const fieldValues = async (fieldName: string): Promise<FieldValue[]> => {
+        const cached = fieldValuesCache.get(fieldName);
+        if (cached) return cached;
         const result = await call(docHandle, "CreateSessionObject", {
           qProp: {
             qInfo: { qType: "terra-lotus-field-values" },
@@ -757,10 +771,12 @@ async function readQlikEngineMetrics(
           });
           matrix = matrix.concat((dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix || []);
         }
-        return matrix.map((row) => ({
+        const values = matrix.map((row) => ({
           text: row[0]?.qText || "",
           number: Number.isFinite(row[0]?.qNum) ? row[0]?.qNum : undefined,
         })).filter((value) => value.text);
+        fieldValuesCache.set(fieldName, values);
+        return values;
       };
 
       const yearValues = needsMonthlyFilters ? await fieldValues(yearField) : [];
@@ -786,6 +802,31 @@ async function readQlikEngineMetrics(
       };
 
       const selectValue = (fieldName: string, value: FieldValue) => selectValues(fieldName, [value]);
+
+      const applyMetricFilters = async (metric: QlikCloudMetricDefinition) => {
+        const selections: Record<string, string> = {};
+        for (const filter of metric.filters || []) {
+          const fieldName = findField([...filter.fieldCandidates], filter.label);
+          const available = await fieldValues(fieldName);
+          const expectedValues = (filter.values || []).map(normalize);
+          const expectedFragments = (filter.contains || []).map(normalize);
+          const matching = available.filter((value) => {
+            const actual = normalize(value.text);
+            return expectedValues.includes(actual)
+              || expectedFragments.some((fragment) => fragment && actual.includes(fragment));
+          });
+          if (!matching.length) {
+            throw new Error(
+              `Qlik Engine: o filtro “${filter.label}” não encontrou valores em “${fieldName}”. `
+              + `Procurado: ${[...(filter.values || []), ...(filter.contains || [])].join(" | ") || "nenhum"}. `
+              + `Valores disponíveis: ${available.slice(0, 120).map((value) => value.text).join(" | ") || "nenhum"}.`,
+            );
+          }
+          await selectValues(fieldName, matching);
+          selections[fieldName] = matching.map((value) => value.text).join(" | ");
+        }
+        return selections;
+      };
 
       const fieldValueDate = (value: FieldValue) => {
         if (typeof value.number === "number" && value.number >= 20_000 && value.number < 100_000) {
@@ -969,17 +1010,88 @@ async function readQlikEngineMetrics(
         return [...byMonth.values()];
       };
 
+      const readMetricBreakdown = async (
+        metric: QlikCloudMetricDefinition,
+        referenceMonth: string,
+        selections: Record<string, string>,
+      ) => {
+        const object = resolvedMetrics.get(metric.metricKey)!;
+        const objectResult = await call(docHandle, "GetObject", { qId: object.id });
+        const objectHandle = handleFrom(objectResult);
+        if (typeof objectHandle !== "number") throw new Error(`Qlik Engine: objeto “${object.id}” não encontrado.`);
+        const layoutResult = await call(objectHandle, "GetLayout");
+        const hyperCube = (layoutResult.qLayout as {
+          qHyperCube?: {
+            qDimensionInfo?: unknown[];
+            qMeasureInfo?: unknown[];
+            qSize?: { qcx?: number; qcy?: number };
+          };
+        } | undefined)?.qHyperCube;
+        const dimensionCount = hyperCube?.qDimensionInfo?.length || 0;
+        const columnCount = hyperCube?.qSize?.qcx || 0;
+        const rowCount = hyperCube?.qSize?.qcy || 0;
+        if (!dimensionCount || !hyperCube?.qMeasureInfo?.length || !columnCount || !rowCount) {
+          throw new Error(`Qlik Engine: “${metric.targetLabel}” não contém uma composição por dimensão.`);
+        }
+
+        const totals = new Map<string, { label: string; value: number }>();
+        const pageHeight = Math.max(1, Math.min(1_000, Math.floor(10_000 / columnCount)));
+        for (let top = 0; top < rowCount; top += pageHeight) {
+          const dataResult = await call(objectHandle, "GetHyperCubeData", {
+            qPath: "/qHyperCubeDef",
+            qPages: [{
+              qTop: top,
+              qLeft: 0,
+              qHeight: Math.min(pageHeight, rowCount - top),
+              qWidth: columnCount,
+            }],
+          });
+          const matrix = (dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix || [];
+          for (const cells of matrix) {
+            const label = cells.slice(0, dimensionCount).map((cell) => cell.qText || "").filter(Boolean).join(" · ").trim();
+            if (!label || /^[-–]$/.test(label)) continue;
+            const measureCell = cells.slice(dimensionCount).find((cell) => Number.isFinite(cell.qNum) || parseLocalizedNumber(cell.qText || "") !== null);
+            if (!measureCell) continue;
+            const value = Number.isFinite(measureCell.qNum) ? measureCell.qNum! : parseLocalizedNumber(measureCell.qText || "")!;
+            const key = normalize(label).replace(/\s+/g, "-") || "sem-identificacao";
+            const current = totals.get(key);
+            totals.set(key, { label, value: (current?.value || 0) + value });
+          }
+        }
+        if (!totals.size) throw new Error(`Qlik Engine: “${metric.targetLabel}” não retornou itens para ${referenceMonth}.`);
+        return [...totals.entries()].map(([dimensionKey, item]) => ({
+          metricKey: metric.metricKey,
+          mode: metric.mode,
+          referenceMonth,
+          value: item.value,
+          appId,
+          sheetId: metric.sheetId,
+          objectId: object.id,
+          objectTitle: object.labels[0] || metric.targetLabel,
+          targetLabel: metric.targetLabel,
+          selections,
+          dimensionKey,
+          dimensionLabel: item.label,
+        }));
+      };
+
       const snapshots: QlikMetricSnapshot[] = [];
       const seriesMetrics = metrics.filter((metric) => metric.mode === "monthly" && metric.periodStrategy === "series");
       if (seriesMetrics.length) {
         await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
-        for (const metric of seriesMetrics) snapshots.push(...await readMetricSeries(metric));
+        for (const metric of seriesMetrics) {
+          await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+          await applyMetricFilters(metric);
+          snapshots.push(...await readMetricSeries(metric));
+        }
       }
 
-      const dateFieldMetrics = metrics.filter((metric) => metric.mode === "monthly" && metric.periodStrategy === "date-field");
+      const dateFieldMetrics = metrics.filter((metric) => (
+        metric.mode === "monthly" && ["date-field", "date-through-month"].includes(metric.periodStrategy || "")
+      ));
       const dateFields = new Map(dateFieldMetrics.map((metric) => {
         if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
-        return [metric.metricKey, findField([metric.dateField], `data de ${metric.targetLabel}`)];
+        return [metric.metricKey, findField([metric.dateField, ...(metric.dateFieldCandidates || [])], `data de ${metric.targetLabel}`)];
       }));
       const dateValues = new Map<string, FieldValue[]>();
       for (const fieldName of new Set(dateFields.values())) {
@@ -991,10 +1103,15 @@ async function readQlikEngineMetrics(
       for (let month = 1; month <= throughMonth; month += 1) {
         for (const metric of dateFieldMetrics) {
           await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+          const selections = await applyMetricFilters(metric);
           const fieldName = dateFields.get(metric.metricKey)!;
           const matchingDates = (dateValues.get(fieldName) || []).filter((value) => {
             const date = fieldValueDate(value);
-            return date?.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
+            if (!date) return false;
+            if (metric.periodStrategy === "date-through-month") {
+              return date.getTime() < Date.UTC(year, month, 1);
+            }
+            return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
           });
           const referenceMonth = `${year}-${String(month).padStart(2, "0")}-01`;
           if (!matchingDates.length) {
@@ -1009,13 +1126,22 @@ async function readQlikEngineMetrics(
               objectId: object.id,
               objectTitle: object.labels[0] || metric.targetLabel,
               targetLabel: metric.targetLabel,
-              selections: { [fieldName]: `${referenceMonth} (nenhuma data; resultado 0)` },
+              selections: { ...selections, [fieldName]: `${referenceMonth} (nenhuma data; resultado 0)` },
             });
             continue;
           }
           await selectValues(fieldName, matchingDates);
+          const lastSelectedDate = matchingDates
+            .map(fieldValueDate)
+            .filter((date): date is Date => Boolean(date))
+            .sort((a, b) => b.getTime() - a.getTime())[0]
+            ?.toISOString().slice(0, 10);
           snapshots.push(await readMetric(metric, referenceMonth, {
-            [fieldName]: `${referenceMonth} (${matchingDates.length} datas)`,
+            ...selections,
+            [fieldName]: metric.periodStrategy === "date-through-month"
+              ? `até o fim de ${referenceMonth} (${matchingDates.length} datas)`
+              : `${referenceMonth} (${matchingDates.length} datas)`,
+            ...(lastSelectedDate ? { reference_date: lastSelectedDate } : {}),
           }));
         }
       }
@@ -1024,8 +1150,6 @@ async function readQlikEngineMetrics(
         metric.mode === "monthly" && (!metric.periodStrategy || metric.periodStrategy === "filters")
       ));
       for (let month = 1; month <= throughMonth && monthlyMetrics.length; month += 1) {
-        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
-        await selectValue(yearField, selectedYear!);
         const aliases = monthAliases[month].map(normalize);
         const selectedMonth = monthValues.find((value) => {
           const tokens = normalize(value.text).split(" ").filter(Boolean);
@@ -1033,17 +1157,55 @@ async function readQlikEngineMetrics(
         })
           || monthValues.find((value) => value.number === month);
         if (!selectedMonth) throw new Error(`Qlik Engine: o mês ${month} não existe no campo “${monthField}”.`);
-        await selectValue(monthField, selectedMonth);
         const referenceMonth = `${year}-${String(month).padStart(2, "0")}-01`;
-        const selections = { [yearField]: selectedYear!.text, [monthField]: selectedMonth.text };
-        for (const metric of monthlyMetrics) snapshots.push(await readMetric(metric, referenceMonth, selections));
+        for (const metric of monthlyMetrics) {
+          await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+          const selections = await applyMetricFilters(metric);
+          await selectValue(yearField, selectedYear!);
+          await selectValue(monthField, selectedMonth);
+          snapshots.push(await readMetric(metric, referenceMonth, {
+            ...selections,
+            [yearField]: selectedYear!.text,
+            [monthField]: selectedMonth.text,
+          }));
+        }
       }
 
       const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot");
       if (snapshotMetrics.length) {
-        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
         const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
-        for (const metric of snapshotMetrics) snapshots.push(await readMetric(metric, referenceMonth, {}));
+        for (const metric of snapshotMetrics) {
+          await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+          const selections = await applyMetricFilters(metric);
+          snapshots.push(await readMetric(metric, referenceMonth, selections));
+        }
+      }
+
+      const breakdownMetrics = metrics.filter((metric) => metric.mode === "breakdown");
+      for (const metric of breakdownMetrics) {
+        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        const selections = await applyMetricFilters(metric);
+        const closedMonth = throughMonth > 1 ? throughMonth - 1 : 12;
+        const closedYear = throughMonth > 1 ? year : year - 1;
+        const referenceMonth = `${closedYear}-${String(closedMonth).padStart(2, "0")}-01`;
+        if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
+        const fieldName = findField([metric.dateField, ...(metric.dateFieldCandidates || [])], `data de ${metric.targetLabel}`);
+        const matchingDates = (await fieldValues(fieldName)).filter((value) => {
+          const date = fieldValueDate(value);
+          return date?.getUTCFullYear() === closedYear && date.getUTCMonth() + 1 === closedMonth;
+        });
+        if (!matchingDates.length) throw new Error(`Qlik Engine: “${metric.targetLabel}” não encontrou datas no mês fechado ${referenceMonth}.`);
+        await selectValues(fieldName, matchingDates);
+        const lastSelectedDate = matchingDates
+          .map(fieldValueDate)
+          .filter((date): date is Date => Boolean(date))
+          .sort((a, b) => b.getTime() - a.getTime())[0]
+          ?.toISOString().slice(0, 10);
+        snapshots.push(...await readMetricBreakdown(metric, referenceMonth, {
+          ...selections,
+          [fieldName]: `${referenceMonth} (${matchingDates.length} datas)`,
+          ...(lastSelectedDate ? { reference_date: lastSelectedDate } : {}),
+        }));
       }
       return snapshots;
     } finally {
@@ -1052,7 +1214,17 @@ async function readQlikEngineMetrics(
   }, {
     socketUrl,
     appId,
-    metrics: metrics.map((metric) => ({ ...metric, aliases: metric.aliases ? [...metric.aliases] : [] })),
+    metrics: metrics.map((metric) => ({
+      ...metric,
+      aliases: metric.aliases ? [...metric.aliases] : [],
+      dateFieldCandidates: metric.dateFieldCandidates ? [...metric.dateFieldCandidates] : [],
+      filters: metric.filters?.map((filter) => ({
+        ...filter,
+        fieldCandidates: [...filter.fieldCandidates],
+        values: filter.values ? [...filter.values] : [],
+        contains: filter.contains ? [...filter.contains] : [],
+      })) || [],
+    })),
     year,
     throughMonth,
     yearFieldCandidates: [...yearFieldCandidates],

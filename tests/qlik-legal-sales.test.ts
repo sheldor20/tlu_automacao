@@ -10,7 +10,13 @@ import {
 import type { QlikMetricSnapshot } from "../lib/qlik-cloud.ts";
 
 const now = new Date("2026-08-13T12:00:00-03:00");
-const monthly = new Set(["unidades_disponiveis", "vendas_mes", "distratos_mes"]);
+const monthly = new Set([
+  "unidades_disponiveis",
+  "vendas_mes",
+  "distratos_mes",
+  "unidades_quitadas",
+  "unidades_autorizadas_escrituracao",
+]);
 
 function createSnapshots(): QlikMetricSnapshot[] {
   return QLIK_LEGAL_SALES_METRIC_KEYS.flatMap((metricKey, metricIndex) => {
@@ -47,9 +53,19 @@ test("usa os campos de data reais para vendas e distratos", () => {
   assert.deepEqual([distratos?.periodStrategy, distratos?.dateField], ["date-field", "Data Distrato Venda"]);
 });
 
-test("exige série completa dos três indicadores mensais e posição atual dos demais", () => {
+test("monta o histórico acumulado de quitadas e autorizadas pelos campos de data", () => {
+  const metrics = QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics);
+  const quitadas = metrics.find((metric) => metric.metricKey === "unidades_quitadas");
+  const autorizadas = metrics.find((metric) => metric.metricKey === "unidades_autorizadas_escrituracao");
+  assert.deepEqual([quitadas?.periodStrategy, quitadas?.dateField], ["date-through-month", "Último Recebimento"]);
+  assert.deepEqual([autorizadas?.periodStrategy, autorizadas?.dateField], ["date-through-month", "Data Autorização Escritura"]);
+});
+
+test("exige as cinco séries mensais, mantém posições atuais e deriva sem processo no histórico", () => {
   const snapshots = createSnapshots();
-  assert.equal(validateLegalSalesSnapshots(snapshots, now).length, 29);
+  const validated = validateLegalSalesSnapshots(snapshots, now);
+  assert.equal(validated.length, 50);
+  assert.equal(validated.filter((snapshot) => snapshot.metricKey === "unidades_sem_processo").length, 8);
   assert.throws(
     () => validateLegalSalesSnapshots(snapshots.filter((snapshot) => !(
       snapshot.metricKey === "vendas_mes" && snapshot.referenceMonth === "2026-04-01"

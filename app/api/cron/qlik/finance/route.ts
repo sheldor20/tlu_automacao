@@ -1,13 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
-  QLIK_LEGAL_SALES_APPS,
-  QLIK_LEGAL_SALES_CONNECTION_SLUG,
-  QLIK_LEGAL_SALES_SOURCE,
-  saoPauloYearMonth,
-  toLegalSalesIndicatorRows,
-  validateLegalSalesSnapshots,
-} from "@/lib/qlik-legal-sales";
+  QLIK_FINANCE_APPS,
+  QLIK_FINANCE_CONNECTION_SLUG,
+  QLIK_FINANCE_SOURCE,
+  toFinanceIndicatorRows,
+  validateFinanceSnapshots,
+} from "@/lib/qlik-finance";
+import { saoPauloYearMonth } from "@/lib/qlik-legal-sales";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export const maxDuration = 300;
 function safeError(error: unknown) {
   if (!(error instanceof Error)) return "Falha inesperada sem mensagem técnica.";
   const code = "code" in error && typeof error.code === "string" ? ` [${error.code}]` : "";
-  return `${error.name}${code}: ${error.message}`.slice(0, 2_500);
+  return `${error.name}${code}: ${error.message}`.slice(0, 5_000);
 }
 
 export async function GET(request: Request) {
@@ -41,29 +41,27 @@ export async function GET(request: Request) {
   const { data: connection, error: connectionError } = await supabase
     .from("data_connections")
     .select("active")
-    .eq("slug", QLIK_LEGAL_SALES_CONNECTION_SLUG)
+    .eq("slug", QLIK_FINANCE_CONNECTION_SLUG)
     .single();
   if (connectionError) {
     return NextResponse.json({
-      error: `Conexão Qlik de vendas indisponível: ${connectionError.message}. Execute a migration 20260813110000.`,
+      error: `Conexão Qlik Financeiro indisponível: ${connectionError.message}. Execute a migration 20260813150000.`,
     }, { status: 503 });
   }
   if (!connection.active) {
-    return NextResponse.json({ error: "A conexão Qlik de vendas está pausada no catálogo de conexões." }, { status: 409 });
+    return NextResponse.json({ error: "A conexão Qlik Financeiro está pausada no catálogo de conexões." }, { status: 409 });
   }
 
   const { year, month } = saoPauloYearMonth();
-  const triggerSource = (request.headers.get("user-agent") || "").toLowerCase().includes("vercel-cron")
-    ? "cron"
-    : "api";
+  const triggerSource = (request.headers.get("user-agent") || "").toLowerCase().includes("vercel-cron") ? "cron" : "api";
   const { data: run, error: runError } = await supabase.from("data_connection_runs").insert({
-    connection_slug: QLIK_LEGAL_SALES_CONNECTION_SLUG,
+    connection_slug: QLIK_FINANCE_CONNECTION_SLUG,
     status: "running",
     trigger_source: triggerSource,
     details: {
       year,
       through_month: month,
-      apps: QLIK_LEGAL_SALES_APPS.map((app) => ({
+      apps: QLIK_FINANCE_APPS.map((app) => ({
         app_id: new URL(app.entryUrl).pathname.split("/")[3],
         sheets: [...new Set(app.metrics.map((metric) => metric.sheetId))],
       })),
@@ -75,53 +73,48 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
   await supabase.from("data_connections").update({ last_run_at: new Date().toISOString() })
-    .eq("slug", QLIK_LEGAL_SALES_CONNECTION_SLUG);
+    .eq("slug", QLIK_FINANCE_CONNECTION_SLUG);
 
   let phase = "load-browser-runtime";
   try {
     const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
-    phase = "open-qlik-apps-and-read-indicators";
+    phase = "open-finance-app-and-read-indicators";
     const rawSnapshots = await scrapeQlikCloudMetrics({
       username,
       password,
-      apps: QLIK_LEGAL_SALES_APPS,
+      apps: QLIK_FINANCE_APPS,
       year,
       throughMonth: month,
     });
-    phase = "validate-eight-indicators";
-    const snapshots = validateLegalSalesSnapshots(rawSnapshots);
+    phase = "validate-finance-indicators";
+    const snapshots = validateFinanceSnapshots(rawSnapshots);
     const synchronizedAt = new Date().toISOString();
-    const rows = toLegalSalesIndicatorRows(snapshots, synchronizedAt);
+    const rows = toFinanceIndicatorRows(snapshots, synchronizedAt);
+    const companyRows = rows.filter((row) => row.area === "empresa");
+    const rentalRows = rows.filter((row) => row.area === "financas-compras");
 
     phase = "write-supabase-indicators";
-    const { data: written, error: syncError } = await supabase.rpc("sync_data_connection_indicators", {
-      p_connection_slug: QLIK_LEGAL_SALES_CONNECTION_SLUG,
-      p_source: QLIK_LEGAL_SALES_SOURCE,
+    const clearFrom = `${year}-01-01`;
+    const { data: rowsWritten, error: syncError } = await supabase.rpc("sync_qlik_finance_indicators", {
       p_rows: rows,
-      p_clear_area: null,
-      p_clear_metric_keys: null,
-      p_clear_from: null,
+      p_source: QLIK_FINANCE_SOURCE,
+      p_clear_from: clearFrom,
     });
     if (syncError) throw new Error(`Supabase: ${syncError.message}`);
+    const written = Number(rowsWritten) || rows.length;
 
     const finishedAt = new Date().toISOString();
-    const objects = [...new Map(snapshots.map((snapshot) => [snapshot.metricKey, {
-      metric_key: snapshot.metricKey,
-      app_id: snapshot.appId,
-      sheet_id: snapshot.sheetId,
-      object_id: snapshot.objectId,
-      object_title: snapshot.objectTitle,
-    }])).values()];
     await Promise.all([
       supabase.from("data_connection_runs").update({
         status: "success",
-        rows_read: snapshots.length,
-        rows_written: Number(written) || rows.length,
+        rows_read: rawSnapshots.length,
+        rows_written: written,
         finished_at: finishedAt,
         details: {
           year,
           through_month: month,
-          metrics: objects,
+          company_rows: companyRows.length,
+          finance_purchases_rows: rentalRows.length,
           duration_ms: Date.now() - startedAt,
         },
       }).eq("id", run.id),
@@ -129,41 +122,27 @@ export async function GET(request: Request) {
         last_success_at: finishedAt,
         last_error_at: null,
         last_error: null,
-      }).eq("slug", QLIK_LEGAL_SALES_CONNECTION_SLUG),
+      }).eq("slug", QLIK_FINANCE_CONNECTION_SLUG),
     ]);
 
     const currentReference = `${year}-${String(month).padStart(2, "0")}-01`;
     return NextResponse.json({
       ok: true,
-      connection: QLIK_LEGAL_SALES_CONNECTION_SLUG,
+      connection: QLIK_FINANCE_CONNECTION_SLUG,
       run_id: run.id,
       year,
       through_month: month,
       current: Object.fromEntries(snapshots
-        .filter((snapshot) => snapshot.referenceMonth === currentReference)
+        .filter((snapshot) => snapshot.referenceMonth === currentReference && !snapshot.dimensionKey)
         .map((snapshot) => [snapshot.metricKey, snapshot.value])),
-      series: Object.fromEntries([
-        "unidades_disponiveis",
-        "vendas_mes",
-        "distratos_mes",
-        "unidades_quitadas",
-        "unidades_sem_processo",
-        "unidades_autorizadas_escrituracao",
-      ].map((metricKey) => [
-        metricKey,
-        snapshots.filter((snapshot) => snapshot.metricKey === metricKey).map((snapshot) => ({
-          month: snapshot.referenceMonth,
-          value: snapshot.value,
-        })),
-      ])),
-      rows_read: snapshots.length,
-      rows_written: Number(written) || rows.length,
+      rows_read: rawSnapshots.length,
+      rows_written: written,
       duration_ms: Date.now() - startedAt,
     });
   } catch (error) {
     const message = safeError(error);
     const finishedAt = new Date().toISOString();
-    console.error("Falha na sincronização dos indicadores de vendas do Qlik:", {
+    console.error("Falha na sincronização dos indicadores financeiros do Qlik:", {
       phase,
       message,
       stack: error instanceof Error ? error.stack : null,
@@ -178,11 +157,11 @@ export async function GET(request: Request) {
       supabase.from("data_connections").update({
         last_error_at: finishedAt,
         last_error: message,
-      }).eq("slug", QLIK_LEGAL_SALES_CONNECTION_SLUG),
+      }).eq("slug", QLIK_FINANCE_CONNECTION_SLUG),
     ]);
     return NextResponse.json({
       ok: false,
-      connection: QLIK_LEGAL_SALES_CONNECTION_SLUG,
+      connection: QLIK_FINANCE_CONNECTION_SLUG,
       run_id: run.id,
       phase,
       error: message,
