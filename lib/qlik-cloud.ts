@@ -1,7 +1,7 @@
 import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } from "puppeteer-core";
 import type { QlikTableSnapshot } from "@/lib/qlik-delinquency";
-import { extractQlikAppId } from "@/lib/qlik-engine";
+import { extractQlikAppId, isQlikAppWebSocketUrl } from "@/lib/qlik-engine";
 import { isQlikAccountGatewayAction } from "@/lib/qlik-login";
 
 type QlikCloudCredentials = {
@@ -128,6 +128,71 @@ function safeLocation(value: string) {
   }
 }
 
+function safeSocketLocation(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return "indisponível";
+  }
+}
+
+type QlikSocketObservation = {
+  url: string;
+  status?: number;
+  statusText?: string;
+  error?: string;
+};
+
+async function observeNativeQlikSocket(page: Page, appId: string) {
+  const client = await page.createCDPSession();
+  await client.send("Network.enable");
+  const observations = new Map<string, QlikSocketObservation>();
+  let resolveAuthenticatedUrl: (url: string) => void = () => undefined;
+  const authenticatedUrl = new Promise<string>((resolve) => {
+    resolveAuthenticatedUrl = resolve;
+  });
+  let resolved = false;
+
+  client.on("Network.webSocketCreated", ({ requestId, url }) => {
+    observations.set(requestId, { url });
+  });
+  client.on("Network.webSocketHandshakeResponseReceived", ({ requestId, response }) => {
+    const observation = observations.get(requestId);
+    if (!observation) return;
+    observation.status = response.status;
+    observation.statusText = response.statusText;
+    if (!resolved && response.status === 101 && isQlikAppWebSocketUrl(observation.url, appId)) {
+      resolved = true;
+      resolveAuthenticatedUrl(observation.url);
+    }
+  });
+  client.on("Network.webSocketFrameError", ({ requestId, errorMessage }) => {
+    const observation = observations.get(requestId);
+    if (observation) observation.error = errorMessage;
+  });
+
+  const summary = () => JSON.stringify(Array.from(observations.values()).slice(-8).map((observation) => ({
+    ...observation,
+    url: safeSocketLocation(observation.url),
+  })));
+  const waitForAuthenticatedUrl = (timeout = 90_000) => new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Qlik Engine: a página não abriu uma conexão nativa autenticada. WebSockets observados: ${summary()}`));
+    }, timeout);
+    authenticatedUrl.then((url) => {
+      clearTimeout(timer);
+      resolve(url);
+    });
+  });
+
+  return {
+    summary,
+    waitForAuthenticatedUrl,
+    stop: () => client.detach().catch(() => undefined),
+  };
+}
+
 async function loginSurfaceSummary(page: Page) {
   const frames = await Promise.all(page.frames().map(async (frame) => {
     const surface = await frame.evaluate(() => ({
@@ -192,11 +257,12 @@ async function authenticateIfNeeded(page: Page, credentials: QlikCloudCredential
 
 async function readQlikEngineSnapshot(
   page: Page,
+  socketUrl: string,
   appId: string,
   objectId: string,
   filters: QlikCloudTableOptions["filters"],
 ): Promise<QlikTableSnapshot> {
-  return page.evaluate(async ({ appId, objectId, filters }) => {
+  return page.evaluate(async ({ socketUrl, appId, objectId, filters }) => {
     type RpcError = { code?: number; message?: string; parameter?: string };
     type RpcResult = Record<string, unknown>;
     type PendingCall = {
@@ -211,7 +277,6 @@ async function readQlikEngineSnapshot(
       qSize?: { qcx?: number; qcy?: number };
     };
 
-    const socketUrl = `wss://${window.location.host}/app/${encodeURIComponent(appId)}`;
     const socket = new WebSocket(socketUrl);
     const pending = new Map<number, PendingCall>();
     let requestId = 0;
@@ -324,6 +389,7 @@ async function readQlikEngineSnapshot(
       socket.close(1000, "completed");
     }
   }, {
+    socketUrl,
     appId,
     objectId,
     filters: filters.map((filter) => ({ ...filter })),
@@ -388,8 +454,11 @@ export async function diagnoseQlikLogin(sheetUrl: string) {
 
 export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Promise<QlikTableSnapshot> {
   const browser = await launchBrowser();
+  let socketObserver: Awaited<ReturnType<typeof observeNativeQlikSocket>> | null = null;
   try {
     const page = await browser.newPage();
+    const appId = extractQlikAppId(options.sheetUrl);
+    socketObserver = await observeNativeQlikSocket(page, appId);
     page.setDefaultTimeout(45_000);
     await page.emulateTimezone("America/Sao_Paulo");
     await page.goto(options.sheetUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
@@ -397,9 +466,15 @@ export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Prom
     await page.waitForFunction(() => !window.location.hostname.startsWith("login.") && /\/sense\/app\//i.test(window.location.pathname), {
       timeout: 120_000,
     });
-    const snapshot = await readQlikEngineSnapshot(page, extractQlikAppId(options.sheetUrl), options.objectId, options.filters);
-    return snapshot;
+    const socketUrl = await socketObserver.waitForAuthenticatedUrl();
+    try {
+      return await readQlikEngineSnapshot(page, socketUrl, appId, options.objectId, options.filters);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message} WebSockets observados: ${socketObserver.summary()}`);
+    }
   } finally {
+    if (socketObserver) await socketObserver.stop();
     await browser.close();
   }
 }
