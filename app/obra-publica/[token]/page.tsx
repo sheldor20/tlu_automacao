@@ -2,14 +2,15 @@
 
 import { ProgressBar } from "@/components/ui";
 import { remainingSupplyQuantity, supplyWithRemainingQuantity } from "@/lib/construction-supplies";
+import { dateBr } from "@/lib/format";
 import type { ConstructionSupply } from "@/lib/types";
-import { Camera, CheckCircle2, HardHat, Package, RefreshCw, Upload } from "lucide-react";
+import { CalendarRange, Camera, CheckCircle2, HardHat, Package, RefreshCw, Upload } from "lucide-react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
-type PublicMicro = { id: string; name: string; description: string | null; progress_percent: number; supplies: ConstructionSupply[] };
-type PublicStage = { id: string; name: string; description: string | null; progress_percent: number; micro_stages: PublicMicro[] };
+type PublicMicro = { id: string; name: string; description: string | null; start_date: string | null; end_date: string | null; progress_percent: number; supplies: ConstructionSupply[] };
+type PublicStage = { id: string; name: string; description: string | null; start_date: string | null; end_date: string | null; progress_percent: number; micro_stages: PublicMicro[] };
 type PublicWork = { id: string; name: string; address: string | null; status: string; progress_percent: number; updated_at: string };
 
 export default function PublicWorkPage() {
@@ -79,10 +80,10 @@ export default function PublicWorkPage() {
     {message ? <div className="public-work-message"><CheckCircle2 size={18} /> {message}</div> : null}
     <section className="public-stage-list">
       {stages.map((stage, stageIndex) => <article className="public-stage" key={stage.id}>
-        <div className="public-stage-head"><span>Etapa {String(stageIndex + 1).padStart(2, "0")}</span><div><h2>{stage.name}</h2><p>{stage.description || `${stage.micro_stages.length} microetapa(s)`}</p></div><strong>{Number(stage.progress_percent || 0).toFixed(0)}%</strong></div>
+        <div className="public-stage-head"><span>Etapa {String(stageIndex + 1).padStart(2, "0")}</span><div><h2>{stage.name}</h2><p>{stage.description || `${stage.micro_stages.length} microetapa(s)`}</p>{stage.start_date || stage.end_date ? <small><CalendarRange size={13} /> {dateBr(stage.start_date || stage.end_date)} a {dateBr(stage.end_date || stage.start_date)}</small> : null}</div><strong>{Number(stage.progress_percent || 0).toFixed(0)}%</strong></div>
         <ProgressBar value={stage.progress_percent || 0} />
         <div className="public-micro-list">{stage.micro_stages.map((micro) => <div className="public-micro" key={micro.id}>
-          <div><strong>{micro.name}</strong><span>{micro.description || "Execução da microetapa"}</span></div>
+          <div><strong>{micro.name}</strong><span>{micro.description || "Execução da microetapa"}</span>{micro.start_date || micro.end_date ? <small><CalendarRange size={12} /> {dateBr(micro.start_date || micro.end_date)} a {dateBr(micro.end_date || micro.start_date)}</small> : null}</div>
           <div className="public-micro-stock"><Package size={16} /><span>{micro.supplies?.length || 0} insumo(s)</span></div>
           <div className="public-micro-progress"><strong>{Number(micro.progress_percent).toFixed(0)}%</strong><ProgressBar value={micro.progress_percent} /></div>
           <button type="button" onClick={() => openUpdate(micro)}><Camera size={16} /> Atualizar</button>

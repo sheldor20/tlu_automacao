@@ -16,7 +16,7 @@ import { StatusPill } from "@/components/ui";
 import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, initials, todayIso } from "@/lib/format";
 import type { ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
-import { Calendar, GripVertical, Plus, Users } from "lucide-react";
+import { Calendar, FolderKanban, GripVertical, Plus, Users } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
 
@@ -27,6 +27,8 @@ type ProjectTaskBoardProps = {
   onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
   onAddTask: (status: TaskStatus) => void;
   users: UserProfile[];
+  canAddTask?: boolean;
+  canReassign?: boolean;
 };
 
 type TaskCardProps = {
@@ -35,6 +37,7 @@ type TaskCardProps = {
   onStatusChange: (task: ProjectTask, status: TaskStatus) => Promise<void>;
   onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
   users: UserProfile[];
+  canReassign: boolean;
 };
 
 function TaskCardContent({ task, dragHandle }: { task: ProjectTask; dragHandle?: ReactNode }) {
@@ -52,6 +55,7 @@ function TaskCardContent({ task, dragHandle }: { task: ProjectTask; dragHandle?:
       <h4>{task.title}</h4>
       {task.description ? <p>{task.description}</p> : null}
       <div className="task-meta">
+        {task.project_name ? <span><FolderKanban size={12} /> {task.project_name}</span> : null}
         <span><Users size={12} /> {task.assignee_name}</span>
         <span className={overdue ? "text-danger" : ""}><Calendar size={12} /> {dateBr(task.due_date)}</span>
       </div>
@@ -59,7 +63,7 @@ function TaskCardContent({ task, dragHandle }: { task: ProjectTask; dragHandle?:
   );
 }
 
-function TaskCard({ task, disabled, onStatusChange, onTaskUpdate, users }: TaskCardProps) {
+function TaskCard({ task, disabled, onStatusChange, onTaskUpdate, users, canReassign }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     disabled,
@@ -100,7 +104,7 @@ function TaskCard({ task, disabled, onStatusChange, onTaskUpdate, users }: TaskC
         {TASK_COLUMNS.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}
       </select>
       <div className="task-quick-fields">
-        <label><span>Responsável</span><select value={task.assignee_user_id || ""} onChange={(event) => void onTaskUpdate(task, { assignee_user_id: event.target.value })} disabled={disabled}>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></label>
+        <label><span>Responsável</span><select value={task.assignee_user_id || ""} onChange={(event) => void onTaskUpdate(task, { assignee_user_id: event.target.value })} disabled={disabled || !canReassign}>{users.map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></label>
         <label><span>Prazo</span><input type="date" value={task.due_date} onChange={(event) => void onTaskUpdate(task, { due_date: event.target.value })} disabled={disabled} /></label>
       </div>
     </article>
@@ -116,6 +120,8 @@ function TaskColumn({
   onTaskUpdate,
   onAddTask,
   users,
+  canAddTask,
+  canReassign,
 }: {
   status: TaskStatus;
   label: string;
@@ -125,6 +131,8 @@ function TaskColumn({
   onTaskUpdate: (task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) => Promise<void>;
   onAddTask: (status: TaskStatus) => void;
   users: UserProfile[];
+  canAddTask: boolean;
+  canReassign: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
 
@@ -135,15 +143,15 @@ function TaskColumn({
     >
       <header><div><span className="column-dot" /><h3>{label}</h3></div><strong>{tasks.length}</strong></header>
       <div className="kanban-tasks">
-        {tasks.map((task) => <TaskCard task={task} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} onTaskUpdate={onTaskUpdate} users={users} key={task.id} />)}
+        {tasks.map((task) => <TaskCard task={task} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} onTaskUpdate={onTaskUpdate} users={users} canReassign={canReassign} key={task.id} />)}
         {tasks.length === 0 ? <div className="column-empty">Solte uma tarefa aqui.</div> : null}
       </div>
-      <button className="kanban-add" onClick={() => onAddTask(status)}><Plus size={15} /> Adicionar tarefa</button>
+      {canAddTask ? <button className="kanban-add" onClick={() => onAddTask(status)}><Plus size={15} /> Adicionar tarefa</button> : null}
     </section>
   );
 }
 
-export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onTaskUpdate, onAddTask, users }: ProjectTaskBoardProps) {
+export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onTaskUpdate, onAddTask, users, canAddTask = true, canReassign = true }: ProjectTaskBoardProps) {
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -177,6 +185,8 @@ export function ProjectTaskBoard({ tasks, movingTaskId, onStatusChange, onTaskUp
             onTaskUpdate={onTaskUpdate}
             onAddTask={onAddTask}
             users={users}
+            canAddTask={canAddTask}
+            canReassign={canReassign}
             key={column.key}
           />
         ))}

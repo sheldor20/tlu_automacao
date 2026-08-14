@@ -53,14 +53,14 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
 
   const [constructionResult, macroResult] = await Promise.all([
     access.service.from("construction_progress_summary").select("id,name,address,status,progress_percent,updated_at").eq("id", access.constructionId).single(),
-    access.service.from("construction_macro_stage_progress").select("id,name,description,position,progress_percent").eq("construction_id", access.constructionId).order("position"),
+    access.service.from("construction_macro_stage_progress").select("id,name,description,start_date,end_date,position,progress_percent").eq("construction_id", access.constructionId).order("position"),
   ]);
   if (constructionResult.error || macroResult.error) {
     return NextResponse.json({ error: "Não foi possível carregar esta obra." }, { status: 502 });
   }
   const macroIds = (macroResult.data || []).map((macro) => macro.id);
   const microResult = macroIds.length
-    ? await access.service.from("construction_micro_stages").select("id,macro_stage_id,name,description,progress_percent,position,supplies,updated_at").in("macro_stage_id", macroIds).order("position")
+    ? await access.service.from("construction_micro_stages").select("id,macro_stage_id,name,description,start_date,end_date,progress_percent,position,supplies,updated_at").in("macro_stage_id", macroIds).order("position")
     : { data: [], error: null };
   if (microResult.error) return NextResponse.json({ error: "Não foi possível carregar as microetapas." }, { status: 502 });
 

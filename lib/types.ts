@@ -60,6 +60,9 @@ export type Construction = {
   realized_current_month?: number;
   stage_weight_total?: number;
   last_activity_at?: string;
+  last_inspection_at?: string | null;
+  next_inspection_at?: string | null;
+  inspection_due?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -87,6 +90,8 @@ export type MacroStage = {
   construction_id: string;
   name: string;
   description: string | null;
+  start_date: string | null;
+  end_date: string | null;
   weight_percent: number;
   position: number;
   progress_percent?: number;
@@ -98,6 +103,8 @@ export type MicroStage = {
   macro_stage_id: string;
   name: string;
   description: string | null;
+  start_date: string | null;
+  end_date: string | null;
   progress_percent: number;
   position: number;
   supplies: ConstructionSupply[];
@@ -187,6 +194,15 @@ export type ConstructionEvidence = {
   signed_url?: string;
 };
 
+export type ConstructionInspection = {
+  id: string;
+  construction_id: string;
+  inspected_at: string;
+  note: string | null;
+  created_by: string;
+  created_at: string;
+};
+
 export type ConstructionBudget = {
   id: string;
   construction_id: string;
@@ -221,7 +237,8 @@ export type Project = {
 
 export type ProjectTask = {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  project_name?: string | null;
   title: string;
   description: string | null;
   assignee_user_id: string | null;
