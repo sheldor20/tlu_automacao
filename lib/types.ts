@@ -11,6 +11,7 @@ export type Business = {
   id: string;
   project_id: string | null;
   name: string;
+  property_registration: string | null;
   start_date: string;
   stage: BusinessStage;
   address: string;
