@@ -27,18 +27,17 @@ const departmentLinks: Array<{
   slug: DepartmentSlug;
   href: string;
   label: string;
-  mobileLabel: string;
   icon: typeof TrendingUp;
 }> = [
-  { slug: "novos-negocios", href: "/novos-negocios", label: "Novos negócios", mobileLabel: "Negócios", icon: TrendingUp },
-  { slug: "obras", href: "/obras", label: "Obras", mobileLabel: "Obras", icon: Building2 },
-  { slug: "projetos", href: "/projetos", label: "Projetos", mobileLabel: "Projetos", icon: FolderKanban },
-  { slug: "alugueis", href: "/alugueis", label: "Aluguéis", mobileLabel: "Aluguéis", icon: Home },
-  { slug: "indicadores", href: "/indicadores", label: "Indicadores", mobileLabel: "Indicadores", icon: ChartNoAxesCombined },
+  { slug: "novos-negocios", href: "/novos-negocios", label: "Novos negócios", icon: TrendingUp },
+  { slug: "obras", href: "/obras", label: "Obras", icon: Building2 },
+  { slug: "projetos", href: "/projetos", label: "Projetos", icon: FolderKanban },
+  { slug: "alugueis", href: "/alugueis", label: "Aluguéis", icon: Home },
+  { slug: "indicadores", href: "/indicadores", label: "Indicadores", icon: ChartNoAxesCombined },
 ];
 
-const adminLink = { href: "/administracao", label: "Administração", mobileLabel: "Acessos", icon: ShieldCheck };
-const todayLink = { href: "/hoje", label: "Hoje", mobileLabel: "Hoje", icon: CalendarDays };
+const adminLink = { href: "/administracao", label: "Administração", icon: ShieldCheck };
+const todayLink = { href: "/hoje", label: "Hoje", icon: CalendarDays };
 const indicatorsLink = departmentLinks.find((link) => link.slug === "indicadores")!;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -59,6 +58,34 @@ export function AppShell({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("terra-lotus-sidebar-collapsed") === "true"), 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setMobileMenu(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
+
+  useEffect(() => {
+    const mobileViewport = window.matchMedia("(max-width: 780px)");
+    const closeWhenLeavingMobile = (event: MediaQueryListEvent) => {
+      if (!event.matches) setMobileMenu(false);
+    };
+    mobileViewport.addEventListener("change", closeWhenLeavingMobile);
+    return () => mobileViewport.removeEventListener("change", closeWhenLeavingMobile);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenu(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenu]);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
@@ -148,9 +175,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const visibleDepartmentLinks = departmentLinks.filter((link) => link.slug !== "indicadores" && allowedDepartments.includes(link.slug));
   const showIndicators = allowedDepartments.includes("indicadores") && allowedIndicatorAreas.length > 0;
   const resolvedIndicatorsLink = { ...indicatorsLink, href: `/indicadores/${allowedIndicatorAreas[0] || "empresa"}` };
-  const operationLinks = showIndicators ? [todayLink, resolvedIndicatorsLink] : [todayLink];
-  const visibleLinks = isAdmin ? [...operationLinks, ...visibleDepartmentLinks, adminLink] : [...operationLinks, ...visibleDepartmentLinks];
-
   async function signOut() {
     await supabase?.auth.signOut();
     router.replace("/login");
@@ -198,14 +222,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="app-main"><div className="app-content">{children}</div></main>
 
       <button
+        type="button"
         className="mobile-menu-button"
         onClick={() => setMobileMenu((value) => !value)}
         aria-label={mobileMenu ? "Fechar menu" : "Abrir menu"}
+        aria-expanded={mobileMenu}
+        aria-controls="main-side-navigation"
       >
         {mobileMenu ? <X size={22} /> : <Menu size={22} />}
+        <span>{mobileMenu ? "Fechar" : "Menu"}</span>
       </button>
 
-      <aside className={`side-nav ${mobileMenu ? "side-nav-open" : ""}`}>
+      {mobileMenu ? <button type="button" className="mobile-menu-backdrop" onClick={() => setMobileMenu(false)} aria-label="Fechar menu de navegação" /> : null}
+
+      <aside id="main-side-navigation" className={`side-nav ${mobileMenu ? "side-nav-open" : ""}`}>
         <button type="button" className="side-collapse-button" onClick={toggleCollapsed} aria-label={collapsed ? "Expandir menu" : "Recolher menu"} title={collapsed ? "Expandir menu" : "Recolher menu"}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
         <div className="side-brand">
           <Image
@@ -285,20 +315,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <nav
-        className="mobile-bottom-nav"
-        aria-label="Navegação principal"
-      >
-        {visibleLinks.map(({ href, mobileLabel, icon: Icon }) => {
-          const active = pathname.startsWith(href);
-          return (
-            <Link key={href} href={href} className={active ? "active" : ""}>
-              <Icon size={20} />
-              <span>{mobileLabel}</span>
-            </Link>
-          );
-        })}
-      </nav>
     </div>
   );
 }

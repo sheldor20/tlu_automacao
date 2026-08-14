@@ -231,7 +231,7 @@ h1, h2, h3, p { margin-top: 0; }
 .user-meta span { font-size: 10px; color: rgba(255,255,255,.44); overflow: hidden; text-overflow: ellipsis; }
 .side-user button { width: 30px; height: 30px; border: 0; background: transparent; color: rgba(255,255,255,.55); display: grid; place-items: center; border-radius: 8px; }
 .side-user button:hover { background: rgba(255,255,255,.08); color: white; }
-.mobile-bottom-nav, .mobile-menu-button { display: none; }
+.mobile-bottom-nav, .mobile-menu-button, .mobile-menu-backdrop { display: none; }
 
 /* Rentals */
 .rentals-list-card { margin-bottom: 22px; }
@@ -834,14 +834,40 @@ h1, h2, h3, p { margin-top: 0; }
   .login-form-panel { min-height: calc(100svh - 240px); padding: 38px 24px 50px; align-items: flex-start; }
   .login-icon { display: none; }
   .login-form h2 { font-size: 32px; }
-  .app-main { margin-left: 0; padding: 28px 18px 104px; }
-  .side-nav { display: none; }
-  .mobile-menu-button { display: none; }
-  .mobile-bottom-nav { display: flex; overflow-x: auto; scrollbar-width: none; position: fixed; z-index: 60; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); min-height: 66px; padding: 6px; border-radius: 19px; background: rgba(29,40,32,.96); backdrop-filter: blur(14px); box-shadow: 0 12px 40px rgba(24,34,26,.28); }
-  .mobile-bottom-nav::-webkit-scrollbar { display: none; }
-  .mobile-bottom-nav a { flex: 1 0 72px; color: rgba(255,255,255,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 9px; font-weight: 700; border-radius: 14px; }
-  .mobile-bottom-nav a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-bottom-nav a.active { color: var(--moss-950); background: white; }
+  .app-main, .app-frame-collapsed .app-main { margin-left: 0; padding: 84px 18px calc(34px + env(safe-area-inset-bottom)); }
+  .mobile-menu-button {
+    position: fixed; z-index: 90; top: max(14px, env(safe-area-inset-top)); left: 14px;
+    min-width: 92px; height: 46px; padding: 0 15px; border: 1px solid rgba(255,255,255,.13); border-radius: 14px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: rgba(29,40,32,.96); color: white; box-shadow: 0 9px 28px rgba(24,34,26,.24); backdrop-filter: blur(14px);
+    font-size: 12px; font-weight: 760;
+  }
+  .mobile-menu-button[aria-expanded="true"] { background: white; color: var(--moss-950); border-color: var(--line); box-shadow: 0 9px 28px rgba(17,27,20,.2); }
+  .mobile-menu-backdrop { position: fixed; z-index: 70; inset: 0; display: block; border: 0; background: rgba(12,20,14,.48); backdrop-filter: blur(2px); }
+  .side-nav,
+  .app-frame-collapsed .side-nav {
+    z-index: 80; width: min(88vw, 330px); padding: calc(76px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+    display: flex; overflow-y: auto; visibility: hidden; transform: translateX(-105%); transition: transform .22s ease, visibility .22s ease;
+  }
+  .side-nav.side-nav-open { visibility: visible; transform: translateX(0); }
+  .side-collapse-button { display: none; }
+  .side-brand,
+  .app-frame-collapsed .side-brand { display: block; }
+  .side-brand img,
+  .app-frame-collapsed .side-brand img { width: 154px; height: 56px; object-fit: contain; object-position: left center; }
+  .app-frame-collapsed .side-brand span,
+  .app-frame-collapsed .nav-caption,
+  .app-frame-collapsed .nav-link span,
+  .app-frame-collapsed .user-meta { display: block; }
+  .side-nav nav,
+  .app-frame-collapsed .side-nav nav { margin-top: 31px; }
+  .nav-link,
+  .app-frame-collapsed .nav-link { min-height: 50px; padding: 0 13px; justify-content: flex-start; }
+  .app-frame-collapsed .side-nav .admin-nav { margin-top: 16px; padding-top: 16px; }
+  .side-user,
+  .app-frame-collapsed .side-user { margin-top: 28px; justify-content: initial; gap: 10px; }
+  .app-frame-collapsed .side-user > button { display: grid; }
+  .mobile-bottom-nav { display: none; }
   .page-intro { align-items: flex-start; flex-direction: column; margin-bottom: 24px; }
   .page-intro h1 { font-size: 34px; }
   .page-intro p { font-size: 13px; }
@@ -981,7 +1007,6 @@ h1, h2, h3, p { margin-top: 0; }
   .detail-tabs { top: 4px; margin-left: -4px; margin-right: -4px; }
   .detail-tabs button { min-height: 39px; padding: 0 12px; }
   .project-files-grid, .evidence-gallery { grid-template-columns: 1fr; }
-  .mobile-bottom-nav a { font-size: 8px; }
 }
 
 @media (max-width: 460px) {
