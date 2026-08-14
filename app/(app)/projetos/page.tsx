@@ -2,11 +2,13 @@
 
 import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { ListToolbar } from "@/components/list-toolbar";
+import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
+import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import { generateMeetingAgendaPdf, type MeetingAgenda } from "@/lib/project-meeting-agenda";
-import type { Project, ProjectStatus, ProjectTemplate, UserProfile } from "@/lib/types";
+import type { Project, ProjectStatus, ProjectTask, ProjectTemplate, TaskStatus, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
   Archive,
@@ -15,6 +17,7 @@ import {
   CheckCircle2,
   FolderKanban,
   FileDown,
+  ListTodo,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -31,11 +34,13 @@ const statusLabel: Record<ProjectStatus, string> = {
 
 type ProjectFilter = "current" | "archived";
 type ProjectAction = "archive" | "delete";
+type TaskWithProject = ProjectTask & { projects?: { name: string; archived_at: string | null } | null };
 
 export default function ProjectsPage() {
   const router = useRouter();
   const supabase = getSupabase();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [filter, setFilter] = useState<ProjectFilter>("current");
@@ -46,29 +51,39 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [generatingAgenda, setGeneratingAgenda] = useState(false);
   const [fullAccess, setFullAccess] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [taskProjectFilter, setTaskProjectFilter] = useState("all");
+  const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
+  const [taskDialog, setTaskDialog] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionProject, setActionProject] = useState<Project | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction>("archive");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [form, setForm] = useState({ name: "", start_date: todayIso(), owner_user_id: "", template_id: "" });
+  const [taskForm, setTaskForm] = useState({ project_id: "", title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" as TaskStatus });
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!supabase) return;
-    setLoading(true);
-    const [projectResult, userResult, templateResult, templateTaskResult, permissionResult] = await Promise.all([
+    if (!silent) setLoading(true);
+    const { data: authData } = await supabase.auth.getUser();
+    const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
+      supabase.from("project_tasks").select("*,projects(name,archived_at)").order("position"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
       supabase.rpc("project_permission_scope"),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
+    if (taskResult.error) setToast({ message: friendlyError(taskResult.error), type: "error" });
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
     if (templateResult.error || templateTaskResult.error) setToast({ message: friendlyError(templateResult.error || templateTaskResult.error), type: "error" });
     setProjects((projectResult.data || []) as Project[]);
+    setTasks(((taskResult.data || []) as TaskWithProject[]).filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Tarefa avulsa" })));
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
     setFullAccess(permissionResult.data !== "assigned_tasks");
+    setCurrentUserId(authData.user?.id || "");
     setLoading(false);
   }, [supabase]);
 
@@ -90,6 +105,11 @@ export default function ProjectsPage() {
     });
   }, [archivedProjects, currentProjects, filter, overdueOnly, query, statusFilter]);
   const selectedTemplate = templates.find((template) => template.id === form.template_id);
+  const boardTasks = useMemo(() => tasks.filter((task) => {
+    if (taskProjectFilter === "all") return true;
+    if (taskProjectFilter === "standalone") return task.project_id === null;
+    return task.project_id === taskProjectFilter;
+  }), [taskProjectFilter, tasks]);
 
   const metrics = useMemo(() => {
     const active = currentProjects.filter((project) => project.status === "ativo").length;
@@ -101,6 +121,69 @@ export default function ProjectsPage() {
       : 0;
     return { active, completed, total, overdue, average };
   }, [currentProjects]);
+
+  function openTaskForm(status: TaskStatus = "a_fazer") {
+    setTaskForm({ project_id: "", title: "", description: "", assignee_user_id: fullAccess ? "" : currentUserId, due_date: todayIso(), status });
+    setTaskDialog(true);
+  }
+
+  async function createTask(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    if (!fullAccess && taskForm.project_id) {
+      setToast({ message: "Seu acesso permite criar somente tarefas avulsas para você.", type: "error" });
+      return;
+    }
+    const assignee = users.find((user) => user.user_id === (fullAccess ? taskForm.assignee_user_id : currentUserId));
+    if (!assignee?.email) {
+      setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("project_tasks").insert({
+      project_id: taskForm.project_id || null,
+      title: taskForm.title.trim(),
+      description: taskForm.description.trim() || null,
+      assignee_user_id: assignee.user_id,
+      assignee_name: assignee.full_name?.trim() || assignee.email.split("@")[0],
+      assignee_email: assignee.email.toLowerCase(),
+      due_date: taskForm.due_date,
+      status: taskForm.status,
+      position: tasks.filter((task) => task.status === taskForm.status).length,
+    });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setTaskDialog(false);
+    setTaskForm({ project_id: "", title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" });
+    setToast({ message: taskForm.project_id ? "Tarefa adicionada ao projeto e ao quadro geral." : "Tarefa avulsa adicionada ao quadro geral.", type: "success" });
+    await loadData(true);
+  }
+
+  async function changeTaskStatus(task: ProjectTask, status: TaskStatus) {
+    if (!supabase || task.status === status || movingTaskId) return;
+    const previous = tasks;
+    const position = tasks.filter((item) => item.status === status).length;
+    setMovingTaskId(task.id);
+    setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status, position } : item));
+    const { error } = await supabase.from("project_tasks").update({ status, position }).eq("id", task.id);
+    if (error) {
+      setTasks(previous);
+      setMovingTaskId(null);
+      return setToast({ message: friendlyError(error), type: "error" });
+    }
+    await loadData(true);
+    setMovingTaskId(null);
+  }
+
+  async function changeTaskDetails(task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) {
+    if (!supabase || movingTaskId) return;
+    setMovingTaskId(task.id);
+    const { error } = await supabase.from("project_tasks").update(updates).eq("id", task.id);
+    setMovingTaskId(null);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Responsável ou prazo da tarefa atualizado.", type: "success" });
+    await loadData(true);
+  }
 
   async function createProject(event: FormEvent) {
     event.preventDefault();
@@ -213,6 +296,31 @@ export default function ProjectsPage() {
         <KpiCard label="Tarefas atrasadas" value={String(metrics.overdue)} helper={metrics.overdue ? "precisam de atenção" : "nenhum alerta aberto"} tone={metrics.overdue ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
       </section>
 
+      <section className="kanban-section global-task-board" id="quadro-tarefas">
+        <div className="section-title-row">
+          <div><h2>Quadro geral de tarefas</h2><p>{fullAccess ? "Todas as tarefas dos projetos e tarefas avulsas em uma visão Trello." : "Exibindo somente suas tarefas, conforme a configuração de acesso."}</p></div>
+          <div className="global-task-actions">
+            <select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)} aria-label="Filtrar quadro por projeto">
+              <option value="all">Todos os projetos</option>
+              <option value="standalone">Somente tarefas avulsas</option>
+              {currentProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+            <Button onClick={() => openTaskForm()}><Plus size={17} /> Nova tarefa</Button>
+          </div>
+        </div>
+        {loading ? <div className="list-loading">Carregando tarefas…</div> : <ProjectTaskBoard
+          tasks={boardTasks}
+          users={users}
+          movingTaskId={movingTaskId}
+          onStatusChange={changeTaskStatus}
+          onTaskUpdate={changeTaskDetails}
+          onAddTask={openTaskForm}
+          canAddTask
+          canReassign={fullAccess}
+        />}
+        <div className="global-task-board-foot"><ListTodo size={14} /> {boardTasks.length} tarefa(s) no recorte atual · tarefas avulsas não aparecem dentro de nenhum projeto.</div>
+      </section>
+
       <section className="content-card">
         <div className="content-card-head project-list-head">
           <div><h2>{filter === "current" ? "Projetos atuais" : "Projetos arquivados"}</h2><p>Progresso, responsáveis, alertas e gestão do histórico</p></div>
@@ -272,6 +380,23 @@ export default function ProjectsPage() {
           </div>
         )}
       </section>
+
+      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Vincule a um projeto ou mantenha como tarefa avulsa, visível somente no quadro geral." wide>
+        <form className="form-grid" onSubmit={createTask}>
+          <Field label="Projeto" hint={fullAccess ? "Opcional. Sem projeto, a tarefa será avulsa." : "Seu perfil pode criar uma tarefa avulsa para si."}>
+            <select value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })} disabled={!fullAccess}>
+              <option value="">Tarefa avulsa</option>
+              {currentProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field>
+          <Field label="Tarefa" className="form-span-2"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} autoFocus /></Field>
+          <Field label="Responsável" hint="Usuário ativo do Supabase."><UserSelect users={users} value={fullAccess ? taskForm.assignee_user_id : currentUserId} onChange={(user) => setTaskForm({ ...taskForm, assignee_user_id: user?.user_id || "" })} required disabled={!fullAccess} /></Field>
+          <Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field>
+          <Field label="Descrição" className="form-span-2"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field>
+          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!(fullAccess ? taskForm.assignee_user_id : currentUserId)}>Criar tarefa</Button></div>
+        </form>
+      </Dialog>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo projeto" description="Comece com o essencial e use um modelo para criar as tarefas automaticamente." wide>
         <form className="form-grid" onSubmit={createProject}>

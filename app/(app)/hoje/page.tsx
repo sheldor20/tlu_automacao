@@ -11,6 +11,7 @@ import {
   Building2,
   CalendarCheck,
   Check,
+  ClipboardCheck,
   Clock3,
   Home,
   ListTodo,
@@ -120,7 +121,7 @@ export default function TodayPage() {
         days_in_stage: daysBetween(enteredAt),
       };
     });
-    setTasks(((taskResult.data || []) as ProjectTask[]).map((task) => ({ ...task, project_name: projectName.get(task.project_id) || "Projeto" })));
+    setTasks(((taskResult.data || []) as ProjectTask[]).map((task) => ({ ...task, project_name: task.project_id ? projectName.get(task.project_id) || "Projeto" : "Tarefa avulsa" })));
     setProjects(projectRows.filter((project) => project.owner_user_id === authData.user.id));
     setWorks((workResult.data || []) as Construction[]);
     setRentals((rentalResult.data || []) as Rental[]);
@@ -140,7 +141,10 @@ export default function TodayPage() {
   const projectsWithOverdueTasks = useMemo(() => projects.filter((project) => Number(project.overdue_tasks || 0) > 0), [projects]);
   const staleWorks = useMemo(() => works.filter((work) => daysBetween(work.last_activity_at || work.created_at) >= 7), [works]);
   const overBudgetWorks = useMemo(() => works.filter((work) => Number(work.planned_budget) > 0 && Number(work.realized_total || 0) > Number(work.planned_budget)), [works]);
+  const inspectionWorks = useMemo(() => works.filter((work) => Boolean(work.inspection_due)), [works]);
   const vacantRentals = useMemo(() => rentals.filter((rental) => rental.status === "desocupado"), [rentals]);
+  const renovationRentals = useMemo(() => rentals.filter((rental) => rental.status === "aguardando_reforma"), [rentals]);
+  const expiredRentals = useMemo(() => rentals.filter((rental) => rental.status === "alugado" && daysUntil(rental.lease_end_date) < 0), [rentals]);
   const expiringRentals = useMemo(() => rentals.filter((rental) => {
     const days = daysUntil(rental.lease_end_date);
     return rental.status === "alugado" && days >= 0 && days <= 60;
@@ -148,8 +152,8 @@ export default function TodayPage() {
   const stalledBusinesses = useMemo(() => businesses.filter((business) => Number(business.days_in_stage || 0) >= 30), [businesses]);
   const exceptionCount = operationalTasks.filter((task) => daysUntil(task.due_date) < 0).length
     + projectsWithOverdueTasks.length
-    + new Set([...staleWorks, ...overBudgetWorks].map((work) => work.id)).size
-    + new Set([...vacantRentals, ...expiringRentals].map((rental) => rental.id)).size
+    + new Set([...inspectionWorks, ...staleWorks, ...overBudgetWorks].map((work) => work.id)).size
+    + new Set([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => rental.id)).size
     + stalledBusinesses.length;
 
   async function updateTask(task: TodayTask, updates: { status?: TaskStatus; due_date?: string }) {
@@ -195,6 +199,20 @@ export default function TodayPage() {
     await loadData();
   }
 
+  async function registerInspection(work: Construction) {
+    if (!supabase) return;
+    setSaving(true);
+    const { error } = await supabase.from("construction_inspections").insert({
+      construction_id: work.id,
+      inspected_at: todayIso(),
+      note: "Vistoria registrada pela página Hoje.",
+    });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: `Vistoria de ${work.name} registrada. Próximo ciclo em 15 dias.`, type: "success" });
+    await loadData();
+  }
+
   return (
     <>
       <PageIntro
@@ -207,7 +225,7 @@ export default function TodayPage() {
       <section className="kpi-grid today-kpis">
         <KpiCard label="Exceções abertas" value={String(exceptionCount)} helper="itens que exigem decisão" tone={exceptionCount ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
         {authorizedDepartments.includes("projetos") ? <KpiCard label="Minhas tarefas próximas" value={String(operationalTasks.length)} helper="vencidas ou em até 7 dias" icon={<ListTodo size={17} />} /> : null}
-        {authorizedDepartments.includes("obras") ? <KpiCard label="Minhas obras ativas" value={String(works.length)} helper={`${staleWorks.length} sem atualização recente`} icon={<Building2 size={17} />} /> : null}
+        {authorizedDepartments.includes("obras") ? <KpiCard label="Minhas obras ativas" value={String(works.length)} helper={`${inspectionWorks.length} vistoria(s) pendente(s)`} tone={inspectionWorks.length ? "warning" : "success"} icon={<Building2 size={17} />} /> : null}
         {authorizedDepartments.includes("projetos") ? <KpiCard label="Meus projetos ativos" value={String(projects.filter((project) => project.status === "ativo").length)} helper={`${projects.reduce((sum, project) => sum + Number(project.overdue_tasks || 0), 0)} tarefas atrasadas`} icon={<CalendarCheck size={17} />} /> : null}
       </section>
 
@@ -220,7 +238,7 @@ export default function TodayPage() {
               return <article key={task.id}>
                 <span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span>
                 <div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.assignee_name} · {dateBr(task.due_date)}</span></div>
-                <div className="today-item-actions"><Button variant="ghost" onClick={() => { setRescheduleTask(task); setRescheduleDate(task.due_date); }}>Reagendar</Button><Button variant="secondary" onClick={() => void updateTask(task, { status: "concluida" })} disabled={saving}><Check size={15} /> Concluir</Button><Link className="button button-primary" href={`/projetos/${task.project_id}?tab=tarefas`}>Abrir</Link></div>
+                <div className="today-item-actions"><Button variant="ghost" onClick={() => { setRescheduleTask(task); setRescheduleDate(task.due_date); }}>Reagendar</Button><Button variant="secondary" onClick={() => void updateTask(task, { status: "concluida" })} disabled={saving}><Check size={15} /> Concluir</Button><Link className="button button-primary" href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Abrir</Link></div>
               </article>;
             })}</div> : <EmptyState icon={<Check size={22} />} title="Prazos em dia" description="Nenhuma tarefa vencida ou próxima nos próximos sete dias." />}
           </section> : null}
@@ -231,13 +249,20 @@ export default function TodayPage() {
           </section> : null}
 
           {authorizedDepartments.includes("obras") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Obras com atenção</h2><p>Sem evidência recente ou acima do orçamento</p></div><StatusPill tone={staleWorks.length || overBudgetWorks.length ? "warning" : "success"}>{new Set([...staleWorks, ...overBudgetWorks].map((work) => work.id)).size} obra(s)</StatusPill></div>
-            {[...new Map([...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].length ? <div className="today-compact-list">{[...new Map([...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].map((work) => <article key={work.id}><span className="exception-mark exception-warning"><Building2 size={15} /></span><div><strong>{work.name}</strong><span>{overBudgetWorks.some((item) => item.id === work.id) ? "Orçamento excedido" : `Sem atualização há ${daysBetween(work.last_activity_at || work.created_at)} dias`}</span></div><Link href={`/obras/${work.id}?tab=${overBudgetWorks.some((item) => item.id === work.id) ? "financeiro" : "etapas"}`}>Atualizar <ArrowRight size={14} /></Link></article>)}</div> : <div className="mini-empty">Nenhuma exceção aberta em Obras.</div>}
+            <div className="content-card-head"><div><h2>Obras com atenção</h2><p>Vistorias quinzenais, evidências recentes e orçamento</p></div><StatusPill tone={inspectionWorks.length || staleWorks.length || overBudgetWorks.length ? "warning" : "success"}>{new Set([...inspectionWorks, ...staleWorks, ...overBudgetWorks].map((work) => work.id)).size} obra(s)</StatusPill></div>
+            {[...new Map([...inspectionWorks, ...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].length ? <div className="today-compact-list">{[...new Map([...inspectionWorks, ...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].map((work) => {
+              const inspectionDue = inspectionWorks.some((item) => item.id === work.id);
+              const overBudget = overBudgetWorks.some((item) => item.id === work.id);
+              return <article key={work.id}><span className={`exception-mark exception-${inspectionDue ? "danger" : "warning"}`}>{inspectionDue ? <ClipboardCheck size={15} /> : <Building2 size={15} />}</span><div><strong>{work.name}</strong><span>{inspectionDue ? work.last_inspection_at ? `Vistoria vencida · última em ${dateBr(work.last_inspection_at)}` : "Primeira vistoria pendente" : overBudget ? "Orçamento excedido" : `Sem atualização há ${daysBetween(work.last_activity_at || work.created_at)} dias`}</span></div><div className="today-compact-actions">{inspectionDue ? <Button variant="ghost" onClick={() => void registerInspection(work)} disabled={saving}>Registrar hoje</Button> : null}<Link href={`/obras/${work.id}?tab=${inspectionDue ? "atualizacoes" : overBudget ? "financeiro" : "etapas"}`}>Abrir <ArrowRight size={14} /></Link></div></article>;
+            })}</div> : <div className="mini-empty">Nenhuma exceção aberta em Obras.</div>}
           </section> : null}
 
           {authorizedDepartments.includes("alugueis") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Aluguéis</h2><p>Contratos vencendo e imóveis desocupados</p></div><StatusPill tone={vacantRentals.length || expiringRentals.length ? "warning" : "success"}>{vacantRentals.length + expiringRentals.length} alerta(s)</StatusPill></div>
-            {[...new Map([...expiringRentals, ...vacantRentals].map((rental) => [rental.id, rental])).values()].length ? <div className="today-compact-list">{[...new Map([...expiringRentals, ...vacantRentals].map((rental) => [rental.id, rental])).values()].map((rental) => <article key={rental.id}><span className="exception-mark exception-warning"><Home size={15} /></span><div><strong>{rental.name}</strong><span>{rental.status === "desocupado" ? "Imóvel desocupado" : `Contrato termina em ${daysUntil(rental.lease_end_date)} dia(s)`}</span></div>{rental.status === "desocupado" ? <select value={rental.status} onChange={(event) => void changeRentalStatus(rental, event.target.value as RentalStatus)} disabled={saving}><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option><option value="alugado">Alugado</option></select> : <Link href={`/alugueis/${rental.id}`}>Revisar <ArrowRight size={14} /></Link>}</article>)}</div> : <div className="mini-empty">Nenhuma exceção aberta em Aluguéis.</div>}
+            <div className="content-card-head"><div><h2>Aluguéis</h2><p>Contratos vencidos ou vencendo, imóveis desocupados e reformas</p></div><StatusPill tone={renovationRentals.length || expiredRentals.length || vacantRentals.length || expiringRentals.length ? "warning" : "success"}>{new Set([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => rental.id)).size} alerta(s)</StatusPill></div>
+            {[...new Map([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => [rental.id, rental])).values()].length ? <div className="today-compact-list">{[...new Map([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => [rental.id, rental])).values()].map((rental) => {
+              const message = rental.status === "aguardando_reforma" ? "Imóvel aguardando reforma" : rental.status === "desocupado" ? "Imóvel desocupado" : daysUntil(rental.lease_end_date) < 0 ? `Contrato vencido há ${Math.abs(daysUntil(rental.lease_end_date))} dia(s)` : `Contrato termina em ${daysUntil(rental.lease_end_date)} dia(s)`;
+              return <article key={rental.id}><span className={`exception-mark exception-${rental.status === "aguardando_reforma" || daysUntil(rental.lease_end_date) < 0 ? "danger" : "warning"}`}><Home size={15} /></span><div><strong>{rental.name}</strong><span>{message}</span></div>{rental.status === "desocupado" || rental.status === "aguardando_reforma" ? <select value={rental.status} onChange={(event) => void changeRentalStatus(rental, event.target.value as RentalStatus)} disabled={saving}><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option><option value="alugado">Alugado</option></select> : <Link href={`/alugueis/${rental.id}`}>Revisar <ArrowRight size={14} /></Link>}</article>;
+            })}</div> : <div className="mini-empty">Nenhuma exceção aberta em Aluguéis.</div>}
           </section> : null}
 
           {authorizedDepartments.includes("novos-negocios") ? <section className="content-card">

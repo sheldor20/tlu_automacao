@@ -375,6 +375,8 @@ export default function ProjectDetailPage() {
           onStatusChange={changeStatus}
           onTaskUpdate={changeTaskDetails}
           onAddTask={(status) => { setTaskForm((current) => ({ ...current, status })); setTaskDialog(true); }}
+          canAddTask={fullAccess}
+          canReassign={fullAccess}
         />
       </section> : null}
 

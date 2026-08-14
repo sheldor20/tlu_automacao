@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
   const [projectResult, taskResult, commentResult, fileResult] = await Promise.all([
     service.from("projects").select("*").is("archived_at", null).order("name"),
-    service.from("project_tasks").select("*").order("due_date"),
+    service.from("project_tasks").select("*").not("project_id", "is", null).order("due_date"),
     service.from("project_comments").select("*").order("created_at", { ascending: false }),
     service.from("project_files").select("id,project_id,file_name,mime_type,created_at"),
   ]);

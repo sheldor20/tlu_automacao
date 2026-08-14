@@ -26,7 +26,7 @@ export function prioritizeOverdueTasks(tasks: ProjectTask[], projects: Array<Pic
   const names = new Map(projects.map((project) => [project.id, project.name]));
   const ranked = tasks.filter((task) => task.status !== "concluida" && task.due_date < today).map((task) => ({
     ...task,
-    project_name: names.get(task.project_id) || "Projeto",
+    project_name: task.project_id ? names.get(task.project_id) || "Projeto" : "Tarefa avulsa",
     overdue_days: Math.max(0, Math.floor((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${task.due_date}T12:00:00Z`)) / 86_400_000)),
   })).sort((a, b) => b.overdue_days - a.overdue_days || a.due_date.localeCompare(b.due_date));
   return { top_priorities: ranked.slice(0, 10), other_overdue: ranked.slice(10) };
