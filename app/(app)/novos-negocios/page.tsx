@@ -35,6 +35,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 type BusinessForm = {
   project_id: string;
   name: string;
+  property_registration: string;
   start_date: string;
   address: string;
   city: string;
@@ -49,6 +50,7 @@ type BusinessForm = {
 const emptyForm: BusinessForm = {
   project_id: "",
   name: "",
+  property_registration: "",
   start_date: todayIso(),
   address: "",
   city: "",
@@ -115,6 +117,7 @@ export default function NewBusinessPage() {
     return source.filter((business) => {
       const matchesSearch = !normalized || [
         business.name,
+        business.property_registration,
         business.address,
         business.city,
         business.state,
@@ -172,6 +175,7 @@ export default function NewBusinessPage() {
     setForm({
       project_id: business.project_id || "",
       name: business.name,
+      property_registration: business.property_registration || "",
       start_date: business.start_date,
       address: business.address,
       city: business.city,
@@ -191,6 +195,7 @@ export default function NewBusinessPage() {
     setSaving(true);
     const payload = {
       project_id: form.project_id,
+      property_registration: form.property_registration.trim() || null,
       start_date: editing ? form.start_date : todayIso(),
       address: editing ? form.address.trim() : "A definir",
       city: editing ? form.city.trim() : "A definir",
@@ -336,7 +341,7 @@ export default function NewBusinessPage() {
           </div>
           <div className="segmented" aria-label="Filtrar negócios"><button type="button" className={filter === "current" ? "active" : ""} onClick={() => setFilter("current")}>Atuais · {currentBusinesses.length}</button><button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Arquivados · {archivedBusinesses.length}</button></div>
         </div>
-        <ListToolbar query={query} onQueryChange={setQuery}>
+        <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por nome, matrícula, projeto ou localização">
           <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value as BusinessStage | "all")} aria-label="Filtrar por fase">
             <option value="all">Todas as fases</option>
             {BUSINESS_STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.shortLabel}</option>)}
@@ -363,7 +368,7 @@ export default function NewBusinessPage() {
                   const stage = BUSINESS_STAGES.find((item) => item.key === business.stage);
                   return (
                     <tr key={business.id} className={Number(business.days_in_stage || 0) >= 30 ? "exception-row" : ""}>
-                      <td><strong>{business.name}</strong><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : Number(business.days_in_stage || 0) >= 30 ? `${business.days_in_stage} dias sem avançar` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
+                      <td><strong>{business.name}</strong><small>Matrícula: {business.property_registration || "não informada"}</small><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : Number(business.days_in_stage || 0) >= 30 ? `${business.days_in_stage} dias sem avançar` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
                       <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project?.owner_name || (business.project ? "Projeto relacionado" : "Registro anterior à nova regra")}</small></td>
                       <td>{business.archived_at ? <StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill> : <select className="quick-select" value={business.stage} onChange={(event) => void quickStageChange(business, event.target.value as BusinessStage)} aria-label={`Fase de ${business.name}`}>{BUSINESS_STAGES.map((option) => <option key={option.key} value={option.key}>{option.shortLabel}</option>)}</select>}</td>
                       <td><strong>{currency(business.potential_vgv)}</strong></td>
@@ -411,6 +416,9 @@ export default function NewBusinessPage() {
           </Field>
           <Field label="Nome do negócio">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={Boolean(editing)} maxLength={140} required />
+          </Field>
+          <Field label="Matrícula do imóvel" hint="Opcional. Informe o número registrado no Cartório de Registro de Imóveis.">
+            <input value={form.property_registration} onChange={(event) => setForm({ ...form, property_registration: event.target.value })} maxLength={120} placeholder="Ex.: 12.345" />
           </Field>
           {editing ? <Field label="Data de início">
             <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required />
