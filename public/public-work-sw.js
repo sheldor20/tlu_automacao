@@ -1,6 +1,6 @@
 /* global self, indexedDB */
 
-const CACHE_VERSION = "public-work-v1";
+const CACHE_VERSION = "public-work-v2";
 const DOCUMENT_CACHE = `${CACHE_VERSION}-documents`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const DATABASE_NAME = "terra-lotus-public-work";
@@ -84,6 +84,11 @@ function submissionBody(submission) {
   body.set("note", submission.note);
   body.set("supplies", JSON.stringify(submission.supplies));
   body.set("base_updated_at", submission.base_updated_at);
+  if (submission.map_layer_id && submission.map_base_updated_at && submission.map_paths?.length) {
+    body.set("map_layer_id", submission.map_layer_id);
+    body.set("map_base_updated_at", submission.map_base_updated_at);
+    body.set("map_paths", JSON.stringify(submission.map_paths));
+  }
   body.set("photo", submission.photo, submission.photo_name);
   return body;
 }
@@ -100,12 +105,15 @@ async function notifyClients(message) {
 async function synchronizeSubmissions() {
   const submissions = await listSubmissions();
   const latestMicroUpdate = new Map();
+  const latestLayerUpdate = new Map();
   let synchronized = 0;
   for (const queued of submissions) {
     if (queued.requires_review) continue;
-    const submission = latestMicroUpdate.has(queued.micro_stage_id)
-      ? { ...queued, base_updated_at: latestMicroUpdate.get(queued.micro_stage_id) }
-      : queued;
+    const submission = {
+      ...queued,
+      ...(latestMicroUpdate.has(queued.micro_stage_id) ? { base_updated_at: latestMicroUpdate.get(queued.micro_stage_id) } : {}),
+      ...(queued.map_layer_id && latestLayerUpdate.has(queued.map_layer_id) ? { map_base_updated_at: latestLayerUpdate.get(queued.map_layer_id) } : {}),
+    };
     if (submission !== queued) await putSubmission(submission);
     let response;
     try {
@@ -119,6 +127,7 @@ async function synchronizeSubmissions() {
       await removeSubmission(submission.id);
       synchronized += 1;
       if (result.micro_stage_updated_at) latestMicroUpdate.set(submission.micro_stage_id, result.micro_stage_updated_at);
+      if (submission.map_layer_id && result.map_layer_updated_at) latestLayerUpdate.set(submission.map_layer_id, result.map_layer_updated_at);
       continue;
     }
     const updated = {
@@ -196,7 +205,12 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/public/obras/")) return;
+  if (url.origin !== self.location.origin) return;
+  if (/^\/api\/public\/obras\/[a-f0-9]{48}\/plans\/[0-9a-f-]+$/.test(url.pathname)) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+  if (url.pathname.startsWith("/api/public/obras/")) return;
   if (url.pathname.startsWith("/obra-publica/") && request.mode === "navigate") {
     event.respondWith(networkFirst(request));
     return;

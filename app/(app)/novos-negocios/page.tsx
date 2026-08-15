@@ -11,6 +11,7 @@ import {
   Toast,
 } from "@/components/ui";
 import { ListToolbar } from "@/components/list-toolbar";
+import { PlanDocumentManager } from "@/components/plan-document-manager";
 import { BRAZIL_STATES, BUSINESS_STAGES } from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
@@ -23,6 +24,7 @@ import {
   Clock3,
   ExternalLink,
   MapPin,
+  Map as MapIcon,
   Pencil,
   Plus,
   Route,
@@ -80,6 +82,7 @@ export default function NewBusinessPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Business | null>(null);
   const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
+  const [planBusiness, setPlanBusiness] = useState<Business | null>(null);
   const [businessAction, setBusinessAction] = useState<BusinessAction>("archive");
   const [form, setForm] = useState<BusinessForm>(emptyForm);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -378,7 +381,7 @@ export default function NewBusinessPage() {
                           <MapPin size={14} /> {business.city || "Ver mapa"} <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><div className="table-actions">{business.archived_at ? null : <button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button><button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir negócio"><Trash2 size={16} /></button></div></td>
+                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button><button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir negócio"><Trash2 size={16} /></button></div></td>
                     </tr>
                   );
                 })}
@@ -461,6 +464,8 @@ export default function NewBusinessPage() {
       </Dialog>
 
       <Dialog open={Boolean(actionBusiness)} onClose={() => setActionBusiness(null)} title={businessAction === "delete" ? "Excluir negócio?" : "Arquivar negócio?"} description={businessAction === "delete" ? "A exclusão é definitiva e remove o histórico do funil. Se existir uma obra vinculada, ela será preservada como obra avulsa." : "O negócio sairá do funil atual, mas todo o histórico será preservado e poderá ser restaurado."}><div className="confirmation-content"><strong>{actionBusiness?.name}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setActionBusiness(null)}>Cancelar</Button><Button type="button" variant={businessAction === "delete" ? "danger" : "primary"} loading={saving} onClick={() => actionBusiness && (businessAction === "delete" ? void deleteBusiness(actionBusiness) : void archiveBusiness(actionBusiness))}>{businessAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar negócio</>}</Button></div></div></Dialog>
+
+      <PlanDocumentManager key={planBusiness?.id || "closed"} business={planBusiness} onClose={() => setPlanBusiness(null)} />
 
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>

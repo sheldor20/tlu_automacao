@@ -1,3 +1,5 @@
+import type { PlanMeasurementType, PlanPath, PlanPoint } from "@/lib/construction-plan-geometry";
+
 export type BusinessStage =
   | "prospeccao"
   | "viabilidade"
@@ -282,6 +284,61 @@ export type ConstructionSourceFile = Pick<
   ProjectFile,
   "id" | "file_path" | "file_name" | "mime_type" | "created_at" | "signed_url"
 >;
+
+export type ConstructionPlanCategory =
+  | "urbanistico"
+  | "pavimentacao"
+  | "eletrica_iluminacao"
+  | "drenagem_pluvial"
+  | "agua_esgoto"
+  | "parques_paisagismo";
+
+export type ConstructionPlanDiscipline =
+  | "vias_asfalto"
+  | "eletrica_iluminacao"
+  | "drenagem_pluvial"
+  | "agua_esgoto"
+  | "parques_paisagismo";
+
+export type ConstructionPlanDocument = {
+  id: string;
+  business_id: string | null;
+  construction_id: string | null;
+  name: string;
+  category: ConstructionPlanCategory;
+  file_path: string;
+  file_name: string;
+  mime_type: "application/pdf";
+  page_number: number;
+  page_aspect_ratio: number | null;
+  calibration_points: PlanPoint[];
+  calibration_distance_m: number | null;
+  status: "draft" | "approved";
+  created_at: string;
+  updated_at: string;
+  signed_url?: string;
+  layers?: ConstructionPlanLayer[];
+};
+
+export type ConstructionPlanLayer = {
+  id: string;
+  document_id: string;
+  construction_id: string;
+  micro_stage_id: string;
+  name: string;
+  discipline: ConstructionPlanDiscipline;
+  measurement_type: PlanMeasurementType;
+  unit: "m" | "m2";
+  color: string;
+  planned_paths: PlanPath[];
+  executed_paths: PlanPath[];
+  planned_measure: number;
+  executed_measure: number;
+  progress_percent: number;
+  created_at: string;
+  updated_at: string;
+  micro_stage?: Pick<MicroStage, "id" | "name" | "updated_at" | "progress_percent">;
+};
 
 export type ManagementAreaSlug =
   | "empresa"

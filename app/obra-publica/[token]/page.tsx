@@ -1,6 +1,7 @@
 "use client";
 
 import { ProgressBar } from "@/components/ui";
+import { PublicConstructionProgressMap, type PublicMapProgressInput } from "@/components/public-construction-progress-map";
 import { remainingSupplyQuantity, supplyWithRemainingQuantity } from "@/lib/construction-supplies";
 import { dateBr } from "@/lib/format";
 import {
@@ -21,6 +22,7 @@ import {
   type PendingPublicWorkSubmission,
   type PublicWorkConstruction,
   type PublicWorkMicro,
+  type PublicWorkPlanDocument,
   type PublicWorkSnapshot,
   type PublicWorkStage,
 } from "@/lib/public-work-offline";
@@ -55,6 +57,7 @@ export default function PublicWorkPage() {
   const token = params.token;
   const [work, setWork] = useState<PublicWorkConstruction | null>(null);
   const [stages, setStages] = useState<PublicWorkStage[]>([]);
+  const [plans, setPlans] = useState<PublicWorkPlanDocument[]>([]);
   const [editing, setEditing] = useState<PublicWorkMicro | null>(null);
   const [editingPendingId, setEditingPendingId] = useState<string | null>(null);
   const [progress, setProgress] = useState("0");
@@ -92,12 +95,14 @@ export default function PublicWorkPage() {
         if (response.status >= 500) throw new Error(result.error || "Servidor temporariamente indisponível.");
         setWork(null);
         setStages([]);
+        setPlans([]);
         setNotice({ text: result.error || "Não foi possível abrir a obra.", tone: "error" });
         return false;
       }
-      const snapshot = { construction: result.construction, stages: result.stages || [] } satisfies PublicWorkSnapshot;
+      const snapshot = { construction: result.construction, stages: result.stages || [], plans: result.plans || [] } satisfies PublicWorkSnapshot;
       setWork(snapshot.construction);
       setStages(snapshot.stages);
+      setPlans(snapshot.plans);
       await savePublicWorkSnapshot(token, snapshot);
       setIsOnline(true);
       return true;
@@ -107,6 +112,7 @@ export default function PublicWorkPage() {
         if (cached) {
           setWork(cached.construction);
           setStages(cached.stages);
+          setPlans(cached.plans || []);
           setNotice({ text: "Sem conexão. Exibindo a última versão salva neste aparelho.", tone: "warning" });
           return false;
         }
@@ -115,6 +121,7 @@ export default function PublicWorkPage() {
       }
       setWork(null);
       setStages([]);
+      setPlans([]);
       setNotice({ text: "Conecte-se à internet e abra este link uma vez para ativar o uso offline.", tone: "error" });
       return false;
     } finally {
@@ -132,20 +139,24 @@ export default function PublicWorkPage() {
     try {
       const records = await listPendingPublicWorkSubmissions(token);
       const latestMicroUpdate = new Map<string, string>();
+      const latestLayerUpdate = new Map<string, string>();
       for (const queued of records) {
         if (queued.requires_review) {
           reviewRequired += 1;
           continue;
         }
-        const submission = latestMicroUpdate.has(queued.micro_stage_id)
-          ? { ...queued, base_updated_at: latestMicroUpdate.get(queued.micro_stage_id) as string }
-          : queued;
-        if (submission !== queued) await putPendingPublicWorkSubmission(submission);
+        const submission = {
+          ...queued,
+          ...(latestMicroUpdate.has(queued.micro_stage_id) ? { base_updated_at: latestMicroUpdate.get(queued.micro_stage_id) as string } : {}),
+          ...(queued.map_layer_id && latestLayerUpdate.has(queued.map_layer_id) ? { map_base_updated_at: latestLayerUpdate.get(queued.map_layer_id) as string } : {}),
+        };
+        await putPendingPublicWorkSubmission(submission);
         try {
           const result = await sendPublicWorkSubmission(submission);
           await removePendingPublicWorkSubmission(submission.id);
           synchronized += 1;
           if (result.micro_stage_updated_at) latestMicroUpdate.set(submission.micro_stage_id, result.micro_stage_updated_at);
+          if (submission.map_layer_id && result.map_layer_updated_at) latestLayerUpdate.set(submission.map_layer_id, result.map_layer_updated_at);
         } catch (error) {
           const submissionError = error instanceof PublicWorkSubmissionError
             ? error
@@ -238,6 +249,17 @@ export default function PublicWorkPage() {
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, [load, refreshPending]);
 
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !plans.length) return;
+    void navigator.serviceWorker.ready.then((registration) => {
+      registration.active?.postMessage({
+        type: "CACHE_PUBLIC_WORK",
+        url: window.location.href,
+        assets: plans.map((plan) => new URL(plan.signed_url, window.location.origin).toString()),
+      });
+    });
+  }, [plans]);
+
   const pendingMicroIds = useMemo(() => new Set(pending.map((submission) => submission.micro_stage_id)), [pending]);
 
   function openUpdate(micro: PublicWorkMicro) {
@@ -251,6 +273,11 @@ export default function PublicWorkPage() {
   }
 
   function reviewPending(submission: PendingPublicWorkSubmission) {
+    if (submission.map_layer_id) {
+      setQueueOpen(false);
+      setNotice({ text: "O mapa mudou desde esta medição. Refaça o traçado na planta atual e depois descarte o envio antigo da fila.", tone: "warning" });
+      return;
+    }
     const micro = stages.flatMap((stage) => stage.micro_stages).find((item) => item.id === submission.micro_stage_id);
     if (!micro) {
       setNotice({ text: "Esta microetapa não está mais disponível. Descarte o envio ou atualize a página com internet.", tone: "error" });
@@ -302,10 +329,12 @@ export default function PublicWorkPage() {
         attempts: 0,
         last_error: null,
         requires_review: false,
+        kind: "stage",
       } satisfies PendingPublicWorkSubmission;
       await putPendingPublicWorkSubmission(submission);
-      const optimistic = applySubmissionToSnapshot({ construction: work, stages }, submission);
+      const optimistic = applySubmissionToSnapshot({ construction: work, stages, plans }, submission);
       setStages(optimistic.stages);
+      setPlans(optimistic.plans);
       await savePublicWorkSnapshot(token, optimistic);
       setEditing(null);
       setEditingPendingId(null);
@@ -320,6 +349,59 @@ export default function PublicWorkPage() {
       }
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "Não foi possível salvar a atualização no aparelho.", tone: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitMapProgress(input: PublicMapProgressInput) {
+    if (!work) return;
+    setSaving(true);
+    try {
+      const compressedPhoto = await compressPublicWorkPhoto(input.photo);
+      if (compressedPhoto.size > PUBLIC_WORK_MAX_PHOTO_BYTES) {
+        setNotice({ text: "A foto continua maior que 10 MB após a otimização. Selecione uma imagem menor.", tone: "error" });
+        return;
+      }
+      const submission = {
+        id: crypto.randomUUID(),
+        token,
+        micro_stage_id: input.micro.id,
+        micro_stage_name: input.micro.name,
+        progress_percent: input.progressPercent,
+        note: input.note.trim(),
+        supplies: (input.micro.supplies || []).map((item) => ({ ...item })),
+        photo: compressedPhoto,
+        photo_name: normalizedPublicWorkPhotoName(input.photo, compressedPhoto),
+        photo_type: compressedPhoto.type || input.photo.type,
+        base_updated_at: input.micro.updated_at,
+        created_at: new Date().toISOString(),
+        attempts: 0,
+        last_error: null,
+        requires_review: false,
+        kind: "map",
+        map_layer_id: input.layer.id,
+        map_layer_name: input.layer.name,
+        map_base_updated_at: input.layer.updated_at,
+        map_paths: input.paths,
+        map_executed_measure: input.executedMeasure,
+        map_progress_percent: input.progressPercent,
+      } satisfies PendingPublicWorkSubmission;
+      await putPendingPublicWorkSubmission(submission);
+      const optimistic = applySubmissionToSnapshot({ construction: work, stages, plans }, submission);
+      setStages(optimistic.stages);
+      setPlans(optimistic.plans);
+      await savePublicWorkSnapshot(token, optimistic);
+      await refreshPending();
+      await requestBackgroundSync();
+      if (navigator.onLine) {
+        setNotice({ text: "Medição salva neste aparelho. Sincronizando…", tone: "success" });
+        await synchronize();
+      } else {
+        setNotice({ text: "Medição salva offline. Ela será enviada quando a internet voltar.", tone: "warning" });
+      }
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "Não foi possível salvar a medição no aparelho.", tone: "error" });
     } finally {
       setSaving(false);
     }
@@ -370,7 +452,7 @@ export default function PublicWorkPage() {
     {queueOpen && pending.length ? <section className="public-sync-queue">
       <div className="public-sync-queue-head"><div><span>Fila deste aparelho</span><h2>Atualizações ainda não confirmadas</h2></div><strong>{pending.length}</strong></div>
       <div>{pending.map((submission) => <article key={submission.id} className={submission.requires_review ? "requires-review" : ""}>
-        <div><strong>{submission.micro_stage_name}</strong><span>{submission.progress_percent}% de avanço · {queueDate(submission.created_at)}</span><small>{submission.requires_review ? submission.last_error || "Revisão necessária." : submission.last_error || "Pronta para sincronizar."}</small></div>
+        <div><strong>{submission.map_layer_name || submission.micro_stage_name}</strong><span>{submission.map_layer_id ? "Medição no mapa" : `${submission.progress_percent}% de avanço`} · {queueDate(submission.created_at)}</span><small>{submission.requires_review ? submission.last_error || "Revisão necessária." : submission.last_error || "Pronta para sincronizar."}</small></div>
         <div>{submission.requires_review ? <button type="button" onClick={() => reviewPending(submission)}>Revisar</button> : null}<button type="button" className="danger" onClick={() => void discardSubmission(submission.id)}>Descartar</button></div>
       </article>)}</div>
     </section> : null}
@@ -387,6 +469,8 @@ export default function PublicWorkPage() {
         </div>)}</div>
       </article>)}
     </section>
+
+    <PublicConstructionProgressMap plans={plans} stages={stages} saving={saving} onSubmit={submitMapProgress} />
 
     {editing ? <div className="public-update-backdrop"><form className="public-update-form" onSubmit={submit}>
       <div><span>{editingPendingId ? "Revisão de envio offline" : "Atualização de campo"}</span><h2>{editing.name}</h2><p>Este formulário não exibe nem altera dados financeiros.</p></div>

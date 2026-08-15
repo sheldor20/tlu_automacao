@@ -46,6 +46,7 @@ const snapshot = {
       updated_at: "2026-08-14T12:00:00.000Z",
     }],
   }],
+  plans: [],
 } satisfies PublicWorkSnapshot;
 
 test("aplica o avanço e os insumos na cópia offline da obra", () => {

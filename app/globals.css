@@ -1438,3 +1438,157 @@ body.management-presenting .progress-label { font-size: 10px; }
 body.management-presenting .progress-track { height: 5px; }
 body.management-presenting .management-loading,
 body.management-presenting .management-setup-error { min-height: 620px; }
+
+/* Plantas técnicas e mapa de avanço físico */
+.plan-manager-layout { display: grid; grid-template-columns: minmax(260px,.72fr) minmax(0,1.28fr); gap: 18px; }
+.plan-upload-form { align-content: start; display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--cream); }
+.plan-upload-form .button { width: 100%; }
+.plan-document-list { min-width: 0; display: grid; align-content: start; gap: 9px; }
+.plan-document-list > div:first-child { display: flex; align-items: center; justify-content: space-between; color: var(--moss-900); }
+.plan-document-list > div:first-child span { color: var(--muted); font-size: 11px; }
+.plan-document-list article { min-width: 0; min-height: 70px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 13px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto 34px 34px; align-items: center; gap: 9px; }
+.plan-document-list article > div { min-width: 0; display: grid; gap: 2px; }
+.plan-document-list article strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.plan-document-list article span,.plan-document-list article small { color: var(--muted); font-size: 9px; }
+.plan-document-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--moss-700); background: var(--sage-100); }
+.plan-document-list article > a,.plan-document-list article > button { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center; color: var(--moss-700); background: white; }
+.plan-document-list article > button.danger { color: var(--danger); }
+.plan-document-list article > button:disabled { opacity: .38; cursor: not-allowed; }
+.plan-manager-loading { min-height: 160px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); }
+.plan-manager-message,.construction-plan-message { margin-top: 12px; padding: 11px 13px; border-radius: 10px; font-size: 11px; }
+.plan-manager-message.success,.construction-plan-message.success { color: #285a38; background: #edf7ef; }
+.plan-manager-message.error,.construction-plan-message.error { color: #8d3533; background: #fff0ef; }
+.construction-plan-message { margin: 12px 16px 0; display: flex; align-items: center; gap: 8px; }
+
+.construction-plan-module { overflow: hidden; }
+.construction-plan-workspace { min-height: 680px; display: grid; grid-template-columns: 240px minmax(0,1fr); border-top: 1px solid var(--line); }
+.construction-plan-sidebar { padding: 12px; border-right: 1px solid var(--line); background: #f8f9f6; display: grid; align-content: start; gap: 18px; }
+.plan-sidebar-section { display: grid; gap: 7px; }
+.plan-sidebar-section > span,.plan-sidebar-title > span { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.plan-sidebar-title { display: flex; align-items: center; justify-content: space-between; }
+.plan-sidebar-title > button { width: 27px; height: 27px; border: 1px solid var(--line); border-radius: 7px; background: white; display: grid; place-items: center; color: var(--moss-700); }
+.plan-sidebar-section > button { min-width: 0; min-height: 52px; padding: 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--moss-900); display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; text-align: left; }
+.plan-sidebar-section > button:hover,.plan-sidebar-section > button.active { border-color: #cbd8ca; background: white; box-shadow: 0 5px 16px rgba(32,52,41,.05); }
+.plan-sidebar-section > button > div { min-width: 0; display: grid; gap: 2px; }
+.plan-sidebar-section > button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.plan-sidebar-section > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 8px; }
+.plan-sidebar-section > button > b { font-size: 11px; }
+.plan-sidebar-section > button > i { width: 10px; height: 28px; border-radius: 5px; }
+.plan-sidebar-empty { padding: 10px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.construction-plan-main { min-width: 0; padding: 14px; display: grid; align-content: start; gap: 12px; }
+.construction-plan-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.construction-plan-context > div { display: flex; align-items: center; gap: 8px; }
+.construction-plan-context > div:first-child { min-width: 0; }
+.construction-plan-context strong { font-size: 13px; }
+.construction-plan-context span { color: var(--muted); font-size: 9px; }
+.construction-plan-context a,.plan-delete-document { min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--moss-800); display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 750; }
+.plan-delete-document { width: 34px; padding: 0; justify-content: center; color: var(--danger); }
+.plan-delete-document:disabled { opacity: .35; }
+.plan-calibration-panel { padding: 11px; border: 1px solid #bdd1dc; border-radius: 12px; background: #f2f8fb; display: grid; grid-template-columns: minmax(220px,1fr) 140px auto auto; align-items: end; gap: 9px; }
+.plan-calibration-panel > div:first-child { align-self: center; display: flex; align-items: center; gap: 9px; color: #28596e; }
+.plan-calibration-panel > div:first-child span { display: grid; gap: 2px; font-size: 9px; }
+.plan-calibration-panel > div:first-child strong { font-size: 11px; }
+.plan-layer-summary { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.plan-layer-summary > div:first-child { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.plan-layer-summary > div:first-child i { width: 11px; height: 38px; border-radius: 6px; }
+.plan-layer-summary > div:first-child span { min-width: 0; display: grid; gap: 2px; color: var(--muted); font-size: 9px; }
+.plan-layer-summary > div:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--moss-950); font-size: 13px; }
+.plan-layer-summary > div:last-child { display: flex; gap: 18px; }
+.plan-layer-summary > div:last-child span { display: grid; gap: 2px; color: var(--muted); font-size: 8px; }
+.plan-layer-summary > div:last-child strong { color: var(--moss-950); font-size: 13px; }
+
+.construction-plan-canvas-shell { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #e8ebe6; }
+.construction-plan-canvas-toolbar { min-height: 39px; padding: 6px 9px; background: white; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.construction-plan-canvas-toolbar > span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; }
+.construction-plan-canvas-toolbar > div { display: flex; align-items: center; gap: 5px; }
+.construction-plan-canvas-toolbar button { width: 28px; height: 27px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--moss-800); display: grid; place-items: center; }
+.construction-plan-canvas-toolbar strong { min-width: 38px; text-align: center; font-size: 9px; }
+.construction-plan-scroll { max-height: 640px; overflow: auto; }
+.construction-plan-page { min-width: 100%; position: relative; background: white; box-shadow: 0 8px 24px rgba(26,39,31,.12); }
+.construction-plan-page canvas,.construction-plan-page svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.construction-plan-page svg.is-navigation { pointer-events: none; }
+.construction-plan-page svg.is-drawing { touch-action: none; cursor: crosshair; }
+.plan-point-label { fill: #286083; font-size: .014px; font-weight: 900; paint-order: stroke; stroke: white; stroke-width: .004px; }
+.construction-plan-loading,.construction-plan-error { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(255,255,255,.86); color: var(--muted); font-size: 11px; }
+.construction-plan-error { flex-direction: column; color: var(--danger); }
+.construction-plan-error small { color: var(--muted); }
+.construction-plan-actions { min-height: 50px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 11px; display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.construction-plan-actions > div:first-child { margin-right: auto; display: grid; gap: 2px; }
+.construction-plan-actions > div:first-child span { font-size: 10px; font-weight: 800; }
+.construction-plan-actions > div:first-child small { color: var(--muted); font-size: 8px; }
+.plan-delete-layer { min-height: 36px; padding: 0 9px; border: 0; background: transparent; color: var(--danger); display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 750; }
+.plan-delete-layer:disabled { opacity: .35; }
+.plan-progress-submit { padding: 12px; border: 1px solid #c7d8c7; border-radius: 12px; background: #f4f9f3; display: grid; grid-template-columns: minmax(180px,.8fr) minmax(220px,1fr) minmax(220px,1fr) auto; align-items: end; gap: 10px; }
+.plan-progress-submit > div:first-child { align-self: center; display: grid; gap: 3px; }
+.plan-progress-submit > div:first-child strong { font-size: 11px; }
+.plan-progress-submit > div:first-child span { color: var(--muted); font-size: 9px; }
+.plan-module-loading { min-height: 320px; display: grid; place-items: center; color: var(--muted); }
+
+.public-map-module { width: min(1180px,100%); margin: 14px auto; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: white; box-shadow: var(--shadow-soft); display: grid; gap: 12px; }
+.public-map-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.public-map-head > div > span { display: flex; align-items: center; gap: 5px; color: var(--moss-600); font-size: 9px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
+.public-map-head h2 { margin: 3px 0 2px; font-size: 18px; }
+.public-map-head p { margin: 0; color: var(--muted); font-size: 10px; }
+.public-map-head > strong { min-width: 36px; height: 34px; padding: 0 10px; border-radius: 17px; display: grid; place-items: center; color: var(--moss-700); background: var(--sage-100); font-size: 10px; }
+.public-map-plan-tabs,.public-map-layer-tabs { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; }
+.public-map-plan-tabs button { min-width: 170px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: white; text-align: left; display: grid; gap: 2px; }
+.public-map-plan-tabs button.active { border-color: var(--moss-600); background: #f4f8f2; }
+.public-map-plan-tabs strong { font-size: 10px; }
+.public-map-plan-tabs span { color: var(--muted); font-size: 8px; }
+.public-map-layer-tabs button { --layer-color: #31523f; min-width: 210px; min-height: 52px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: white; display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 8px; text-align: left; }
+.public-map-layer-tabs button.active { border-color: var(--layer-color); box-shadow: inset 0 0 0 1px var(--layer-color); }
+.public-map-layer-tabs i { width: 8px; height: 34px; border-radius: 4px; background: var(--layer-color); }
+.public-map-layer-tabs span { display: grid; gap: 2px; font-size: 10px; font-weight: 800; }
+.public-map-layer-tabs small { color: var(--muted); font-size: 8px; font-weight: 500; }
+.public-map-layer-tabs button > strong { font-size: 12px; }
+.public-map-summary { min-height: 56px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 11px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.public-map-summary > div:first-child { display: grid; grid-template-columns: 10px auto; align-items: center; column-gap: 8px; }
+.public-map-summary > div:first-child > span { grid-row: 1 / span 2; width: 10px; height: 36px; border-radius: 5px; }
+.public-map-summary > div:first-child strong { font-size: 12px; }
+.public-map-summary > div:first-child small { color: var(--muted); font-size: 8px; }
+.public-map-summary > div:last-child { display: flex; gap: 20px; }
+.public-map-summary > div:last-child span { display: grid; gap: 2px; color: var(--muted); font-size: 8px; }
+.public-map-summary > div:last-child strong { color: var(--moss-950); font-size: 13px; }
+.public-map-actions { min-height: 48px; display: flex; align-items: center; gap: 7px; }
+.public-map-actions > div { margin-right: auto; display: grid; gap: 2px; }
+.public-map-actions strong { font-size: 10px; }
+.public-map-actions span { color: var(--muted); font-size: 8px; }
+.public-map-actions > button { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--moss-800); display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 9px; font-weight: 800; }
+.public-map-actions > button:first-of-type { border-color: var(--moss-800); background: var(--moss-800); color: white; }
+.public-map-actions > button:disabled { opacity: .4; }
+.public-map-confirm { padding: 12px; border: 1px solid #c7d8c7; border-radius: 12px; background: #f3f8f1; display: grid; grid-template-columns: minmax(180px,.75fr) minmax(220px,1fr) minmax(220px,1fr) auto; align-items: end; gap: 10px; }
+.public-map-confirm > div:first-child { align-self: center; display: flex; align-items: center; gap: 8px; color: var(--moss-700); }
+.public-map-confirm > div:first-child span { display: grid; gap: 2px; color: var(--muted); font-size: 8px; }
+.public-map-confirm > div:first-child strong { color: var(--moss-900); font-size: 10px; }
+.public-map-confirm > label { display: grid; gap: 5px; color: var(--moss-800); font-size: 9px; font-weight: 750; }
+.public-map-confirm textarea { min-height: 58px; }
+.public-map-hint { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 8px; }
+
+@media (max-width: 900px) {
+  .plan-manager-layout { grid-template-columns: 1fr; }
+  .construction-plan-workspace { grid-template-columns: 1fr; }
+  .construction-plan-sidebar { border-right: 0; border-bottom: 1px solid var(--line); grid-template-columns: 1fr 1fr; }
+  .plan-calibration-panel,.plan-progress-submit,.public-map-confirm { grid-template-columns: 1fr 1fr; }
+  .plan-calibration-panel > div:first-child,.plan-progress-submit > div:first-child,.public-map-confirm > div:first-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 620px) {
+  .plan-document-list article { grid-template-columns: 34px minmax(0,1fr) 32px 32px; }
+  .plan-document-list article .status-pill { display: none; }
+  .construction-plan-sidebar { grid-template-columns: 1fr; }
+  .construction-plan-main { padding: 9px; }
+  .construction-plan-context,.plan-layer-summary,.public-map-summary { align-items: stretch; flex-direction: column; }
+  .construction-plan-context > div:last-child { flex-wrap: wrap; }
+  .plan-calibration-panel,.plan-progress-submit,.public-map-confirm { grid-template-columns: 1fr; }
+  .plan-calibration-panel > div:first-child,.plan-progress-submit > div:first-child,.public-map-confirm > div:first-child { grid-column: auto; }
+  .construction-plan-actions,.public-map-actions { align-items: stretch; flex-direction: column; }
+  .construction-plan-actions > div:first-child,.public-map-actions > div { width: 100%; margin: 0; }
+  .construction-plan-actions .button,.construction-plan-actions > button,.public-map-actions > button { width: 100%; }
+  .construction-plan-scroll { max-height: 520px; }
+  .construction-plan-page { min-width: 760px; }
+  .construction-plan-canvas-shell.is-compact .construction-plan-page { min-width: 720px; }
+  .public-map-module { padding: 12px; border-radius: 14px; }
+  .public-map-head h2 { font-size: 17px; }
+  .public-map-head p { font-size: 9px; }
+  .public-map-summary > div:last-child { justify-content: space-between; }
+}
