@@ -23,6 +23,15 @@ não é proprietária das tabelas, portanto recebe o erro `must be owner of tabl
 12. `migrations/20260813110000_qlik_legal_sales_connection.sql`
 13. `migrations/20260813150000_qlik_finance_and_climate.sql`
 14. `migrations/20260813200000_operations_access_and_public_work_updates.sql`
+15. `migrations/20260813210000_manual_management_indicator_values.sql`
+16. `migrations/20260813220000_manual_rental_availability_history.sql`
+17. `migrations/20260813230000_cash_available_and_traction_history.sql`
+18. `migrations/20260813240000_manual_rental_availability_july.sql`
+19. `migrations/20260813250000_validated_rental_balance_override.sql`
+20. `migrations/20260814090000_business_property_registration.sql`
+21. `migrations/20260814120000_work_schedule_inspections_and_standalone_tasks.sql`
+22. `migrations/20260814220000_public_work_offline_submissions.sql`
+23. `migrations/20260814230000_construction_progress_maps.sql`
 
 Em instalações que já executaram as migrations anteriores, rode apenas a nova.
 
@@ -55,6 +64,8 @@ Esse SQL cria:
 - acesso completo ou restrito às tarefas envolvidas em Projetos, com permissões separadas para arquivos e atualizações;
 - links públicos revogáveis para atualização de avanço, estoque e fotos de Obras, sem exposição financeira;
 - edição segura do histórico de avanço e exclusão transacional de etapas e microetapas.
+- plantas PDF privadas, calibração por escala e medição linear/por área vinculada às microetapas;
+- atualização do mapa pelo link de campo, inclusive offline, com foto e prevenção de dupla contagem.
 
 ## 2. Alimentar os indicadores gerenciais
 

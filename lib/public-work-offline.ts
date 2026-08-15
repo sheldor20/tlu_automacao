@@ -1,4 +1,6 @@
 import type { ConstructionSupply } from "@/lib/types";
+import type { PlanPath } from "@/lib/construction-plan-geometry";
+import type { ConstructionPlanCategory, ConstructionPlanDiscipline, ConstructionPlanLayer } from "@/lib/types";
 
 export type PublicWorkMicro = {
   id: string;
@@ -33,6 +35,24 @@ export type PublicWorkConstruction = {
 export type PublicWorkSnapshot = {
   construction: PublicWorkConstruction;
   stages: PublicWorkStage[];
+  plans: PublicWorkPlanDocument[];
+};
+
+export type PublicWorkPlanLayer = Pick<
+  ConstructionPlanLayer,
+  "id" | "document_id" | "construction_id" | "micro_stage_id" | "name" | "measurement_type" | "unit" | "color" | "planned_paths" | "executed_paths" | "planned_measure" | "executed_measure" | "progress_percent" | "updated_at"
+> & { discipline: ConstructionPlanDiscipline };
+
+export type PublicWorkPlanDocument = {
+  id: string;
+  name: string;
+  category: ConstructionPlanCategory;
+  page_number: number;
+  page_aspect_ratio: number;
+  calibration_points: Array<{ x: number; y: number }>;
+  calibration_distance_m: number;
+  signed_url: string;
+  layers: PublicWorkPlanLayer[];
 };
 
 export type PendingPublicWorkSubmission = {
@@ -51,12 +71,22 @@ export type PendingPublicWorkSubmission = {
   attempts: number;
   last_error: string | null;
   requires_review: boolean;
+  kind?: "stage" | "map";
+  map_layer_id?: string;
+  map_layer_name?: string;
+  map_base_updated_at?: string;
+  map_paths?: PlanPath[];
+  map_executed_measure?: number;
+  map_progress_percent?: number;
 };
 
 export type PublicWorkSubmissionResult = {
   ok: true;
   duplicate?: boolean;
   micro_stage_updated_at?: string;
+  map_layer_updated_at?: string;
+  map_executed_measure?: number;
+  map_progress_percent?: number;
 };
 
 type SnapshotRecord = {
@@ -197,15 +227,25 @@ export async function clearPublicWorkOfflineData(token: string) {
 }
 
 export function applySubmissionToSnapshot(snapshot: PublicWorkSnapshot, submission: PendingPublicWorkSubmission): PublicWorkSnapshot {
+  const mapProgress = submission.map_progress_percent ?? submission.progress_percent;
   return {
     construction: snapshot.construction,
     stages: snapshot.stages.map((stage) => ({
       ...stage,
       micro_stages: stage.micro_stages.map((micro) => micro.id === submission.micro_stage_id ? {
         ...micro,
-        progress_percent: submission.progress_percent,
+        progress_percent: mapProgress,
         supplies: submission.supplies.map((supply) => ({ ...supply })),
       } : micro),
+    })),
+    plans: (snapshot.plans || []).map((plan) => ({
+      ...plan,
+      layers: plan.layers.map((layer) => layer.id === submission.map_layer_id ? {
+        ...layer,
+        executed_paths: [...layer.executed_paths, ...(submission.map_paths || [])],
+        executed_measure: submission.map_executed_measure ?? layer.executed_measure,
+        progress_percent: mapProgress,
+      } : layer),
     })),
   };
 }
@@ -222,6 +262,11 @@ export function buildPublicWorkSubmissionFormData(submission: PendingPublicWorkS
   body.set("note", submission.note);
   body.set("supplies", JSON.stringify(submission.supplies));
   body.set("base_updated_at", submission.base_updated_at);
+  if (submission.map_layer_id && submission.map_base_updated_at && submission.map_paths?.length) {
+    body.set("map_layer_id", submission.map_layer_id);
+    body.set("map_base_updated_at", submission.map_base_updated_at);
+    body.set("map_paths", JSON.stringify(submission.map_paths));
+  }
   body.set("photo", submission.photo, submission.photo_name);
   return body;
 }

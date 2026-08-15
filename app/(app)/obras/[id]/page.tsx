@@ -3,6 +3,7 @@
 import { Button, Dialog, EmptyState, Field, KpiCard, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { DetailTabs } from "@/components/detail-tabs";
 import { ConstructionGantt } from "@/components/construction-gantt";
+import { ConstructionProgressMap } from "@/components/construction-progress-map";
 import { SupplyEditor } from "@/components/supply-editor";
 import { generateConstructionReport } from "@/lib/construction-report";
 import { remainingSupplyQuantity, supplyWithRemainingQuantity } from "@/lib/construction-supplies";
@@ -25,6 +26,7 @@ import {
   History,
   Hammer,
   ImageIcon,
+  Map as MapIcon,
   Package,
   Pencil,
   Plus,
@@ -50,11 +52,12 @@ type UpdateRow = {
   evidence_url?: string;
 };
 
-type WorkTab = "resumo" | "etapas" | "cronograma" | "insumos" | "financeiro" | "arquivos" | "atualizacoes";
+type WorkTab = "resumo" | "etapas" | "mapa" | "cronograma" | "insumos" | "financeiro" | "arquivos" | "atualizacoes";
 
 const workTabs = [
   { key: "resumo", label: "Resumo", icon: <Settings2 size={16} /> },
   { key: "etapas", label: "Etapas", icon: <Hammer size={16} /> },
+  { key: "mapa", label: "Mapa físico", icon: <MapIcon size={16} /> },
   { key: "cronograma", label: "Cronograma", icon: <CalendarRange size={16} /> },
   { key: "insumos", label: "Insumos", icon: <Package size={16} /> },
   { key: "financeiro", label: "Financeiro", icon: <WalletCards size={16} /> },
@@ -599,6 +602,8 @@ export default function WorkDetailPage() {
             </div>
           )}
         </section> : null}
+
+      {activeTab === "mapa" ? <ConstructionProgressMap construction={construction} macros={macros} onChanged={loadData} /> : null}
 
       {activeTab === "cronograma" ? <ConstructionGantt construction={construction} macros={macros} /> : null}
 

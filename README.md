@@ -8,7 +8,8 @@ Projetos e Aluguéis.
 - **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa,
   arquivamento e transferência automática para Obras.
 - **Obras:** portfólio, orçamento mensal, macro e microetapas, estoque e consumo
-  calculado de insumos, modelos prontos, evidências obrigatórias e relatório PDF.
+  calculado de insumos, modelos prontos, evidências obrigatórias, mapa de avanço
+  sobre plantas PDF e relatório.
 - **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
   alertas, comentários, arquivos, envolvidos e e-mail de status.
 - **Aluguéis:** imóveis, contratos, atualização direta de status e dados-base de
@@ -28,6 +29,24 @@ npm run dev
 ```
 
 O banco e o passo a passo de configuração estão em [supabase/README.md](supabase/README.md).
+
+## Mapa de avanço físico
+
+Depois do merge, execute `supabase/migrations/20260814230000_construction_progress_maps.sql`
+no SQL Editor com a role `postgres`. A migration cria o bucket privado
+`construction-plans`, as tabelas de plantas/camadas/medições e o processamento
+atômico que atualiza a microetapa com a evidência correspondente.
+
+O fluxo funcional é:
+
+1. adicionar os PDFs no botão **Plantas técnicas** de Novos Negócios;
+2. abrir a aba **Mapa físico** da obra e calibrar dois pontos com uma distância conhecida;
+3. criar uma camada, vinculá-la a uma microetapa e desenhar o total previsto;
+4. aprovar a base e registrar trechos executados com foto;
+5. usar o mesmo mapa no link público de campo, inclusive offline após a primeira abertura.
+
+Não existem novas variáveis de ambiente. PDFs ficam privados e o link público
+entrega somente as bases aprovadas, sem expor arquivos financeiros.
 
 ## Sincronização semanal do NPS
 
