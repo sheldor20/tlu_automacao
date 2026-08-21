@@ -35,3 +35,10 @@ test("usa a periodicidade configurável no próximo vencimento da vistoria", () 
   assert.match(migration, /inspection_interval_days integer not null default 15/);
   assert.match(migration, /coalesce\(i\.last_inspection_at, c\.start_date\) \+ c\.inspection_interval_days/);
 });
+
+test("calcula o badge do Hoje somente para o usuário autenticado", () => {
+  assert.match(migration, /create or replace function public\.current_user_today_alert_count\(\)/);
+  assert.match(migration, /notification\.recipient_user_id = auth\.uid\(\)/);
+  assert.match(migration, /task\.assignee_user_id = auth\.uid\(\)/);
+  assert.match(migration, /work\.responsible_user_id = auth\.uid\(\)/);
+});
