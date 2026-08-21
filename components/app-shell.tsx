@@ -9,12 +9,14 @@ import {
   ChartNoAxesCombined,
   CalendarDays,
   FolderKanban,
+  GitBranch,
   Home,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   ShieldCheck,
+  NotebookTabs,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -33,6 +35,8 @@ const departmentLinks: Array<{
   { slug: "obras", href: "/obras", label: "Obras", icon: Building2 },
   { slug: "projetos", href: "/projetos", label: "Projetos", icon: FolderKanban },
   { slug: "alugueis", href: "/alugueis", label: "Aluguéis", icon: Home },
+  { slug: "processos", href: "/processos", label: "Processos", icon: GitBranch },
+  { slug: "pauta-ra", href: "/pauta-ra", label: "Pauta e RA", icon: NotebookTabs },
   { slug: "indicadores", href: "/indicadores", label: "Indicadores", icon: ChartNoAxesCombined },
 ];
 
