@@ -21,7 +21,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 const departmentLinks: Array<{
   slug: DepartmentSlug;
@@ -53,6 +53,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [todayAlertCount, setTodayAlertCount] = useState(0);
+
+  const loadTodayAlertCount = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("current_user_today_alert_count");
+    if (!error) setTodayAlertCount(Math.max(0, Number(data) || 0));
+  }, [supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("terra-lotus-sidebar-collapsed") === "true"), 0);
@@ -86,6 +93,23 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [mobileMenu]);
+
+  useEffect(() => {
+    if (!supabase || loading) return;
+    const refreshCount = () => void loadTodayAlertCount();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshCount();
+    };
+    refreshCount();
+    window.addEventListener("focus", refreshCount);
+    window.addEventListener("today-alert-count-changed", refreshCount);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshCount);
+      window.removeEventListener("today-alert-count-changed", refreshCount);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loading, loadTodayAlertCount, pathname, supabase]);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
@@ -258,6 +282,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <CalendarDays size={19} />
             <span>{todayLink.label}</span>
+            {todayAlertCount > 0 ? <span className="nav-alert-badge" aria-label={`${todayAlertCount} alertas pendentes`}>{todayAlertCount > 99 ? "99+" : todayAlertCount}</span> : null}
           </Link>
           {showIndicators ? (
             <Link
