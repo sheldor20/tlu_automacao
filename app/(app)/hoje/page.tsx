@@ -11,6 +11,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type TaskRow = ProjectTask & { projects?: { name: string } | null };
 type TodayTask = ProjectTask & { project_name: string };
+type UnifiedAlert = {
+  id: string;
+  title: string;
+  description: string;
+  category: "notification" | "task" | "inspection" | "rental";
+  tone: "danger" | "warning" | "info";
+  href: string;
+  actionLabel: string;
+  order: number;
+  notification?: UserNotification;
+};
 
 function daysUntil(value: string | null | undefined) {
   if (!value) return Number.POSITIVE_INFINITY;
@@ -128,6 +139,52 @@ export default function TodayPage() {
     if (adjustmentDays <= 45) alerts.push({ id: `${rental.id}-reajuste`, rental, message: `Reajuste anual em ${adjustmentDays} dia(s)`, danger: adjustmentDays <= 7 });
     return alerts;
   }), [rentals]);
+  const unifiedAlerts = useMemo<UnifiedAlert[]>(() => [
+    ...overdueTasks.map((task) => ({
+      id: `overdue-${task.id}`,
+      title: task.title,
+      description: `${task.project_name} · atraso de ${Math.abs(daysUntil(task.due_date))} dia(s)`,
+      category: "task" as const,
+      tone: "danger" as const,
+      href: task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas",
+      actionLabel: "Resolver",
+      order: daysUntil(task.due_date),
+    })),
+    ...inspectionAlerts.map((work) => {
+      const days = daysUntil(work.next_inspection_at);
+      return {
+        id: `inspection-${work.id}`,
+        title: work.name,
+        description: `${days < 0 ? `Vistoria atrasada há ${Math.abs(days)} dia(s)` : days === 0 ? "Vistoria vence hoje" : `Vistoria vence em ${days} dia(s)`} · ciclo de ${work.inspection_interval_days} dia(s)`,
+        category: "inspection" as const,
+        tone: days <= 0 ? "danger" as const : "warning" as const,
+        href: `/obras/${work.id}?tab=atualizacoes`,
+        actionLabel: "Abrir",
+        order: days <= 0 ? 100 + days : 300 + days,
+      };
+    }),
+    ...rentalAlerts.map((alert) => ({
+      id: alert.id,
+      title: alert.rental.name,
+      description: `${alert.message} · ${rentalStatusLabel[alert.rental.status]}`,
+      category: "rental" as const,
+      tone: alert.danger ? "danger" as const : "warning" as const,
+      href: `/alugueis/${alert.rental.id}`,
+      actionLabel: "Revisar",
+      order: alert.danger ? 200 : 400,
+    })),
+    ...notifications.map((notification) => ({
+      id: `notification-${notification.id}`,
+      title: notification.title,
+      description: `${notification.message} · ${dateBr(notification.created_at)}`,
+      category: "notification" as const,
+      tone: "info" as const,
+      href: "/projetos#quadro-tarefas",
+      actionLabel: "Abrir",
+      order: 500,
+      notification,
+    })),
+  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts]);
 
   async function updateTask(task: TodayTask, status: TaskStatus) {
     if (!supabase) return;
@@ -137,6 +194,7 @@ export default function TodayPage() {
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setToast({ message: "Tarefa concluída.", type: "success" });
     await loadData(selectedUserId);
+    window.dispatchEvent(new Event("today-alert-count-changed"));
   }
 
   async function markNotificationRead(notification: UserNotification) {
@@ -144,6 +202,7 @@ export default function TodayPage() {
     const { error } = await supabase.from("user_notifications").update({ read_at: new Date().toISOString() }).eq("id", notification.id);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setNotifications((current) => current.filter((item) => item.id !== notification.id));
+    window.dispatchEvent(new Event("today-alert-count-changed"));
   }
 
   return (
@@ -168,22 +227,18 @@ export default function TodayPage() {
           {sortedTasks.length ? <div className="today-action-list">{sortedTasks.map((task) => { const window = taskWindow(task); return <article key={task.id}><span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span><div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.status === "em_andamento" ? "Em andamento" : "A fazer"} · {task.assignee_name}</span></div><div className="today-item-actions">{selectedUserId === currentUserId ? <Button variant="secondary" onClick={() => void updateTask(task, "concluida")} disabled={saving}><Check size={15} /> Concluir</Button> : null}<Link className="button button-primary" href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Abrir</Link></div></article>; })}</div> : <EmptyState icon={<Check size={22} />} title="Nenhuma tarefa aberta" description="Não há tarefas a fazer ou em andamento nesta visão." />}
         </section> : null}
 
-        {authorizedDepartments.includes("projetos") ? <section className="content-card">
-          <div className="content-card-head"><div><h2>Alertas de tarefas</h2><p>Novas atribuições e tarefas atrasadas</p></div><StatusPill tone={notifications.length || overdueTasks.length ? "warning" : "success"}>{notifications.length + overdueTasks.length} alerta(s)</StatusPill></div>
-          {notifications.length || overdueTasks.length ? <div className="today-compact-list">
-            {notifications.map((notification) => <article key={notification.id}><span className="exception-mark exception-info"><Bell size={15} /></span><div><strong>{notification.title}</strong><span>{notification.message} · {dateBr(notification.created_at)}</span></div><div className="today-compact-actions">{notification.recipient_user_id === currentUserId ? <Button variant="ghost" onClick={() => void markNotificationRead(notification)}>Marcar como lido</Button> : null}<Link href="/projetos#quadro-tarefas">Abrir <ArrowRight size={14} /></Link></div></article>)}
-            {overdueTasks.map((task) => <article key={`overdue-${task.id}`}><span className="exception-mark exception-danger"><AlertTriangle size={15} /></span><div><strong>{task.title}</strong><span>{task.project_name} · atraso de {Math.abs(daysUntil(task.due_date))} dia(s)</span></div><Link href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Resolver <ArrowRight size={14} /></Link></article>)}
-          </div> : <div className="mini-empty">Nenhum alerta de tarefa aberto.</div>}
-        </section> : null}
-
-        {authorizedDepartments.includes("obras") ? <section className="content-card">
-          <div className="content-card-head"><div><h2>Alertas de vistoria</h2><p>Vistorias vencendo nos próximos três dias ou atrasadas</p></div><StatusPill tone={inspectionAlerts.length ? "warning" : "success"}>{inspectionAlerts.length} obra(s)</StatusPill></div>
-          {inspectionAlerts.length ? <div className="today-compact-list">{inspectionAlerts.map((work) => { const days = daysUntil(work.next_inspection_at); return <article key={work.id}><span className={`exception-mark exception-${days <= 0 ? "danger" : "warning"}`}><ClipboardCheck size={15} /></span><div><strong>{work.name}</strong><span>{days < 0 ? `Vistoria atrasada há ${Math.abs(days)} dia(s)` : days === 0 ? "Vistoria vence hoje" : `Vistoria vence em ${days} dia(s)`} · ciclo de {work.inspection_interval_days} dia(s)</span></div><Link href={`/obras/${work.id}?tab=atualizacoes`}>Abrir <ArrowRight size={14} /></Link></article>; })}</div> : <div className="mini-empty">Nenhuma vistoria vencendo ou atrasada.</div>}
-        </section> : null}
-
-        {authorizedDepartments.includes("alugueis") ? <section className="content-card">
-          <div className="content-card-head"><div><h2>Alertas de imóveis</h2><p>Contratos, renovações, reajustes e reformas</p></div><StatusPill tone={rentalAlerts.length ? "warning" : "success"}>{rentalAlerts.length} alerta(s)</StatusPill></div>
-          {rentalAlerts.length ? <div className="today-compact-list">{rentalAlerts.map((alert) => <article key={alert.id}><span className={`exception-mark exception-${alert.danger ? "danger" : "warning"}`}><Home size={15} /></span><div><strong>{alert.rental.name}</strong><span>{alert.message} · {rentalStatusLabel[alert.rental.status]}</span></div><Link href={`/alugueis/${alert.rental.id}`}>Revisar <ArrowRight size={14} /></Link></article>)}</div> : <div className="mini-empty">Nenhum contrato, reajuste ou reforma exige atenção.</div>}
+        {authorizedDepartments.some((department) => ["projetos", "obras", "alugueis"].includes(department)) ? <section className="content-card today-primary-card">
+          <div className="content-card-head"><div><h2>Alertas</h2><p>Tarefas, vistorias e imóveis que precisam de atenção</p></div><StatusPill tone={unifiedAlerts.length ? "danger" : "success"}>{unifiedAlerts.length} pendente(s)</StatusPill></div>
+          {unifiedAlerts.length ? <div className="today-compact-list today-alert-list">{unifiedAlerts.map((alert) => <article key={alert.id}>
+            <span className={`exception-mark exception-${alert.tone}`}>
+              {alert.category === "notification" ? <Bell size={15} /> : alert.category === "task" ? <AlertTriangle size={15} /> : alert.category === "inspection" ? <ClipboardCheck size={15} /> : <Home size={15} />}
+            </span>
+            <div><strong>{alert.title}</strong><span>{alert.description}</span></div>
+            <div className="today-compact-actions">
+              {alert.notification?.recipient_user_id === currentUserId ? <Button variant="ghost" onClick={() => void markNotificationRead(alert.notification!)}>Marcar como lido</Button> : null}
+              <Link href={alert.href}>{alert.actionLabel} <ArrowRight size={14} /></Link>
+            </div>
+          </article>)}</div> : <div className="mini-empty">Nenhum alerta exige atenção agora.</div>}
         </section> : null}
 
         {!authorizedDepartments.some((department) => ["projetos", "obras", "alugueis"].includes(department)) ? <EmptyState icon={<Building2 size={22} />} title="Sem áreas operacionais" description="Solicite acesso a Projetos, Obras ou Aluguéis para visualizar tarefas e alertas." /> : null}

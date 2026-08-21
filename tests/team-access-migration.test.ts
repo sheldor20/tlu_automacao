@@ -6,6 +6,10 @@ const migration = readFileSync(
   new URL("../supabase/migrations/20260821110000_team_hierarchy_private_work_and_today_alerts.sql", import.meta.url),
   "utf8",
 );
+const badgeMigration = readFileSync(
+  new URL("../supabase/migrations/20260821150000_today_alert_badge.sql", import.meta.url),
+  "utf8",
+);
 
 test("restringe projetos a envolvidos, administradores e líderes diretos", () => {
   assert.match(migration, /create or replace function public\.has_project_access/);
@@ -34,4 +38,11 @@ test("gera alerta persistente quando outra pessoa atribui uma tarefa", () => {
 test("usa a periodicidade configurável no próximo vencimento da vistoria", () => {
   assert.match(migration, /inspection_interval_days integer not null default 15/);
   assert.match(migration, /coalesce\(i\.last_inspection_at, c\.start_date\) \+ c\.inspection_interval_days/);
+});
+
+test("calcula o badge do Hoje somente para o usuário autenticado", () => {
+  assert.match(badgeMigration, /create or replace function public\.current_user_today_alert_count\(\)/);
+  assert.match(badgeMigration, /notification\.recipient_user_id = auth\.uid\(\)/);
+  assert.match(badgeMigration, /task\.assignee_user_id = auth\.uid\(\)/);
+  assert.match(badgeMigration, /work\.responsible_user_id = auth\.uid\(\)/);
 });
