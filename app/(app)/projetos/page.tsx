@@ -185,6 +185,16 @@ export default function ProjectsPage() {
     await loadData(true);
   }
 
+  async function deleteTask(task: ProjectTask) {
+    if (!supabase || movingTaskId || !window.confirm(`Excluir a tarefa “${task.title}”?`)) return;
+    setMovingTaskId(task.id);
+    const { error } = await supabase.from("project_tasks").delete().eq("id", task.id);
+    setMovingTaskId(null);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Tarefa excluída.", type: "success" });
+    await loadData(true);
+  }
+
   async function createProject(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
@@ -317,6 +327,8 @@ export default function ProjectsPage() {
           onAddTask={openTaskForm}
           canAddTask
           canReassign={fullAccess}
+          canDelete
+          onDeleteTask={deleteTask}
         />}
         <div className="global-task-board-foot"><ListTodo size={14} /> {boardTasks.length} tarefa(s) no recorte atual · tarefas avulsas não aparecem dentro de nenhum projeto.</div>
       </section>

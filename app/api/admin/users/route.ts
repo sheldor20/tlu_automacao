@@ -16,6 +16,7 @@ const projectPermissionSchema = z.object({
   allow_files: z.boolean().default(true),
   allow_updates: z.boolean().default(true),
 }).default({ access_scope: "full", allow_files: true, allow_updates: true });
+const leaderSchema = z.string().uuid().nullable().default(null);
 
 const createUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
@@ -26,6 +27,7 @@ const createUserSchema = z.object({
   departments: z.array(departmentSchema).max(5),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
+  leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
@@ -43,6 +45,7 @@ const updateUserSchema = z.object({
   departments: z.array(departmentSchema).max(5),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
+  leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.length === 0) {
     context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
@@ -146,6 +149,26 @@ async function replaceProjectPermission(
   if (error) throw error;
 }
 
+async function replaceReportingLine(service: SupabaseClient, userId: string, leaderUserId: string | null) {
+  if (!leaderUserId) {
+    const { error } = await service.from("profile_reporting_lines").delete().eq("report_user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  if (leaderUserId === userId) throw new Error("O usuário não pode ser líder de si mesmo.");
+  const { data: leader, error: leaderError } = await service
+    .from("profiles")
+    .select("user_id,active")
+    .eq("user_id", leaderUserId)
+    .single();
+  if (leaderError || !leader?.active) throw new Error("Selecione um líder direto ativo.");
+  const { error } = await service.from("profile_reporting_lines").upsert({
+    report_user_id: userId,
+    leader_user_id: leaderUserId,
+  });
+  if (error) throw error;
+}
+
 export async function POST(request: Request) {
   const context = await requireAdmin(request);
   if (context instanceof NextResponse) return context;
@@ -158,7 +181,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, leader_user_id } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -188,6 +211,7 @@ export async function POST(request: Request) {
       departments.includes("indicadores") ? indicator_areas : [],
     );
     await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos"), project_permission);
+    await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
     }
@@ -209,7 +233,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e selecione ao menos um departamento." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, leader_user_id } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -251,6 +275,7 @@ export async function PATCH(request: Request) {
       departments.includes("indicadores") ? indicator_areas : [],
     );
     await replaceProjectPermission(context.service, user_id, departments.includes("projetos"), project_permission);
+    await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";
     return NextResponse.json({ error: message }, { status: 500 });

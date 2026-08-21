@@ -65,6 +65,7 @@ export type Construction = {
   last_inspection_at?: string | null;
   next_inspection_at?: string | null;
   inspection_due?: boolean;
+  inspection_interval_days: number;
   created_at: string;
   updated_at: string;
 };
@@ -127,6 +128,15 @@ export type UserProfile = {
   email: string;
   active: boolean;
   is_admin: boolean;
+};
+
+export type ProfileReportingLine = {
+  report_user_id: string;
+  leader_user_id: string;
+};
+
+export type TodayVisibleUser = Pick<UserProfile, "user_id" | "full_name" | "email"> & {
+  is_self: boolean;
 };
 
 export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis" | "indicadores";
@@ -250,6 +260,19 @@ export type ProjectTask = {
   status: TaskStatus;
   position: number;
   completed_at: string | null;
+  created_by?: string;
+  created_at: string;
+};
+
+export type UserNotification = {
+  id: string;
+  recipient_user_id: string;
+  notification_type: "task_assigned";
+  entity_id: string;
+  title: string;
+  message: string;
+  actor_user_id: string | null;
+  read_at: string | null;
   created_at: string;
 };
 

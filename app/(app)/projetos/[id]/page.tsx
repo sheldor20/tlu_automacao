@@ -45,8 +45,8 @@ type LinkedBusiness = {
 type ProjectTab = "resumo" | "tarefas" | "arquivos" | "atualizacoes";
 
 const projectTabs = [
-  { key: "resumo", label: "Resumo", icon: <Settings2 size={16} /> },
   { key: "tarefas", label: "Tarefas", icon: <ListTodo size={16} /> },
+  { key: "resumo", label: "Resumo", icon: <Settings2 size={16} /> },
   { key: "arquivos", label: "Arquivos", icon: <Files size={16} /> },
   { key: "atualizacoes", label: "Atualizações", icon: <History size={16} /> },
 ] satisfies Array<{ key: ProjectTab; label: string; icon: ReactNode }>;
@@ -65,9 +65,9 @@ export default function ProjectDetailPage() {
   const [allowFiles, setAllowFiles] = useState(true);
   const [allowUpdates, setAllowUpdates] = useState(true);
   const [activeTab, setActiveTab] = useState<ProjectTab>(() => {
-    if (typeof window === "undefined") return "resumo";
+    if (typeof window === "undefined") return "tarefas";
     const requested = new URLSearchParams(window.location.search).get("tab") as ProjectTab | null;
-    return requested && projectTabs.some((tab) => tab.key === requested) ? requested : "resumo";
+    return requested && projectTabs.some((tab) => tab.key === requested) ? requested : "tarefas";
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,7 +88,7 @@ export default function ProjectDetailPage() {
     if (!silent) setLoading(true);
     const { data: currentAuth } = await supabase.auth.getUser();
     const currentUserId = currentAuth.user?.id || "00000000-0000-0000-0000-000000000000";
-    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult] = await Promise.all([
+    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult, fullAccessResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("project_tasks").select("*").eq("project_id", params.id).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
@@ -98,6 +98,7 @@ export default function ProjectDetailPage() {
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("profiles").select("is_admin").eq("user_id", currentUserId).maybeSingle(),
       supabase.from("profile_project_permissions").select("access_scope,allow_files,allow_updates").eq("user_id", currentUserId).maybeSingle(),
+      supabase.rpc("has_project_full_access", { p_project_id: params.id }),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
@@ -120,7 +121,7 @@ export default function ProjectDetailPage() {
     setLinkedBusinesses((businessResult.data || []) as LinkedBusiness[]);
     setUsers((userResult.data || []) as UserProfile[]);
     const administrator = Boolean(profileResult.data?.is_admin);
-    setFullAccess(administrator || permissionResult.data?.access_scope !== "assigned_tasks");
+    setFullAccess(administrator || Boolean(fullAccessResult.data));
     setAllowFiles(administrator || permissionResult.data?.allow_files !== false);
     setAllowUpdates(administrator || permissionResult.data?.allow_updates !== false);
     setLoading(false);
@@ -197,6 +198,16 @@ export default function ProjectDetailPage() {
     setMovingTaskId(null);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setToast({ message: "Responsável ou prazo da tarefa atualizado.", type: "success" });
+    await loadData(true);
+  }
+
+  async function deleteTask(task: ProjectTask) {
+    if (!supabase || movingTaskId || !window.confirm(`Excluir a tarefa “${task.title}”?`)) return;
+    setMovingTaskId(task.id);
+    const { error } = await supabase.from("project_tasks").delete().eq("id", task.id);
+    setMovingTaskId(null);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setToast({ message: "Tarefa excluída do projeto.", type: "success" });
     await loadData(true);
   }
 
@@ -377,6 +388,8 @@ export default function ProjectDetailPage() {
           onAddTask={(status) => { setTaskForm((current) => ({ ...current, status })); setTaskDialog(true); }}
           canAddTask={fullAccess}
           canReassign={fullAccess}
+          canDelete={fullAccess}
+          onDeleteTask={deleteTask}
         />
       </section> : null}
 
