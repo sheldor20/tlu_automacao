@@ -1,26 +1,15 @@
 "use client";
 
-import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
-import { BUSINESS_STAGES, DEPARTMENTS } from "@/lib/constants";
-import { dateBr, daysBetween, todayIso } from "@/lib/format";
+import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
+import { DEPARTMENTS } from "@/lib/constants";
+import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Business, Construction, DepartmentSlug, Project, ProjectTask, Rental, RentalStatus, TaskStatus } from "@/lib/types";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Building2,
-  CalendarCheck,
-  Check,
-  ClipboardCheck,
-  Clock3,
-  Home,
-  ListTodo,
-  RefreshCw,
-  TrendingUp,
-} from "lucide-react";
+import type { Construction, DepartmentSlug, ProjectTask, Rental, RentalStatus, TaskStatus, TodayVisibleUser, UserNotification } from "@/lib/types";
+import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+type TaskRow = ProjectTask & { projects?: { name: string } | null };
 type TodayTask = ProjectTask & { project_name: string };
 
 function daysUntil(value: string | null | undefined) {
@@ -34,7 +23,17 @@ function taskWindow(task: TodayTask) {
   const days = daysUntil(task.due_date);
   if (days < 0) return { label: `${Math.abs(days)} dia(s) atrasada`, tone: "danger" as const, order: 0 };
   if (days === 0) return { label: "Vence hoje", tone: "warning" as const, order: 1 };
-  return { label: `Vence em ${days} dia(s)`, tone: "info" as const, order: 2 };
+  if (days <= 7) return { label: `Vence em ${days} dia(s)`, tone: "info" as const, order: 2 };
+  return { label: dateBr(task.due_date), tone: "neutral" as const, order: 3 };
+}
+
+function nextAdjustmentDays(rental: Rental) {
+  if (!rental.lease_start_date || rental.status !== "alugado") return Number.POSITIVE_INFINITY;
+  const start = new Date(`${rental.lease_start_date.slice(0, 10)}T12:00:00`);
+  const today = new Date(`${todayIso()}T12:00:00`);
+  const next = new Date(today.getFullYear(), start.getMonth(), start.getDate(), 12);
+  if (next < today) next.setFullYear(next.getFullYear() + 1);
+  return Math.ceil((next.getTime() - today.getTime()) / 86_400_000);
 }
 
 const rentalStatusLabel: Record<RentalStatus, string> = {
@@ -46,171 +45,105 @@ const rentalStatusLabel: Record<RentalStatus, string> = {
 export default function TodayPage() {
   const supabase = getSupabase();
   const [tasks, setTasks] = useState<TodayTask[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [works, setWorks] = useState<Construction[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
-  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [visibleUsers, setVisibleUsers] = useState<TodayVisibleUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
   const [authorizedDepartments, setAuthorizedDepartments] = useState<DepartmentSlug[]>([]);
-  const [userName, setUserName] = useState("seu usuário");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [rescheduleTask, setRescheduleTask] = useState<TodayTask | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState(todayIso());
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (requestedUserId?: string) => {
     if (!supabase) return;
     setLoading(true);
-    setToast(null);
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) {
       setToast({ message: "Sua sessão expirou. Entre novamente.", type: "error" });
       setLoading(false);
       return;
     }
-    const [profileResult, accessResult] = await Promise.all([
-      supabase.from("profiles").select("full_name,email,is_admin").eq("user_id", authData.user.id).single(),
-      supabase.from("profile_departments").select("department_slug").eq("user_id", authData.user.id),
+    const ownUserId = authData.user.id;
+    const [profileResult, accessResult, visibleUserResult] = await Promise.all([
+      supabase.from("profiles").select("full_name,email,is_admin").eq("user_id", ownUserId).single(),
+      supabase.from("profile_departments").select("department_slug").eq("user_id", ownUserId),
+      supabase.rpc("visible_today_users"),
     ]);
-    if (profileResult.error || accessResult.error) {
-      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(profileResult.error || accessResult.error)}`, type: "error" });
+    if (profileResult.error || accessResult.error || visibleUserResult.error) {
+      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(profileResult.error || accessResult.error || visibleUserResult.error)}`, type: "error" });
       setLoading(false);
       return;
     }
     const departments = profileResult.data?.is_admin
       ? DEPARTMENTS.map((department) => department.slug)
       : (accessResult.data || []).map((item) => item.department_slug as DepartmentSlug);
+    const availableUsers = (visibleUserResult.data || []) as TodayVisibleUser[];
+    const targetUserId = requestedUserId && availableUsers.some((user) => user.user_id === requestedUserId)
+      ? requestedUserId
+      : selectedUserId && availableUsers.some((user) => user.user_id === selectedUserId)
+        ? selectedUserId
+        : ownUserId;
     const hasAccess = (department: DepartmentSlug) => departments.includes(department);
-    setAuthorizedDepartments(departments);
-    setUserName(profileResult.data?.full_name || profileResult.data?.email?.split("@")[0] || "seu usuário");
-
     const emptyResult = Promise.resolve({ data: [], error: null });
-    const [taskResult, projectResult, workResult, rentalResult, businessResult, businessHistoryResult] = await Promise.all([
-      hasAccess("projetos") ? supabase.from("project_tasks").select("*").eq("assignee_user_id", authData.user.id).neq("status", "concluida").lte("due_date", new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)).order("due_date") : emptyResult,
-      hasAccess("projetos") ? supabase.from("project_progress_summary").select("*").is("archived_at", null) : emptyResult,
-      hasAccess("obras") ? supabase.from("construction_progress_summary").select("*").eq("responsible_user_id", authData.user.id).is("archived_at", null).neq("status", "concluida") : emptyResult,
+    const [taskResult, workResult, rentalResult, notificationResult] = await Promise.all([
+      hasAccess("projetos") ? supabase.from("project_tasks").select("*,projects(name)").eq("assignee_user_id", targetUserId).neq("status", "concluida").order("due_date") : emptyResult,
+      hasAccess("obras") ? supabase.from("construction_progress_summary").select("*").eq("responsible_user_id", targetUserId).is("archived_at", null).eq("status", "em_andamento") : emptyResult,
       hasAccess("alugueis") ? supabase.from("rentals").select("*").order("lease_end_date") : emptyResult,
-      hasAccess("novos-negocios") ? supabase.from("businesses").select("*").is("archived_at", null).neq("stage", "obra") : emptyResult,
-      hasAccess("novos-negocios") ? supabase.from("business_stage_history").select("business_id,entered_at").is("exited_at", null) : emptyResult,
+      hasAccess("projetos") ? supabase.from("user_notifications").select("*").eq("recipient_user_id", targetUserId).is("read_at", null).order("created_at", { ascending: false }).limit(30) : emptyResult,
     ]);
-    const failedQueries = [
-      ["tarefas", taskResult.error],
-      ["projetos", projectResult.error],
-      ["obras", workResult.error],
-      ["aluguéis", rentalResult.error],
-      ["novos negócios", businessResult.error],
-      ["histórico dos negócios", businessHistoryResult.error],
-    ] as const;
-    const firstFailure = failedQueries.find(([, error]) => Boolean(error));
-    if (firstFailure) {
-      setToast({
-        message: `Não foi possível carregar ${firstFailure[0]}: ${friendlyError(firstFailure[1])}`,
-        type: "error",
-      });
-    }
-    const projectRows = (projectResult.data || []) as Project[];
-    const projectName = new Map(projectRows.map((project) => [project.id, project.name]));
-    const stageEnteredAt = new Map(
-      (businessHistoryResult.data || []).map((history) => [history.business_id, history.entered_at]),
-    );
-    const businessRows = ((businessResult.data || []) as Business[]).map((business) => {
-      const enteredAt = stageEnteredAt.get(business.id) || business.updated_at || business.created_at;
-      return {
-        ...business,
-        current_stage_entered_at: enteredAt,
-        days_in_stage: daysBetween(enteredAt),
-      };
-    });
-    setTasks(((taskResult.data || []) as ProjectTask[]).map((task) => ({ ...task, project_name: task.project_id ? projectName.get(task.project_id) || "Projeto" : "Tarefa avulsa" })));
-    setProjects(projectRows.filter((project) => project.owner_user_id === authData.user.id));
+    const failure = [taskResult.error, workResult.error, rentalResult.error, notificationResult.error].find(Boolean);
+    if (failure) setToast({ message: friendlyError(failure), type: "error" });
+    setCurrentUserId(ownUserId);
+    setAuthorizedDepartments(departments);
+    setVisibleUsers(availableUsers);
+    setSelectedUserId(targetUserId);
+    setTasks(((taskResult.data || []) as TaskRow[]).map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Tarefa avulsa" })));
     setWorks((workResult.data || []) as Construction[]);
     setRentals((rentalResult.data || []) as Rental[]);
-    setBusinesses(businessRows);
+    setNotifications((notificationResult.data || []) as UserNotification[]);
     setLoading(false);
-  }, [supabase]);
+  }, [selectedUserId, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
-  const operationalTasks = useMemo(() => [...tasks].sort((a, b) => {
-    const windowDifference = taskWindow(a).order - taskWindow(b).order;
-    return windowDifference || a.due_date.localeCompare(b.due_date);
-  }), [tasks]);
-  const projectsWithOverdueTasks = useMemo(() => projects.filter((project) => Number(project.overdue_tasks || 0) > 0), [projects]);
-  const staleWorks = useMemo(() => works.filter((work) => daysBetween(work.last_activity_at || work.created_at) >= 7), [works]);
-  const overBudgetWorks = useMemo(() => works.filter((work) => Number(work.planned_budget) > 0 && Number(work.realized_total || 0) > Number(work.planned_budget)), [works]);
-  const inspectionWorks = useMemo(() => works.filter((work) => Boolean(work.inspection_due)), [works]);
-  const vacantRentals = useMemo(() => rentals.filter((rental) => rental.status === "desocupado"), [rentals]);
-  const renovationRentals = useMemo(() => rentals.filter((rental) => rental.status === "aguardando_reforma"), [rentals]);
-  const expiredRentals = useMemo(() => rentals.filter((rental) => rental.status === "alugado" && daysUntil(rental.lease_end_date) < 0), [rentals]);
-  const expiringRentals = useMemo(() => rentals.filter((rental) => {
-    const days = daysUntil(rental.lease_end_date);
-    return rental.status === "alugado" && days >= 0 && days <= 60;
+  const selectedUser = visibleUsers.find((user) => user.user_id === selectedUserId);
+  const sortedTasks = useMemo(() => [...tasks].sort((a, b) => taskWindow(a).order - taskWindow(b).order || a.due_date.localeCompare(b.due_date)), [tasks]);
+  const todoTasks = useMemo(() => tasks.filter((task) => task.status === "a_fazer"), [tasks]);
+  const progressTasks = useMemo(() => tasks.filter((task) => task.status === "em_andamento"), [tasks]);
+  const overdueTasks = useMemo(() => tasks.filter((task) => daysUntil(task.due_date) < 0), [tasks]);
+  const dueSoonTasks = useMemo(() => tasks.filter((task) => daysUntil(task.due_date) >= 0 && daysUntil(task.due_date) <= 7), [tasks]);
+  const inspectionAlerts = useMemo(() => works.filter((work) => daysUntil(work.next_inspection_at) <= 3), [works]);
+  const rentalAlerts = useMemo(() => rentals.flatMap((rental) => {
+    const alerts: Array<{ id: string; rental: Rental; message: string; danger: boolean }> = [];
+    const contractDays = daysUntil(rental.lease_end_date);
+    const adjustmentDays = nextAdjustmentDays(rental);
+    if (rental.status === "aguardando_reforma") alerts.push({ id: `${rental.id}-reforma`, rental, message: "Imóvel aguardando reforma", danger: true });
+    if (rental.status === "alugado" && contractDays < 0) alerts.push({ id: `${rental.id}-contrato`, rental, message: `Contrato vencido há ${Math.abs(contractDays)} dia(s)`, danger: true });
+    else if (rental.status === "alugado" && contractDays <= 60) alerts.push({ id: `${rental.id}-renovacao`, rental, message: `Renovação/contrato vence em ${contractDays} dia(s)`, danger: contractDays <= 15 });
+    if (adjustmentDays <= 45) alerts.push({ id: `${rental.id}-reajuste`, rental, message: `Reajuste anual em ${adjustmentDays} dia(s)`, danger: adjustmentDays <= 7 });
+    return alerts;
   }), [rentals]);
-  const stalledBusinesses = useMemo(() => businesses.filter((business) => Number(business.days_in_stage || 0) >= 30), [businesses]);
-  const exceptionCount = operationalTasks.filter((task) => daysUntil(task.due_date) < 0).length
-    + projectsWithOverdueTasks.length
-    + new Set([...inspectionWorks, ...staleWorks, ...overBudgetWorks].map((work) => work.id)).size
-    + new Set([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => rental.id)).size
-    + stalledBusinesses.length;
 
-  async function updateTask(task: TodayTask, updates: { status?: TaskStatus; due_date?: string }) {
+  async function updateTask(task: TodayTask, status: TaskStatus) {
     if (!supabase) return;
     setSaving(true);
-    const { error } = await supabase.from("project_tasks").update(updates).eq("id", task.id);
+    const { error } = await supabase.from("project_tasks").update({ status }).eq("id", task.id);
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setRescheduleTask(null);
-    setToast({ message: updates.status === "concluida" ? "Tarefa concluída." : "Prazo reagendado.", type: "success" });
-    await loadData();
+    setToast({ message: "Tarefa concluída.", type: "success" });
+    await loadData(selectedUserId);
   }
 
-  async function reschedule(event: FormEvent) {
-    event.preventDefault();
-    if (rescheduleTask) await updateTask(rescheduleTask, { due_date: rescheduleDate });
-  }
-
-  async function advanceBusiness(business: Business) {
-    if (!supabase) return;
-    const index = BUSINESS_STAGES.findIndex((stage) => stage.key === business.stage);
-    const nextStage = BUSINESS_STAGES[index + 1];
-    if (!nextStage) return;
-    setSaving(true);
-    const { error } = await supabase.from("businesses").update({ stage: nextStage.key }).eq("id", business.id);
-    setSaving(false);
+  async function markNotificationRead(notification: UserNotification) {
+    if (!supabase || notification.recipient_user_id !== currentUserId) return;
+    const { error } = await supabase.from("user_notifications").update({ read_at: new Date().toISOString() }).eq("id", notification.id);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: `${business.name} avançou para ${nextStage.shortLabel}.`, type: "success" });
-    await loadData();
-  }
-
-  async function changeRentalStatus(rental: Rental, status: RentalStatus) {
-    if (!supabase || status === rental.status) return;
-    if (status === "alugado" && !rental.lease_start_date) {
-      setToast({ message: "Abra o imóvel e informe o início da locação antes de marcá-lo como alugado.", type: "error" });
-      return;
-    }
-    setSaving(true);
-    const { error } = await supabase.from("rentals").update({ status }).eq("id", rental.id);
-    setSaving(false);
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: `Imóvel marcado como ${rentalStatusLabel[status].toLowerCase()}.`, type: "success" });
-    await loadData();
-  }
-
-  async function registerInspection(work: Construction) {
-    if (!supabase) return;
-    setSaving(true);
-    const { error } = await supabase.from("construction_inspections").insert({
-      construction_id: work.id,
-      inspected_at: todayIso(),
-      note: "Vistoria registrada pela página Hoje.",
-    });
-    setSaving(false);
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: `Vistoria de ${work.name} registrada. Próximo ciclo em 15 dias.`, type: "success" });
-    await loadData();
+    setNotifications((current) => current.filter((item) => item.id !== notification.id));
   }
 
   return (
@@ -218,70 +151,43 @@ export default function TodayPage() {
       <PageIntro
         eyebrow="Centro operacional"
         title="Hoje"
-        description={`Prioridades de ${userName}, considerando seus acessos, responsabilidades e pendências abertas.`}
-        action={<Button variant="secondary" onClick={() => void loadData()} disabled={loading}><RefreshCw size={17} /> Atualizar</Button>}
+        description={`Tarefas e alertas de ${selectedUser?.full_name || selectedUser?.email || "seu usuário"}.`}
+        action={<div className="page-action-group">{visibleUsers.length > 1 ? <select value={selectedUserId} onChange={(event) => void loadData(event.target.value)} aria-label="Selecionar visão do usuário">{visibleUsers.map((user) => <option key={user.user_id} value={user.user_id}>{user.is_self ? "Minha visão" : user.full_name || user.email}</option>)}</select> : null}<Button variant="secondary" onClick={() => void loadData(selectedUserId)} disabled={loading}><RefreshCw size={17} /> Atualizar</Button></div>}
       />
 
-      <section className="kpi-grid today-kpis">
-        <KpiCard label="Exceções abertas" value={String(exceptionCount)} helper="itens que exigem decisão" tone={exceptionCount ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
-        {authorizedDepartments.includes("projetos") ? <KpiCard label="Minhas tarefas próximas" value={String(operationalTasks.length)} helper="vencidas ou em até 7 dias" icon={<ListTodo size={17} />} /> : null}
-        {authorizedDepartments.includes("obras") ? <KpiCard label="Minhas obras ativas" value={String(works.length)} helper={`${inspectionWorks.length} vistoria(s) pendente(s)`} tone={inspectionWorks.length ? "warning" : "success"} icon={<Building2 size={17} />} /> : null}
-        {authorizedDepartments.includes("projetos") ? <KpiCard label="Meus projetos ativos" value={String(projects.filter((project) => project.status === "ativo").length)} helper={`${projects.reduce((sum, project) => sum + Number(project.overdue_tasks || 0), 0)} tarefas atrasadas`} icon={<CalendarCheck size={17} />} /> : null}
-      </section>
+      {authorizedDepartments.includes("projetos") ? <section className="kpi-grid today-kpis">
+        <KpiCard label="A fazer" value={String(todoTasks.length)} helper="tarefas ainda não iniciadas" icon={<ListTodo size={17} />} />
+        <KpiCard label="Em andamento" value={String(progressTasks.length)} helper="tarefas em execução" icon={<ListChecks size={17} />} />
+        <KpiCard label="Atrasadas" value={String(overdueTasks.length)} helper={overdueTasks.length ? "exigem atenção" : "nenhuma pendência"} tone={overdueTasks.length ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
+        <KpiCard label="Próximos 7 dias" value={String(dueSoonTasks.length)} helper="incluindo vencimentos de hoje" icon={<Clock3 size={17} />} />
+      </section> : null}
 
-      {loading ? <div className="list-loading today-loading">Carregando prioridades…</div> : (
-        <div className="today-layout">
-          {authorizedDepartments.includes("projetos") ? <section className="content-card today-primary-card">
-            <div className="content-card-head"><div><h2>Tarefas e prazos</h2><p>Vencidas, para hoje e para os próximos sete dias</p></div><StatusPill tone={operationalTasks.some((task) => daysUntil(task.due_date) < 0) ? "danger" : "success"}>{operationalTasks.length} abertas</StatusPill></div>
-            {operationalTasks.length ? <div className="today-action-list">{operationalTasks.map((task) => {
-              const window = taskWindow(task);
-              return <article key={task.id}>
-                <span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span>
-                <div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.assignee_name} · {dateBr(task.due_date)}</span></div>
-                <div className="today-item-actions"><Button variant="ghost" onClick={() => { setRescheduleTask(task); setRescheduleDate(task.due_date); }}>Reagendar</Button><Button variant="secondary" onClick={() => void updateTask(task, { status: "concluida" })} disabled={saving}><Check size={15} /> Concluir</Button><Link className="button button-primary" href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Abrir</Link></div>
-              </article>;
-            })}</div> : <EmptyState icon={<Check size={22} />} title="Prazos em dia" description="Nenhuma tarefa vencida ou próxima nos próximos sete dias." />}
-          </section> : null}
+      {loading ? <div className="list-loading today-loading">Carregando tarefas e alertas…</div> : <div className="today-layout">
+        {authorizedDepartments.includes("projetos") ? <section className="content-card today-primary-card">
+          <div className="content-card-head"><div><h2>Visão geral das tarefas</h2><p>A fazer, em andamento, prazos e responsáveis</p></div><StatusPill tone={overdueTasks.length ? "danger" : "success"}>{tasks.length} abertas</StatusPill></div>
+          {sortedTasks.length ? <div className="today-action-list">{sortedTasks.map((task) => { const window = taskWindow(task); return <article key={task.id}><span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span><div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.status === "em_andamento" ? "Em andamento" : "A fazer"} · {task.assignee_name}</span></div><div className="today-item-actions">{selectedUserId === currentUserId ? <Button variant="secondary" onClick={() => void updateTask(task, "concluida")} disabled={saving}><Check size={15} /> Concluir</Button> : null}<Link className="button button-primary" href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Abrir</Link></div></article>; })}</div> : <EmptyState icon={<Check size={22} />} title="Nenhuma tarefa aberta" description="Não há tarefas a fazer ou em andamento nesta visão." />}
+        </section> : null}
 
-          {authorizedDepartments.includes("projetos") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Meus projetos com pendências</h2><p>Projetos sob sua responsabilidade que possuem tarefas atrasadas</p></div><StatusPill tone={projectsWithOverdueTasks.length ? "danger" : "success"}>{projectsWithOverdueTasks.length} projeto(s)</StatusPill></div>
-            {projectsWithOverdueTasks.length ? <div className="today-compact-list">{projectsWithOverdueTasks.map((project) => <article key={project.id}><span className="exception-mark exception-danger"><CalendarCheck size={15} /></span><div><strong>{project.name}</strong><span>{project.overdue_tasks} tarefa(s) atrasada(s)</span></div><Link href={`/projetos/${project.id}?tab=tarefas`}>Resolver <ArrowRight size={14} /></Link></article>)}</div> : <div className="mini-empty">Nenhum projeto sob sua responsabilidade possui tarefas atrasadas.</div>}
-          </section> : null}
+        {authorizedDepartments.includes("projetos") ? <section className="content-card">
+          <div className="content-card-head"><div><h2>Alertas de tarefas</h2><p>Novas atribuições e tarefas atrasadas</p></div><StatusPill tone={notifications.length || overdueTasks.length ? "warning" : "success"}>{notifications.length + overdueTasks.length} alerta(s)</StatusPill></div>
+          {notifications.length || overdueTasks.length ? <div className="today-compact-list">
+            {notifications.map((notification) => <article key={notification.id}><span className="exception-mark exception-info"><Bell size={15} /></span><div><strong>{notification.title}</strong><span>{notification.message} · {dateBr(notification.created_at)}</span></div><div className="today-compact-actions">{notification.recipient_user_id === currentUserId ? <Button variant="ghost" onClick={() => void markNotificationRead(notification)}>Marcar como lido</Button> : null}<Link href="/projetos#quadro-tarefas">Abrir <ArrowRight size={14} /></Link></div></article>)}
+            {overdueTasks.map((task) => <article key={`overdue-${task.id}`}><span className="exception-mark exception-danger"><AlertTriangle size={15} /></span><div><strong>{task.title}</strong><span>{task.project_name} · atraso de {Math.abs(daysUntil(task.due_date))} dia(s)</span></div><Link href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Resolver <ArrowRight size={14} /></Link></article>)}
+          </div> : <div className="mini-empty">Nenhum alerta de tarefa aberto.</div>}
+        </section> : null}
 
-          {authorizedDepartments.includes("obras") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Obras com atenção</h2><p>Vistorias quinzenais, evidências recentes e orçamento</p></div><StatusPill tone={inspectionWorks.length || staleWorks.length || overBudgetWorks.length ? "warning" : "success"}>{new Set([...inspectionWorks, ...staleWorks, ...overBudgetWorks].map((work) => work.id)).size} obra(s)</StatusPill></div>
-            {[...new Map([...inspectionWorks, ...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].length ? <div className="today-compact-list">{[...new Map([...inspectionWorks, ...overBudgetWorks, ...staleWorks].map((work) => [work.id, work])).values()].map((work) => {
-              const inspectionDue = inspectionWorks.some((item) => item.id === work.id);
-              const overBudget = overBudgetWorks.some((item) => item.id === work.id);
-              return <article key={work.id}><span className={`exception-mark exception-${inspectionDue ? "danger" : "warning"}`}>{inspectionDue ? <ClipboardCheck size={15} /> : <Building2 size={15} />}</span><div><strong>{work.name}</strong><span>{inspectionDue ? work.last_inspection_at ? `Vistoria vencida · última em ${dateBr(work.last_inspection_at)}` : "Primeira vistoria pendente" : overBudget ? "Orçamento excedido" : `Sem atualização há ${daysBetween(work.last_activity_at || work.created_at)} dias`}</span></div><div className="today-compact-actions">{inspectionDue ? <Button variant="ghost" onClick={() => void registerInspection(work)} disabled={saving}>Registrar hoje</Button> : null}<Link href={`/obras/${work.id}?tab=${inspectionDue ? "atualizacoes" : overBudget ? "financeiro" : "etapas"}`}>Abrir <ArrowRight size={14} /></Link></div></article>;
-            })}</div> : <div className="mini-empty">Nenhuma exceção aberta em Obras.</div>}
-          </section> : null}
+        {authorizedDepartments.includes("obras") ? <section className="content-card">
+          <div className="content-card-head"><div><h2>Alertas de vistoria</h2><p>Vistorias vencendo nos próximos três dias ou atrasadas</p></div><StatusPill tone={inspectionAlerts.length ? "warning" : "success"}>{inspectionAlerts.length} obra(s)</StatusPill></div>
+          {inspectionAlerts.length ? <div className="today-compact-list">{inspectionAlerts.map((work) => { const days = daysUntil(work.next_inspection_at); return <article key={work.id}><span className={`exception-mark exception-${days <= 0 ? "danger" : "warning"}`}><ClipboardCheck size={15} /></span><div><strong>{work.name}</strong><span>{days < 0 ? `Vistoria atrasada há ${Math.abs(days)} dia(s)` : days === 0 ? "Vistoria vence hoje" : `Vistoria vence em ${days} dia(s)`} · ciclo de {work.inspection_interval_days} dia(s)</span></div><Link href={`/obras/${work.id}?tab=atualizacoes`}>Abrir <ArrowRight size={14} /></Link></article>; })}</div> : <div className="mini-empty">Nenhuma vistoria vencendo ou atrasada.</div>}
+        </section> : null}
 
-          {authorizedDepartments.includes("alugueis") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Aluguéis</h2><p>Contratos vencidos ou vencendo, imóveis desocupados e reformas</p></div><StatusPill tone={renovationRentals.length || expiredRentals.length || vacantRentals.length || expiringRentals.length ? "warning" : "success"}>{new Set([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => rental.id)).size} alerta(s)</StatusPill></div>
-            {[...new Map([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => [rental.id, rental])).values()].length ? <div className="today-compact-list">{[...new Map([...renovationRentals, ...expiredRentals, ...vacantRentals, ...expiringRentals].map((rental) => [rental.id, rental])).values()].map((rental) => {
-              const message = rental.status === "aguardando_reforma" ? "Imóvel aguardando reforma" : rental.status === "desocupado" ? "Imóvel desocupado" : daysUntil(rental.lease_end_date) < 0 ? `Contrato vencido há ${Math.abs(daysUntil(rental.lease_end_date))} dia(s)` : `Contrato termina em ${daysUntil(rental.lease_end_date)} dia(s)`;
-              return <article key={rental.id}><span className={`exception-mark exception-${rental.status === "aguardando_reforma" || daysUntil(rental.lease_end_date) < 0 ? "danger" : "warning"}`}><Home size={15} /></span><div><strong>{rental.name}</strong><span>{message}</span></div>{rental.status === "desocupado" || rental.status === "aguardando_reforma" ? <select value={rental.status} onChange={(event) => void changeRentalStatus(rental, event.target.value as RentalStatus)} disabled={saving}><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option><option value="alugado">Alugado</option></select> : <Link href={`/alugueis/${rental.id}`}>Revisar <ArrowRight size={14} /></Link>}</article>;
-            })}</div> : <div className="mini-empty">Nenhuma exceção aberta em Aluguéis.</div>}
-          </section> : null}
+        {authorizedDepartments.includes("alugueis") ? <section className="content-card">
+          <div className="content-card-head"><div><h2>Alertas de imóveis</h2><p>Contratos, renovações, reajustes e reformas</p></div><StatusPill tone={rentalAlerts.length ? "warning" : "success"}>{rentalAlerts.length} alerta(s)</StatusPill></div>
+          {rentalAlerts.length ? <div className="today-compact-list">{rentalAlerts.map((alert) => <article key={alert.id}><span className={`exception-mark exception-${alert.danger ? "danger" : "warning"}`}><Home size={15} /></span><div><strong>{alert.rental.name}</strong><span>{alert.message} · {rentalStatusLabel[alert.rental.status]}</span></div><Link href={`/alugueis/${alert.rental.id}`}>Revisar <ArrowRight size={14} /></Link></article>)}</div> : <div className="mini-empty">Nenhum contrato, reajuste ou reforma exige atenção.</div>}
+        </section> : null}
 
-          {authorizedDepartments.includes("novos-negocios") ? <section className="content-card">
-            <div className="content-card-head"><div><h2>Negócios parados</h2><p>Há 30 dias ou mais na mesma fase</p></div><StatusPill tone={stalledBusinesses.length ? "warning" : "success"}>{stalledBusinesses.length} negócio(s)</StatusPill></div>
-            {stalledBusinesses.length ? <div className="today-compact-list">{stalledBusinesses.map((business) => {
-              const currentIndex = BUSINESS_STAGES.findIndex((stage) => stage.key === business.stage);
-              const nextStage = BUSINESS_STAGES[currentIndex + 1];
-              return <article key={business.id}><span className="exception-mark exception-warning"><TrendingUp size={15} /></span><div><strong>{business.name}</strong><span>{business.days_in_stage} dias em {BUSINESS_STAGES[currentIndex]?.shortLabel}</span></div>{nextStage ? <Button variant="ghost" onClick={() => void advanceBusiness(business)} disabled={saving}>Avançar <ArrowRight size={14} /></Button> : <Link href="/novos-negocios">Abrir <ArrowRight size={14} /></Link>}</article>;
-            })}</div> : <div className="mini-empty">Nenhum negócio parado no funil.</div>}
-          </section> : null}
-        </div>
-      )}
-
-      <Dialog open={Boolean(rescheduleTask)} onClose={() => setRescheduleTask(null)} title="Reagendar tarefa" description={rescheduleTask?.title}>
-        <form className="form-grid" onSubmit={reschedule}>
-          <Field label="Nova data de entrega"><input type="date" min={todayIso()} value={rescheduleDate} onChange={(event) => setRescheduleDate(event.target.value)} required /></Field>
-          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setRescheduleTask(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar novo prazo</Button></div>
-        </form>
-      </Dialog>
+        {!authorizedDepartments.some((department) => ["projetos", "obras", "alugueis"].includes(department)) ? <EmptyState icon={<Building2 size={22} />} title="Sem áreas operacionais" description="Solicite acesso a Projetos, Obras ou Aluguéis para visualizar tarefas e alertas." /> : null}
+      </div>}
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
   );

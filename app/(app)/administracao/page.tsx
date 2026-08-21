@@ -3,11 +3,11 @@
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { DepartmentSlug, ManagementAreaSlug, ProfileDepartment, ProfileIndicatorArea, ProfileProjectPermission, UserProfile } from "@/lib/types";
-import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, Users } from "lucide-react";
+import type { DepartmentSlug, ManagementAreaSlug, ProfileDepartment, ProfileIndicatorArea, ProfileProjectPermission, ProfileReportingLine, UserProfile } from "@/lib/types";
+import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, UserRoundCog, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id"> };
+type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; leader_user_id: string | null };
 
 type AdminForm = {
   full_name: string;
@@ -18,6 +18,7 @@ type AdminForm = {
   departments: DepartmentSlug[];
   indicator_areas: ManagementAreaSlug[];
   project_permission: Omit<ProfileProjectPermission, "user_id">;
+  leader_user_id: string;
 };
 
 const emptyForm: AdminForm = {
@@ -29,6 +30,7 @@ const emptyForm: AdminForm = {
   departments: ["novos-negocios"] as DepartmentSlug[],
   indicator_areas: [] as ManagementAreaSlug[],
   project_permission: { access_scope: "full", allow_files: true, allow_updates: true },
+  leader_user_id: "",
 };
 
 export default function AdministrationPage() {
@@ -44,25 +46,28 @@ export default function AdministrationPage() {
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult] = await Promise.all([
+    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, reportingLineResult] = await Promise.all([
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
       supabase.from("profile_indicator_areas").select("user_id,area"),
       supabase.from("profile_project_permissions").select("user_id,access_scope,allow_files,allow_updates"),
+      supabase.from("profile_reporting_lines").select("report_user_id,leader_user_id"),
     ]);
-    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error) {
-      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error), type: "error" });
+    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || reportingLineResult.error) {
+      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || reportingLineResult.error), type: "error" });
       setLoading(false);
       return;
     }
     const accesses = (accessResult.data || []) as ProfileDepartment[];
     const indicatorAccesses = (indicatorAccessResult.data || []) as ProfileIndicatorArea[];
     const projectPermissions = (projectPermissionResult.data || []) as ProfileProjectPermission[];
+    const reportingLines = (reportingLineResult.data || []) as ProfileReportingLine[];
     setUsers(((profileResult.data || []) as UserProfile[]).map((profile) => ({
       ...profile,
       departments: accesses.filter((access) => access.user_id === profile.user_id).map((access) => access.department_slug),
       indicator_areas: indicatorAccesses.filter((access) => access.user_id === profile.user_id).map((access) => access.area),
       project_permission: projectPermissions.find((permission) => permission.user_id === profile.user_id) || { access_scope: "full", allow_files: true, allow_updates: true },
+      leader_user_id: reportingLines.find((line) => line.report_user_id === profile.user_id)?.leader_user_id || null,
     })));
     setLoading(false);
   }, [supabase]);
@@ -76,6 +81,7 @@ export default function AdministrationPage() {
     total: users.length,
     active: users.filter((user) => user.active).length,
     admins: users.filter((user) => user.active && user.is_admin).length,
+    leaders: new Set(users.map((user) => user.leader_user_id).filter(Boolean)).size,
   }), [users]);
 
   function openNew() {
@@ -99,6 +105,7 @@ export default function AdministrationPage() {
         allow_files: user.project_permission.allow_files,
         allow_updates: user.project_permission.allow_updates,
       },
+      leader_user_id: user.leader_user_id || "",
     });
     setDialogOpen(true);
   }
@@ -154,7 +161,8 @@ export default function AdministrationPage() {
         departments: form.departments,
         indicator_areas: form.indicator_areas,
         project_permission: form.project_permission,
-      } : form),
+        leader_user_id: form.leader_user_id || null,
+      } : { ...form, leader_user_id: form.leader_user_id || null }),
     });
     const result = await response.json().catch(() => ({}));
     setSaving(false);
@@ -178,6 +186,7 @@ export default function AdministrationPage() {
         <article><Users size={19} /><div><strong>{metrics.total}</strong><span>usuários cadastrados</span></div></article>
         <article><UserCheck size={19} /><div><strong>{metrics.active}</strong><span>usuários ativos</span></div></article>
         <article><ShieldCheck size={19} /><div><strong>{metrics.admins}</strong><span>administradores ativos</span></div></article>
+        <article><UserRoundCog size={19} /><div><strong>{metrics.leaders}</strong><span>líderes diretos</span></div></article>
       </section>
 
       <section className="content-card admin-users-card">
@@ -196,7 +205,8 @@ export default function AdministrationPage() {
                 <div className="admin-user-departments">
                   {user.is_admin ? <span>Todos os departamentos</span> : DEPARTMENTS.map((department) => user.departments.includes(department.slug) ? <span key={department.slug}>{department.name}</span> : null)}
                   {!user.is_admin && user.departments.includes("indicadores") ? <small>{user.indicator_areas.length} de {MANAGEMENT_AREAS.length} visões de Indicadores</small> : null}
-                  {!user.is_admin && user.departments.includes("projetos") ? <small>{user.project_permission.access_scope === "full" ? "Projetos completos" : "Somente tarefas envolvidas"}</small> : null}
+                  {!user.is_admin && user.departments.includes("projetos") ? <small>{user.project_permission.access_scope === "full" ? "Gestão dos projetos envolvidos" : "Somente tarefas envolvidas"}</small> : null}
+                  {user.leader_user_id ? <small>Líder: {users.find((candidate) => candidate.user_id === user.leader_user_id)?.full_name || users.find((candidate) => candidate.user_id === user.leader_user_id)?.email || "Usuário"}</small> : null}
                 </div>
                 <button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button>
               </article>
@@ -215,6 +225,13 @@ export default function AdministrationPage() {
             <label><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /><span><strong>Usuário ativo</strong><small>Permite entrar e acessar os departamentos liberados.</small></span></label>
             <label><input type="checkbox" checked={form.is_admin} onChange={(event) => setForm({ ...form, is_admin: event.target.checked })} /><span><strong>Administrador</strong><small>Pode criar usuários e administrar todos os departamentos.</small></span></label>
           </div>
+
+          <Field label="Líder direto" hint="O líder poderá visualizar as tarefas, os projetos e a página Hoje deste usuário." className="form-span-2">
+            <select value={form.leader_user_id} onChange={(event) => setForm({ ...form, leader_user_id: event.target.value })}>
+              <option value="">Sem líder direto</option>
+              {users.filter((user) => user.active && user.user_id !== editing?.user_id).map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}
+            </select>
+          </Field>
 
           <fieldset className="department-access-fieldset form-span-2" disabled={form.is_admin || !form.active}>
             <legend>Departamentos autorizados</legend>
@@ -249,7 +266,7 @@ export default function AdministrationPage() {
               <legend>Acesso a Projetos</legend>
               <p>Escolha o alcance das tarefas e se arquivos e atualizações ficam disponíveis.</p>
               <div className="admin-toggle-grid">
-                <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "full"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "full" } })} /><span><strong>Acesso completo</strong><small>Visualiza e administra todos os projetos e tarefas.</small></span></label>
+                <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "full"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "full" } })} /><span><strong>Gestão completa</strong><small>Administra integralmente apenas os projetos em que está envolvido.</small></span></label>
                 <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "assigned_tasks"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "assigned_tasks" } })} /><span><strong>Somente envolvimento</strong><small>Visualiza projetos envolvidos e apenas as próprias tarefas.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_files} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_files: event.target.checked } })} /><span><strong>Liberar arquivos</strong><small>Permite consultar e enviar arquivos nos projetos visíveis.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_updates} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_updates: event.target.checked } })} /><span><strong>Liberar atualizações</strong><small>Permite consultar e registrar comentários e atualizações.</small></span></label>
