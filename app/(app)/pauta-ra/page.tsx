@@ -2,6 +2,7 @@
 
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { dateBr, todayIso } from "@/lib/format";
+import { parseInitialAgendaTopics } from "@/lib/ra";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Project, ProjectTask, RaAgendaItem, RaAgendaSection, RaDecision, RaItemKind, RaMeeting, RaMeetingProject, RaParticipant, UserProfile } from "@/lib/types";
 import { ArrowRight, CalendarDays, Check, ClipboardList, FileText, FolderKanban, ListPlus, Mail, Play, Plus, Save, Users } from "lucide-react";
@@ -35,12 +36,14 @@ export default function RaPage() {
   const [meetingDialog, setMeetingDialog] = useState(false);
   const [sectionDialog, setSectionDialog] = useState(false);
   const [itemDialog, setItemDialog] = useState(false);
+  const [taskItem, setTaskItem] = useState<RaAgendaItem | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const [decisionDrafts, setDecisionDrafts] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [meetingForm, setMeetingForm] = useState({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [] as string[], project_ids: [] as string[] });
+  const [meetingForm, setMeetingForm] = useState({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [] as string[], project_ids: [] as string[], initial_topics: "" });
   const [sectionForm, setSectionForm] = useState({ title: "", project_id: "" });
   const [itemForm, setItemForm] = useState({ content: "", kind: "topico" as RaItemKind, owner_user_id: "", due_date: "", project_id: "" });
+  const [taskForm, setTaskForm] = useState({ owner_user_id: "", due_date: "", project_id: "" });
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
@@ -95,21 +98,44 @@ export default function RaPage() {
   async function createMeeting(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !canManage || !currentUserId) return;
+    const initialTopics = parseInitialAgendaTopics(meetingForm.initial_topics);
+    if (initialTopics.length > 50) return setToast({ message: "Informe no máximo 50 tópicos iniciais.", type: "error" });
+    if (initialTopics.some((topic) => topic.length < 2)) return setToast({ message: "Cada tópico inicial deve ter pelo menos 2 caracteres.", type: "error" });
+    if (initialTopics.some((topic) => topic.length > 2000)) return setToast({ message: "Cada tópico inicial deve ter no máximo 2.000 caracteres.", type: "error" });
     setSaving(true);
     const result = await supabase.from("ra_meetings").insert({ title: meetingForm.title.trim(), scheduled_at: new Date(meetingForm.scheduled_at).toISOString(), leader_user_id: currentUserId }).select("id").single();
     if (result.error || !result.data) { setSaving(false); return setToast({ message: friendlyError(result.error), type: "error" }); }
     const meetingId = result.data.id;
     const participantIds = [...new Set([currentUserId, ...meetingForm.participant_ids])];
-    const writes = await Promise.all([
+    const sectionRows = [
+      ...(initialTopics.length ? [{ meeting_id: meetingId, project_id: null, title: "Assuntos gerais", position: 0 }] : []),
+      ...meetingForm.project_ids.map((project_id, position) => ({ meeting_id: meetingId, project_id, title: projectName(project_id), position: position + (initialTopics.length ? 1 : 0) })),
+    ];
+    const [participantResult, projectResult, sectionResult] = await Promise.all([
       supabase.from("ra_participants").insert(participantIds.map((user_id) => ({ meeting_id: meetingId, user_id }))),
       meetingForm.project_ids.length ? supabase.from("ra_meeting_projects").insert(meetingForm.project_ids.map((project_id) => ({ meeting_id: meetingId, project_id }))) : Promise.resolve({ error: null }),
-      meetingForm.project_ids.length ? supabase.from("ra_agenda_sections").insert(meetingForm.project_ids.map((project_id, position) => ({ meeting_id: meetingId, project_id, title: projectName(project_id), position }))) : Promise.resolve({ error: null }),
+      sectionRows.length ? supabase.from("ra_agenda_sections").insert(sectionRows).select("id,project_id,position") : Promise.resolve({ data: [], error: null }),
     ]);
+    const writeError = participantResult.error || projectResult.error || sectionResult.error;
+    if (writeError) {
+      await supabase.from("ra_meetings").delete().eq("id", meetingId);
+      setSaving(false);
+      return setToast({ message: `Não foi possível criar a pauta: ${friendlyError(writeError)}`, type: "error" });
+    }
+    if (initialTopics.length) {
+      const generalSection = sectionResult.data?.find((section) => section.project_id === null);
+      const topicResult = generalSection
+        ? await supabase.from("ra_agenda_items").insert(initialTopics.map((content, position) => ({ section_id: generalSection.id, content, kind: "topico", position })))
+        : { error: new Error("Bloco de assuntos gerais não encontrado.") };
+      if (topicResult.error) {
+        await supabase.from("ra_meetings").delete().eq("id", meetingId);
+        setSaving(false);
+        return setToast({ message: `Não foi possível salvar os tópicos iniciais: ${friendlyError(topicResult.error)}`, type: "error" });
+      }
+    }
     setSaving(false);
-    const error = writes.find((write) => write.error)?.error;
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
     setMeetingDialog(false);
-    setMeetingForm({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [], project_ids: [] });
+    setMeetingForm({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [], project_ids: [], initial_topics: "" });
     setSelectedId(meetingId);
     setToast({ message: "Pauta criada para preparação.", type: "success" });
     await loadData();
@@ -143,13 +169,30 @@ export default function RaPage() {
     setItemDialog(false); await loadData();
   }
 
-  async function convertToTask(item: RaAgendaItem) {
-    if (!supabase || !item.owner_user_id || !item.due_date) return setToast({ message: "Defina responsável e prazo no tópico antes de criar a tarefa.", type: "error" });
+  function openTaskDialog(item: RaAgendaItem) {
+    setTaskItem(item);
+    setTaskForm({ owner_user_id: item.owner_user_id || "", due_date: item.due_date || "", project_id: item.project_id || "" });
+  }
+
+  async function performTaskConversion(item: RaAgendaItem, ownerUserId: string, dueDate: string, projectId: string) {
+    if (!supabase) return;
     setSaving(true);
-    const { error } = await supabase.rpc("convert_ra_item_to_task", { p_item_id: item.id, p_assignee_user_id: item.owner_user_id, p_due_date: item.due_date, p_project_id: item.project_id || null });
+    const { error } = await supabase.rpc("convert_ra_item_to_task", { p_item_id: item.id, p_assignee_user_id: ownerUserId, p_due_date: dueDate, p_project_id: projectId || null });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: `Tarefa criada para ${userName(item.owner_user_id)}.`, type: "success" }); await loadData();
+    setTaskItem(null);
+    setToast({ message: `Tarefa criada para ${userName(ownerUserId)}.`, type: "success" }); await loadData();
+  }
+
+  async function convertToTask(item: RaAgendaItem) {
+    if (!item.owner_user_id || !item.due_date) return openTaskDialog(item);
+    await performTaskConversion(item, item.owner_user_id, item.due_date, item.project_id || "");
+  }
+
+  async function submitTaskConversion(event: FormEvent) {
+    event.preventDefault();
+    if (!taskItem || !taskForm.owner_user_id || !taskForm.due_date) return setToast({ message: "Selecione o responsável e o prazo da tarefa.", type: "error" });
+    await performTaskConversion(taskItem, taskForm.owner_user_id, taskForm.due_date, taskForm.project_id);
   }
 
   async function recordDecision(item: RaAgendaItem) {
@@ -178,7 +221,10 @@ export default function RaPage() {
     const result = await response.json().catch(() => ({}));
     setSaving(false);
     if (!response.ok) return setToast({ message: result.error || "Não foi possível encerrar a RA.", type: "error" });
-    setToast({ message: `RA encerrada e ATA enviada para ${result.recipientCount} participante(s).`, type: "success" }); await loadData();
+    const message = result.emailSent
+      ? `RA encerrada, ATA salva e enviada para ${result.recipientCount} destinatário(s).${result.emailWarning ? ` ${result.emailWarning}` : ""}`
+      : `RA encerrada e ATA salva. ${result.emailWarning || "O e-mail não foi enviado."}`;
+    setToast({ message, type: "success" }); await loadData();
   }
 
   return <>
@@ -189,10 +235,10 @@ export default function RaPage() {
         {selected ? <>
           <section className="content-card ra-header"><div><span className="eyebrow">{statusLabel[selected.status]}</span><h2>{selected.title}</h2><p>{dateBr(selected.scheduled_at)} · Líder: {userName(selected.leader_user_id)}</p><div className="ra-participant-chips">{selectedParticipants.map((participant) => <span key={participant.user_id}><Users size={12} /> {userName(participant.user_id)}</span>)}</div></div>{canManageSelected && selected.status !== "encerrada" ? <div className="page-action-group">{selected.status === "rascunho" ? <Button variant="secondary" onClick={() => void startMeeting()}><Play size={15} /> Iniciar RA</Button> : null}<Button onClick={() => void closeMeeting()} loading={saving}><Mail size={15} /> Encerrar e enviar ATA</Button></div> : null}</section>
 
-          {selected.status === "encerrada" ? <section className="content-card ra-minutes"><div className="content-card-head"><div><h2><FileText size={18} /> ATA da reunião</h2><p>Registro final enviado aos participantes</p></div></div><pre>{selected.minutes_text}</pre></section> : <>
+          {selected.status === "encerrada" ? <section className="content-card ra-minutes"><div className="content-card-head"><div><h2><FileText size={18} /> ATA da reunião</h2><p>Registro final da reunião</p></div></div><pre>{selected.minutes_text}</pre></section> : <>
             {selectedProjectIds.length ? <section className="content-card ra-project-snapshot"><div className="content-card-head"><div><h2>Projetos para discussão</h2><p>Tarefas abertas e vencidas dos projetos selecionados</p></div></div><div>{selectedProjectIds.map((projectId) => { const tasks = openProjectTasks.filter((task) => task.project_id === projectId); const overdue = tasks.filter((task) => task.due_date < todayIso()); return <article key={projectId}><div><FolderKanban size={17} /><span><strong>{projectName(projectId)}</strong><small>{overdue.length} atrasada(s) · {tasks.length} aberta(s)</small></span></div>{tasks.length ? <ul>{tasks.slice(0, 8).map((task) => <li key={task.id} className={task.due_date < todayIso() ? "danger" : ""}><span>{task.title}</span><small>{task.assignee_name} · {dateBr(task.due_date)}</small></li>)}</ul> : <p>Nenhuma tarefa aberta.</p>}</article>; })}</div></section> : null}
 
-            <section className="content-card ra-agenda"><div className="content-card-head"><div><h2>Pauta da RA</h2><p>Tópicos, ações e itens a definir durante a reunião</p></div>{canManageSelected ? <Button variant="secondary" onClick={() => setSectionDialog(true)}><ListPlus size={15} /> Novo bloco</Button> : null}</div><div className="ra-section-list">{selectedSections.map((section, sectionIndex) => { const sectionItems = items.filter((item) => item.section_id === section.id); return <article key={section.id}><header><span>{sectionIndex + 1}</span><div><strong>{section.title}</strong>{section.project_id ? <small>{projectName(section.project_id)}</small> : null}</div>{canManageSelected ? <button type="button" onClick={() => openItem(section.id)}><Plus size={15} /> Tópico</button> : null}</header><div className="ra-item-list">{sectionItems.length ? sectionItems.map((item) => <div key={item.id}><span className="ra-bullet">•</span><div><strong>{item.owner_user_id ? `${userName(item.owner_user_id)}: ` : ""}{item.content}</strong><small>{kindLabel[item.kind]}{item.due_date ? ` · prazo ${dateBr(item.due_date)}` : ""}{item.project_id ? ` · ${projectName(item.project_id)}` : ""}</small>{item.decision_text ? <p><Check size={13} /> {item.decision_text}</p> : null}{item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space</p> : null}{canManageSelected && !item.task_id ? <div className="ra-item-controls"><Button variant="secondary" onClick={() => void convertToTask(item)} disabled={!item.owner_user_id || !item.due_date}><Save size={14} /> Transformar em tarefa</Button>{item.kind === "definicao" || item.kind === "topico" ? <><input value={decisionDrafts[item.id] ?? item.decision_text ?? ""} onChange={(event) => setDecisionDrafts({ ...decisionDrafts, [item.id]: event.target.value })} placeholder="Definição tomada na reunião" /><Button variant="secondary" onClick={() => void recordDecision(item)}><Check size={14} /> Registrar definição</Button></> : null}</div> : null}</div></div>) : <div className="mini-empty">Nenhum tópico neste bloco.</div>}</div></article>; })}{!selectedSections.length ? <EmptyState icon={<ClipboardList size={22} />} title="Pauta vazia" description="Adicione blocos como projetos, entregas ou assuntos gerais." /> : null}</div></section>
+            <section className="content-card ra-agenda"><div className="content-card-head"><div><h2>Pauta da RA</h2><p>Tópicos, ações e itens a definir durante a reunião</p></div>{canManageSelected ? <Button variant="secondary" onClick={() => setSectionDialog(true)}><ListPlus size={15} /> Novo bloco</Button> : null}</div><div className="ra-section-list">{selectedSections.map((section, sectionIndex) => { const sectionItems = items.filter((item) => item.section_id === section.id); return <article key={section.id}><header><span>{sectionIndex + 1}</span><div><strong>{section.title}</strong>{section.project_id ? <small>{projectName(section.project_id)}</small> : null}</div>{canManageSelected ? <button type="button" onClick={() => openItem(section.id)}><Plus size={15} /> Tópico</button> : null}</header><div className="ra-item-list">{sectionItems.length ? sectionItems.map((item) => <div key={item.id}><span className="ra-bullet">•</span><div><strong>{item.owner_user_id ? `${userName(item.owner_user_id)}: ` : ""}{item.content}</strong><small>{kindLabel[item.kind]}{item.due_date ? ` · prazo ${dateBr(item.due_date)}` : ""}{item.project_id ? ` · ${projectName(item.project_id)}` : ""}</small>{item.decision_text ? <p><Check size={13} /> {item.decision_text}</p> : null}{item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space</p> : null}{canManageSelected && !item.task_id ? <div className="ra-item-controls"><Button variant="secondary" onClick={() => void convertToTask(item)}><Save size={14} /> Transformar em tarefa</Button>{item.kind === "definicao" || item.kind === "topico" ? <><input value={decisionDrafts[item.id] ?? item.decision_text ?? ""} onChange={(event) => setDecisionDrafts({ ...decisionDrafts, [item.id]: event.target.value })} placeholder="Definição tomada na reunião" /><Button variant="secondary" onClick={() => void recordDecision(item)}><Check size={14} /> Registrar definição</Button></> : null}</div> : null}</div></div>) : <div className="mini-empty">Nenhum tópico neste bloco.</div>}</div></article>; })}{!selectedSections.length ? <EmptyState icon={<ClipboardList size={22} />} title="Pauta vazia" description="Adicione blocos como projetos, entregas ou assuntos gerais." /> : null}</div></section>
           </>}
 
           <section className="content-card ra-decision-catalog"><div className="content-card-head"><div><h2>Catálogo de definições</h2><p>Decisões formalizadas nas reuniões RA</p></div><StatusPill tone={selectedDecisions.length ? "info" : "neutral"}>{selectedDecisions.length} registro(s)</StatusPill></div>{selectedDecisions.length ? <div>{selectedDecisions.map((decision) => <article key={decision.id}><Check size={16} /><span><strong>{decision.title}</strong><p>{decision.decision_text}</p><small>{dateBr(decision.decided_at)}</small></span></article>)}</div> : <div className="mini-empty">Nenhuma definição registrada nesta RA.</div>}</section>
@@ -200,9 +246,10 @@ export default function RaPage() {
       </main>
     </div>}
 
-    <Dialog open={meetingDialog} onClose={() => setMeetingDialog(false)} title="Nova reunião RA" description="Defina participantes e projetos que entrarão na pauta." wide><form className="form-grid" onSubmit={createMeeting}><Field label="Título"><input value={meetingForm.title} onChange={(event) => setMeetingForm({ ...meetingForm, title: event.target.value })} required maxLength={180} /></Field><Field label="Data e horário"><input type="datetime-local" value={meetingForm.scheduled_at} onChange={(event) => setMeetingForm({ ...meetingForm, scheduled_at: event.target.value })} required /></Field><fieldset className="department-access-fieldset form-span-2"><legend>Participantes</legend><div className="ra-choice-grid">{users.filter((user) => user.user_id !== currentUserId).map((user) => <label key={user.user_id} className={meetingForm.participant_ids.includes(user.user_id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.participant_ids.includes(user.user_id)} onChange={() => toggleMeetingChoice("participant_ids", user.user_id)} /><span>{user.full_name || user.email}</span></label>)}</div></fieldset><fieldset className="department-access-fieldset form-span-2"><legend>Projetos ativos para discussão</legend><div className="ra-choice-grid">{projects.map((project) => <label key={project.id} className={meetingForm.project_ids.includes(project.id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.project_ids.includes(project.id)} onChange={() => toggleMeetingChoice("project_ids", project.id)} /><span>{project.name}</span></label>)}</div></fieldset><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMeetingDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar pauta</Button></div></form></Dialog>
+    <Dialog open={meetingDialog} onClose={() => setMeetingDialog(false)} title="Nova reunião RA" description="Defina participantes, projetos e os tópicos que entrarão na pauta." wide><form className="form-grid" onSubmit={createMeeting}><Field label="Título"><input value={meetingForm.title} onChange={(event) => setMeetingForm({ ...meetingForm, title: event.target.value })} required maxLength={180} /></Field><Field label="Data e horário"><input type="datetime-local" value={meetingForm.scheduled_at} onChange={(event) => setMeetingForm({ ...meetingForm, scheduled_at: event.target.value })} required /></Field><Field label="Tópicos iniciais" hint="Um tópico por linha; bullets são opcionais." className="form-span-2"><textarea value={meetingForm.initial_topics} onChange={(event) => setMeetingForm({ ...meetingForm, initial_topics: event.target.value })} rows={5} maxLength={12000} placeholder={'• Resultados da semana\n• Pendências e próximos passos'} /></Field><fieldset className="department-access-fieldset form-span-2"><legend>Participantes</legend><div className="ra-choice-grid">{users.filter((user) => user.user_id !== currentUserId).map((user) => <label key={user.user_id} className={meetingForm.participant_ids.includes(user.user_id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.participant_ids.includes(user.user_id)} onChange={() => toggleMeetingChoice("participant_ids", user.user_id)} /><span>{user.full_name || user.email}</span></label>)}</div></fieldset><fieldset className="department-access-fieldset form-span-2"><legend>Projetos ativos para discussão</legend><div className="ra-choice-grid">{projects.map((project) => <label key={project.id} className={meetingForm.project_ids.includes(project.id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.project_ids.includes(project.id)} onChange={() => toggleMeetingChoice("project_ids", project.id)} /><span>{project.name}</span></label>)}</div></fieldset><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMeetingDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar pauta</Button></div></form></Dialog>
     <Dialog open={sectionDialog} onClose={() => setSectionDialog(false)} title="Novo bloco da pauta" description="Crie um assunto geral ou vincule o bloco a um projeto."><form className="form-grid" onSubmit={addSection}><Field label="Título"><input value={sectionForm.title} onChange={(event) => setSectionForm({ ...sectionForm, title: event.target.value })} required /></Field><Field label="Projeto" hint="Opcional"><select value={sectionForm.project_id} onChange={(event) => setSectionForm({ ...sectionForm, project_id: event.target.value })}><option value="">Assunto geral</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setSectionDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar bloco</Button></div></form></Dialog>
     <Dialog open={itemDialog} onClose={() => setItemDialog(false)} title="Adicionar tópico" description="O responsável e o prazo permitirão transformar o item em tarefa."><form className="form-grid" onSubmit={addItem}><Field label="Tópico" className="form-span-2"><textarea value={itemForm.content} onChange={(event) => setItemForm({ ...itemForm, content: event.target.value })} required maxLength={2000} /></Field><Field label="Tipo"><select value={itemForm.kind} onChange={(event) => setItemForm({ ...itemForm, kind: event.target.value as RaItemKind })}><option value="topico">Tópico para discussão</option><option value="acao">Ação a executar</option><option value="definicao">Item a definir</option></select></Field><Field label="Responsável" hint="Opcional"><select value={itemForm.owner_user_id} onChange={(event) => setItemForm({ ...itemForm, owner_user_id: event.target.value })}><option value="">A definir</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo" hint="Opcional"><input type="date" min={todayIso()} value={itemForm.due_date} onChange={(event) => setItemForm({ ...itemForm, due_date: event.target.value })} /></Field><Field label="Projeto" hint="Opcional; vazio cria tarefa avulsa"><select value={itemForm.project_id} onChange={(event) => setItemForm({ ...itemForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setItemDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar tópico</Button></div></form></Dialog>
+    <Dialog open={Boolean(taskItem)} onClose={() => setTaskItem(null)} title="Transformar tópico em tarefa" description="Defina o responsável, o prazo e, se necessário, o projeto."><form className="form-grid" onSubmit={submitTaskConversion}><Field label="Responsável"><select value={taskForm.owner_user_id} onChange={(event) => setTaskForm({ ...taskForm, owner_user_id: event.target.value })} required><option value="">Selecione</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo"><input type="date" min={todayIso()} value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Projeto" hint="Opcional; vazio cria tarefa avulsa" className="form-span-2"><select value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskItem(null)}>Cancelar</Button><Button type="submit" loading={saving}>Criar tarefa</Button></div></form></Dialog>
     {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
   </>;
 }
