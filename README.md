@@ -51,6 +51,11 @@ essas variáveis, com destinatários inválidos ou se o provedor falhar, a RA ai
 é encerrada e a ATA permanece disponível no sistema; a interface informa que o
 e-mail não foi enviado. Somente e-mails válidos dos participantes são usados.
 
+Líderes e administradores podem arquivar uma RA para mantê-la disponível em
+modo somente leitura ou excluí-la definitivamente. A exclusão remove pauta,
+ATA, definições e histórico de envios, mas preserva as tarefas que já foram
+criadas no sistema.
+
 ## Processos por PDF
 
 Ao criar um processo, um gestor pode enviar um PDF de até 4 MB para gerar a
@@ -70,6 +75,14 @@ OPENAI_PROCESS_MODEL=gpt-5.6
 `OPENAI_PROCESS_MODEL` é opcional. Sem `OPENAI_API_KEY`, o cadastro manual de
 processos continua funcionando, mas a geração por PDF mostra uma orientação de
 configuração e não envia o arquivo.
+
+Gestores podem arquivar/restaurar processos ou excluí-los definitivamente. A
+exclusão também limpa as etapas e tenta remover o PDF fonte do bucket privado.
+
+Para habilitar o arquivamento de RA e a limpeza segura dos documentos de
+Processos, execute depois do merge:
+
+`supabase/migrations/20260822020000_archive_delete_processes_ra.sql`
 
 ## Mapa de avanço físico
 
