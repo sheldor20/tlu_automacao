@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from "@supabase/supabase
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis", "indicadores"]);
+const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis", "processos", "pauta-ra", "indicadores"]);
 const indicatorAreaSchema = z.enum([
   "empresa",
   "juridico-vendas-cobranca",
@@ -17,6 +17,7 @@ const projectPermissionSchema = z.object({
   allow_updates: z.boolean().default(true),
 }).default({ access_scope: "full", allow_files: true, allow_updates: true });
 const leaderSchema = z.string().uuid().nullable().default(null);
+const processPermissionSchema = z.object({ can_manage: z.boolean().default(false) }).default({ can_manage: false });
 
 const createUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
@@ -24,9 +25,10 @@ const createUserSchema = z.object({
   password: z.string().min(8).max(72),
   active: z.boolean().default(true),
   is_admin: z.boolean().default(false),
-  departments: z.array(departmentSchema).max(5),
+  departments: z.array(departmentSchema).max(7),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
+  process_permission: processPermissionSchema,
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.length === 0) {
@@ -42,9 +44,10 @@ const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
   active: z.boolean(),
   is_admin: z.boolean(),
-  departments: z.array(departmentSchema).max(5),
+  departments: z.array(departmentSchema).max(7),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
+  process_permission: processPermissionSchema,
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.length === 0) {
@@ -149,6 +152,16 @@ async function replaceProjectPermission(
   if (error) throw error;
 }
 
+async function replaceProcessPermission(service: SupabaseClient, userId: string, hasProcesses: boolean, canManage: boolean) {
+  if (!hasProcesses) {
+    const { error } = await service.from("profile_process_permissions").delete().eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await service.from("profile_process_permissions").upsert({ user_id: userId, can_manage: canManage });
+  if (error) throw error;
+}
+
 async function replaceReportingLine(service: SupabaseClient, userId: string, leaderUserId: string | null) {
   if (!leaderUserId) {
     const { error } = await service.from("profile_reporting_lines").delete().eq("report_user_id", userId);
@@ -181,7 +194,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, leader_user_id } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, leader_user_id } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -211,6 +224,7 @@ export async function POST(request: Request) {
       departments.includes("indicadores") ? indicator_areas : [],
     );
     await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos"), project_permission);
+    await replaceProcessPermission(context.service, created.user.id, departments.includes("processos"), process_permission.can_manage);
     await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
@@ -233,7 +247,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e selecione ao menos um departamento." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, leader_user_id } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, leader_user_id } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -275,6 +289,7 @@ export async function PATCH(request: Request) {
       departments.includes("indicadores") ? indicator_areas : [],
     );
     await replaceProjectPermission(context.service, user_id, departments.includes("projetos"), project_permission);
+    await replaceProcessPermission(context.service, user_id, departments.includes("processos"), process_permission.can_manage);
     await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";

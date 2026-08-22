@@ -139,7 +139,7 @@ export type TodayVisibleUser = Pick<UserProfile, "user_id" | "full_name" | "emai
   is_self: boolean;
 };
 
-export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis" | "indicadores";
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis" | "processos" | "pauta-ra" | "indicadores";
 
 export type Department = {
   slug: DepartmentSlug;
@@ -263,6 +263,57 @@ export type ProjectTask = {
   created_by?: string;
   created_at: string;
 };
+
+export type ProcessStatus = "rascunho" | "publicado" | "arquivado";
+
+export type BusinessProcess = {
+  id: string;
+  title: string;
+  area: string;
+  objective: string;
+  rules: string[];
+  policies: string[];
+  status: ProcessStatus;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BusinessProcessStep = {
+  id: string;
+  process_id: string;
+  title: string;
+  description: string;
+  responsible_role: string | null;
+  business_rule: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProcessPermission = { user_id: string; can_manage: boolean };
+export type RaMeetingStatus = "rascunho" | "em_andamento" | "encerrada";
+export type RaItemKind = "topico" | "acao" | "definicao";
+
+export type RaMeeting = {
+  id: string;
+  title: string;
+  scheduled_at: string;
+  leader_user_id: string;
+  status: RaMeetingStatus;
+  minutes_text: string | null;
+  closed_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RaParticipant = { meeting_id: string; user_id: string; attended: boolean; created_at: string };
+export type RaMeetingProject = { meeting_id: string; project_id: string; created_at: string };
+export type RaAgendaSection = { id: string; meeting_id: string; title: string; project_id: string | null; position: number; created_at: string; updated_at: string };
+export type RaAgendaItem = { id: string; section_id: string; content: string; kind: RaItemKind; owner_user_id: string | null; due_date: string | null; project_id: string | null; decision_text: string | null; task_id: string | null; resolved_at: string | null; position: number; created_at: string; updated_at: string };
+export type RaDecision = { id: string; meeting_id: string; item_id: string; title: string; decision_text: string; decided_by: string; decided_at: string };
 
 export type UserNotification = {
   id: string;

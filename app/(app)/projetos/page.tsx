@@ -7,7 +7,6 @@ import { UserSelect } from "@/components/user-select";
 import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import { generateMeetingAgendaPdf, type MeetingAgenda } from "@/lib/project-meeting-agenda";
 import type { Project, ProjectStatus, ProjectTask, ProjectTemplate, TaskStatus, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
@@ -16,7 +15,6 @@ import {
   ArrowUpRight,
   CheckCircle2,
   FolderKanban,
-  FileDown,
   ListTodo,
   Plus,
   Trash2,
@@ -49,7 +47,6 @@ export default function ProjectsPage() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [generatingAgenda, setGeneratingAgenda] = useState(false);
   const [fullAccess, setFullAccess] = useState(true);
   const [currentUserId, setCurrentUserId] = useState("");
   const [taskProjectFilter, setTaskProjectFilter] = useState("all");
@@ -271,33 +268,13 @@ export default function ProjectsPage() {
     await loadData();
   }
 
-  async function generateAgenda() {
-    if (!supabase) return;
-    setGeneratingAgenda(true);
-    const { data } = await supabase.auth.getSession();
-    const response = await fetch("/api/projects/meeting-agenda", { headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setGeneratingAgenda(false);
-      return setToast({ message: result.error || "Não foi possível gerar a pauta.", type: "error" });
-    }
-    try {
-      await generateMeetingAgendaPdf(result as MeetingAgenda);
-      setToast({ message: result.used_ai ? "Pauta resumida com IA gerada em PDF." : "Pauta gerada em PDF. Configure OPENAI_API_KEY para habilitar os resumos com IA.", type: "success" });
-    } catch (error) {
-      setToast({ message: friendlyError(error), type: "error" });
-    } finally {
-      setGeneratingAgenda(false);
-    }
-  }
-
   return (
     <>
       <PageIntro
         eyebrow="Departamento · Projetos"
         title="Projetos e entregas"
         description="Uma visão simples, combinando tarefas visuais com contexto, arquivos e colaboração."
-        action={<div className="page-action-group">{fullAccess ? <Button variant="secondary" onClick={() => void generateAgenda()} loading={generatingAgenda}><FileDown size={18} /> Gerar pauta de reunião</Button> : null}{fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : null}</div>}
+        action={fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : undefined}
       />
 
       <section className="kpi-grid projects-kpis">

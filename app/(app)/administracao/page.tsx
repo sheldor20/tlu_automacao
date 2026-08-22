@@ -3,11 +3,11 @@
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { DepartmentSlug, ManagementAreaSlug, ProfileDepartment, ProfileIndicatorArea, ProfileProjectPermission, ProfileReportingLine, UserProfile } from "@/lib/types";
+import type { DepartmentSlug, ManagementAreaSlug, ProcessPermission, ProfileDepartment, ProfileIndicatorArea, ProfileProjectPermission, ProfileReportingLine, UserProfile } from "@/lib/types";
 import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, UserRoundCog, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; leader_user_id: string | null };
+type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; leader_user_id: string | null };
 
 type AdminForm = {
   full_name: string;
@@ -18,6 +18,7 @@ type AdminForm = {
   departments: DepartmentSlug[];
   indicator_areas: ManagementAreaSlug[];
   project_permission: Omit<ProfileProjectPermission, "user_id">;
+  process_permission: Omit<ProcessPermission, "user_id">;
   leader_user_id: string;
 };
 
@@ -30,6 +31,7 @@ const emptyForm: AdminForm = {
   departments: ["novos-negocios"] as DepartmentSlug[],
   indicator_areas: [] as ManagementAreaSlug[],
   project_permission: { access_scope: "full", allow_files: true, allow_updates: true },
+  process_permission: { can_manage: false },
   leader_user_id: "",
 };
 
@@ -46,27 +48,30 @@ export default function AdministrationPage() {
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, reportingLineResult] = await Promise.all([
+    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult] = await Promise.all([
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
       supabase.from("profile_indicator_areas").select("user_id,area"),
       supabase.from("profile_project_permissions").select("user_id,access_scope,allow_files,allow_updates"),
+      supabase.from("profile_process_permissions").select("user_id,can_manage"),
       supabase.from("profile_reporting_lines").select("report_user_id,leader_user_id"),
     ]);
-    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || reportingLineResult.error) {
-      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || reportingLineResult.error), type: "error" });
+    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error) {
+      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error), type: "error" });
       setLoading(false);
       return;
     }
     const accesses = (accessResult.data || []) as ProfileDepartment[];
     const indicatorAccesses = (indicatorAccessResult.data || []) as ProfileIndicatorArea[];
     const projectPermissions = (projectPermissionResult.data || []) as ProfileProjectPermission[];
+    const processPermissions = (processPermissionResult.data || []) as ProcessPermission[];
     const reportingLines = (reportingLineResult.data || []) as ProfileReportingLine[];
     setUsers(((profileResult.data || []) as UserProfile[]).map((profile) => ({
       ...profile,
       departments: accesses.filter((access) => access.user_id === profile.user_id).map((access) => access.department_slug),
       indicator_areas: indicatorAccesses.filter((access) => access.user_id === profile.user_id).map((access) => access.area),
       project_permission: projectPermissions.find((permission) => permission.user_id === profile.user_id) || { access_scope: "full", allow_files: true, allow_updates: true },
+      process_permission: processPermissions.find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
       leader_user_id: reportingLines.find((line) => line.report_user_id === profile.user_id)?.leader_user_id || null,
     })));
     setLoading(false);
@@ -105,6 +110,7 @@ export default function AdministrationPage() {
         allow_files: user.project_permission.allow_files,
         allow_updates: user.project_permission.allow_updates,
       },
+      process_permission: { can_manage: user.process_permission.can_manage },
       leader_user_id: user.leader_user_id || "",
     });
     setDialogOpen(true);
@@ -161,6 +167,7 @@ export default function AdministrationPage() {
         departments: form.departments,
         indicator_areas: form.indicator_areas,
         project_permission: form.project_permission,
+        process_permission: form.process_permission,
         leader_user_id: form.leader_user_id || null,
       } : { ...form, leader_user_id: form.leader_user_id || null }),
     });
@@ -206,6 +213,7 @@ export default function AdministrationPage() {
                   {user.is_admin ? <span>Todos os departamentos</span> : DEPARTMENTS.map((department) => user.departments.includes(department.slug) ? <span key={department.slug}>{department.name}</span> : null)}
                   {!user.is_admin && user.departments.includes("indicadores") ? <small>{user.indicator_areas.length} de {MANAGEMENT_AREAS.length} visões de Indicadores</small> : null}
                   {!user.is_admin && user.departments.includes("projetos") ? <small>{user.project_permission.access_scope === "full" ? "Gestão dos projetos envolvidos" : "Somente tarefas envolvidas"}</small> : null}
+                  {!user.is_admin && user.departments.includes("processos") ? <small>{user.process_permission.can_manage ? "Pode criar e editar processos" : "Somente consulta de processos"}</small> : null}
                   {user.leader_user_id ? <small>Líder: {users.find((candidate) => candidate.user_id === user.leader_user_id)?.full_name || users.find((candidate) => candidate.user_id === user.leader_user_id)?.email || "Usuário"}</small> : null}
                 </div>
                 <button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button>
@@ -270,6 +278,16 @@ export default function AdministrationPage() {
                 <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "assigned_tasks"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "assigned_tasks" } })} /><span><strong>Somente envolvimento</strong><small>Visualiza projetos envolvidos e apenas as próprias tarefas.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_files} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_files: event.target.checked } })} /><span><strong>Liberar arquivos</strong><small>Permite consultar e enviar arquivos nos projetos visíveis.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_updates} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_updates: event.target.checked } })} /><span><strong>Liberar atualizações</strong><small>Permite consultar e registrar comentários e atualizações.</small></span></label>
+              </div>
+            </fieldset>
+          ) : null}
+
+          {form.departments.includes("processos") && !form.is_admin && form.active ? (
+            <fieldset className="department-access-fieldset project-access-fieldset form-span-2">
+              <legend>Permissão de Processos</legend>
+              <p>Todos podem consultar e usar o chat. Libere abaixo somente quem poderá criar, editar e publicar fluxos.</p>
+              <div className="admin-toggle-grid">
+                <label><input type="checkbox" checked={form.process_permission.can_manage} onChange={(event) => setForm({ ...form, process_permission: { can_manage: event.target.checked } })} /><span><strong>Criar e editar processos</strong><small>Permite administrar regras, políticas, etapas e publicação.</small></span></label>
               </div>
             </fieldset>
           ) : null}
