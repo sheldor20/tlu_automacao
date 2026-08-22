@@ -22,6 +22,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const resendKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const resendRequested = new URL(request.url).searchParams.get("resend") === "true";
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const meetingId = idSchema.safeParse((await context.params).id);
   if (!meetingId.success) return NextResponse.json({ error: "RA inválida." }, { status: 400 });
@@ -43,7 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!profile?.active || !meeting) return NextResponse.json({ error: "RA não encontrada." }, { status: 404 });
   if (!profile.is_admin && !department) return NextResponse.json({ error: "Acesso a Pauta e RA não autorizado." }, { status: 403 });
   if (!profile.is_admin && meeting.leader_user_id !== auth.user.id) return NextResponse.json({ error: "Somente o líder desta RA pode encerrá-la." }, { status: 403 });
-  if (meeting.status === "encerrada") return NextResponse.json({ ok: true, alreadyClosed: true, emailSent: false, recipientCount: 0, emailWarning: "Esta RA já estava encerrada." });
+  if (meeting.status === "encerrada" && !resendRequested) return NextResponse.json({ ok: true, alreadyClosed: true, emailSent: false, recipientCount: 0, emailWarning: "Esta RA já estava encerrada." });
 
   const [participantResult, sectionResult, projectResult, decisionResult] = await Promise.all([
     service.from("ra_participants").select("user_id,attended").eq("meeting_id", meeting.id),
@@ -90,14 +91,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     "CATÁLOGO DE DEFINIÇÕES",
     ...(decisions.length ? decisions.map((decision, index) => `${index + 1}. ${decision.title}: ${decision.decision_text}`) : ["Nenhuma definição formal registrada."]),
   ];
-  const minutes = lines.join("\n");
+  const alreadyClosed = meeting.status === "encerrada";
+  const minutes = alreadyClosed && meeting.minutes_text?.trim() ? meeting.minutes_text : lines.join("\n");
   const recipients = validUniqueRecipients(profiles);
   const invalidRecipientCount = Math.max(0, participants.length - profiles.length) + profiles.filter((item) => !isValidEmailAddress(String(item.email || ""))).length;
 
-  const closedAt = new Date().toISOString();
-  const closeResult = await service.from("ra_meetings").update({ status: "encerrada", closed_at: closedAt, minutes_text: minutes }).eq("id", meeting.id).neq("status", "encerrada").select("id").maybeSingle();
-  if (closeResult.error) return NextResponse.json({ error: `Não foi possível salvar a ATA e encerrar a RA: ${closeResult.error.message}` }, { status: 502 });
-  if (!closeResult.data) return NextResponse.json({ ok: true, alreadyClosed: true, emailSent: false, recipientCount: 0, emailWarning: "Esta RA foi encerrada por outra solicitação." });
+  const closedAt = meeting.closed_at || new Date().toISOString();
+  if (!alreadyClosed) {
+    const closeResult = await service.from("ra_meetings").update({ status: "encerrada", closed_at: closedAt, minutes_text: minutes }).eq("id", meeting.id).neq("status", "encerrada").select("id").maybeSingle();
+    if (closeResult.error) return NextResponse.json({ error: `Não foi possível salvar a ATA e encerrar a RA: ${closeResult.error.message}` }, { status: 502 });
+    if (!closeResult.data) return NextResponse.json({ ok: true, alreadyClosed: true, emailSent: false, recipientCount: 0, emailWarning: "Esta RA foi encerrada por outra solicitação." });
+  }
 
   let emailWarning: string | null = null;
   let emailSent = false;
@@ -135,5 +139,5 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
   }
 
-  return NextResponse.json({ ok: true, emailSent, emailWarning, recipientCount: emailSent ? recipients.length : 0, eligibleRecipientCount: recipients.length, minutes, closedAt });
+  return NextResponse.json({ ok: true, resent: alreadyClosed, emailSent, emailWarning, recipientCount: emailSent ? recipients.length : 0, eligibleRecipientCount: recipients.length, minutes, closedAt });
 }
