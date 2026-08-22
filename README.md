@@ -14,6 +14,10 @@ Projetos e Aluguéis.
   alertas, comentários, arquivos, envolvidos e e-mail de status.
 - **Aluguéis:** imóveis, contratos, atualização direta de status e dados-base de
   locação, comissão e reajuste.
+- **Processos:** catálogo de fluxos operacionais, regras, políticas, etapas e
+  consulta assistida.
+- **Pauta e RA:** preparação de reuniões, tópicos, tarefas, definições, ATA e
+  envio opcional por e-mail.
 - **Hoje:** tarefas atribuídas, projetos e obras sob responsabilidade do usuário,
   além das exceções dos departamentos que ele pode acessar.
 - **Indicadores:** seis visões gerenciais com acesso individual por usuário.
@@ -29,6 +33,23 @@ npm run dev
 ```
 
 O banco e o passo a passo de configuração estão em [supabase/README.md](supabase/README.md).
+
+## Pauta e RA
+
+O fechamento de uma RA usa `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` para gerar e
+persistir a ATA. O envio aos participantes é opcional e ocorre quando estas duas
+variáveis estão configuradas no servidor/Vercel:
+
+```env
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL=Terra Lotus <projetos@seudominio.com.br>
+```
+
+`RESEND_FROM_EMAIL` deve usar um remetente válido e autorizado no Resend. Sem
+essas variáveis, com destinatários inválidos ou se o provedor falhar, a RA ainda
+é encerrada e a ATA permanece disponível no sistema; a interface informa que o
+e-mail não foi enviado. Somente e-mails válidos dos participantes são usados.
 
 ## Mapa de avanço físico
 

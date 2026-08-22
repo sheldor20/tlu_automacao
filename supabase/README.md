@@ -140,7 +140,7 @@ nas tabelas. `data_connections` guarda somente a configuração não sensível;
 Após salvar as variáveis na Vercel, faça um novo deploy e execute a primeira
 carga conforme o comando PowerShell descrito no README principal.
 
-## 5. Habilitar os e-mails de status
+## 5. Habilitar os e-mails de status e das ATAs
 
 Crie uma chave no Resend e adicione no Vercel:
 
@@ -150,4 +150,6 @@ RESEND_FROM_EMAIL=Terra Lotus <projetos@seudominio.com.br>
 ```
 
 O endpoint valida o token do Supabase antes do envio e registra cada disparo em
-`email_dispatches`.
+`email_dispatches` ou `ra_email_dispatches`. O remetente precisa estar
+autorizado no Resend. Para a RA, essas variáveis são opcionais: sem elas ou em
+caso de falha do provedor, a reunião ainda é encerrada e a ATA é persistida.
