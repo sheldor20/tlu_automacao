@@ -1172,6 +1172,11 @@ h1, h2, h3, p { margin-top: 0; }
 .process-step-editor input,.process-step-editor textarea { width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: white; font-size: 10px; }
 .process-step-editor textarea { min-height: 70px; resize: vertical; }
 .process-step-editor > article > button { width: 32px; height: 32px; border: 1px solid #f2dada; border-radius: 8px; display: grid; place-items: center; background: #fff7f7; color: var(--danger); }
+.process-pdf-import { display: grid; gap: 10px; }
+.process-pdf-import > p { margin-bottom: 0; }
+.process-pdf-import > div { display: flex; align-items: center; gap: 9px; }
+.process-pdf-import input[type="file"] { min-width: 0; flex: 1; padding: 9px; border: 1px dashed var(--sage-300); border-radius: 10px; background: white; color: var(--muted); font-size: 9px; }
+.process-pdf-import small { display: flex; align-items: center; gap: 6px; color: var(--moss-600); font-size: 8px; }
 
 /* Pauta e RA */
 .ra-layout { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 18px; align-items: start; }
@@ -1237,6 +1242,8 @@ h1, h2, h3, p { margin-top: 0; }
   .process-chat-form { grid-template-columns: 1fr; }
   .process-chat-form .button { width: 100%; }
   .process-step-editor > article > div > div { grid-template-columns: 1fr; }
+  .process-pdf-import > div { align-items: stretch; flex-direction: column; }
+  .process-pdf-import .button { width: 100%; }
   .ra-header { flex-direction: column; }
   .ra-header .page-action-group { width: 100%; display: grid; grid-template-columns: 1fr; }
   .ra-header .button { width: 100%; }

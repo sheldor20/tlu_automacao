@@ -51,6 +51,26 @@ essas variáveis, com destinatários inválidos ou se o provedor falhar, a RA ai
 é encerrada e a ATA permanece disponível no sistema; a interface informa que o
 e-mail não foi enviado. Somente e-mails válidos dos participantes são usados.
 
+## Processos por PDF
+
+Ao criar um processo, um gestor pode enviar um PDF de até 4 MB para gerar a
+versão 1 em formato de rascunho. Nome, área, objetivo, regras, políticas e etapas
+são preenchidos para revisão humana antes da criação. O documento original fica
+no bucket privado `process-documents` e pode ser consultado por link temporário.
+
+Depois do merge, execute
+`supabase/migrations/20260822010000_process_pdf_v1.sql` no SQL Editor do
+Supabase com a role `postgres`. Na Vercel, configure e publique um novo deploy:
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_PROCESS_MODEL=gpt-5.6
+```
+
+`OPENAI_PROCESS_MODEL` é opcional. Sem `OPENAI_API_KEY`, o cadastro manual de
+processos continua funcionando, mas a geração por PDF mostra uma orientação de
+configuração e não envia o arquivo.
+
 ## Mapa de avanço físico
 
 Depois do merge, execute `supabase/migrations/20260814230000_construction_progress_maps.sql`

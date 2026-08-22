@@ -1,9 +1,10 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
-import { friendlyError, getSupabase } from "@/lib/supabase";
+import { MAX_PROCESS_PDF_BYTES } from "@/lib/process-pdf";
+import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { BusinessProcess, BusinessProcessStep, ProcessStatus } from "@/lib/types";
-import { Bot, GitBranch, MessageCircleQuestion, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { Bot, FileText, GitBranch, MessageCircleQuestion, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type StepForm = { title: string; description: string; responsible_role: string; business_rule: string };
@@ -22,6 +23,9 @@ export default function ProcessesPage() {
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<BusinessProcess | null>(null);
+  const [sourcePdf, setSourcePdf] = useState<File | null>(null);
+  const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [generatingFromPdf, setGeneratingFromPdf] = useState(false);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -53,12 +57,16 @@ export default function ProcessesPage() {
 
   function openNew() {
     setEditing(null);
+    setSourcePdf(null);
+    setPdfGenerated(false);
     setForm({ title: "", area: "", objective: "", rules: "", policies: "", status: "rascunho", steps: [{ ...emptyStep }] });
     setDialogOpen(true);
   }
 
   function openEdit(process: BusinessProcess) {
     setEditing(process);
+    setSourcePdf(null);
+    setPdfGenerated(false);
     const processSteps = steps.filter((step) => step.process_id === process.id).sort((a, b) => a.position - b.position);
     setForm({
       title: process.title, area: process.area, objective: process.objective,
@@ -72,6 +80,32 @@ export default function ProcessesPage() {
     setForm((current) => ({ ...current, steps: current.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) }));
   }
 
+  async function generateFromPdf() {
+    if (!supabase || !sourcePdf) return;
+    if (!sourcePdf.name.toLocaleLowerCase("pt-BR").endsWith(".pdf") || (sourcePdf.type && sourcePdf.type !== "application/pdf")) {
+      return setToast({ message: "Selecione um arquivo PDF válido.", type: "error" });
+    }
+    if (sourcePdf.size > MAX_PROCESS_PDF_BYTES) return setToast({ message: "O PDF deve ter no máximo 4 MB.", type: "error" });
+    setGeneratingFromPdf(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) return setToast({ message: "Sua sessão expirou. Entre novamente.", type: "error" });
+      const body = new FormData();
+      body.append("file", sourcePdf);
+      const response = await fetch("/api/processes/import", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}` }, body });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return setToast({ message: result.error || "Não foi possível analisar o PDF.", type: "error" });
+      const draft = result.process as { title: string; area: string; objective: string; rules: string[]; policies: string[]; steps: StepForm[] };
+      setForm({ title: draft.title, area: draft.area, objective: draft.objective, rules: draft.rules.join("\n"), policies: draft.policies.join("\n"), status: "rascunho", steps: draft.steps });
+      setPdfGenerated(true);
+      setToast({ message: "Versão 1 gerada. Revise os campos antes de criar o processo.", type: "success" });
+    } catch {
+      setToast({ message: "Não foi possível analisar o PDF agora. Tente novamente.", type: "error" });
+    } finally {
+      setGeneratingFromPdf(false);
+    }
+  }
+
   async function saveProcess(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !canManage) return;
@@ -83,6 +117,7 @@ export default function ProcessesPage() {
       title: form.title.trim(), area: form.area.trim(), objective: form.objective.trim(), status: form.status,
       rules: form.rules.split("\n").map((item) => item.trim()).filter(Boolean),
       policies: form.policies.split("\n").map((item) => item.trim()).filter(Boolean),
+      version: editing?.version || 1,
       updated_by: auth.user?.id,
     };
     const processResult = editing
@@ -95,13 +130,40 @@ export default function ProcessesPage() {
       if (deletion.error) { setSaving(false); return setToast({ message: friendlyError(deletion.error), type: "error" }); }
     }
     const insertion = await supabase.from("business_process_steps").insert(validSteps.map((step, position) => ({ process_id: processId, ...step, responsible_role: step.responsible_role.trim() || null, business_rule: step.business_rule.trim() || null, position })));
+    if (insertion.error) {
+      if (!editing) await supabase.from("business_processes").delete().eq("id", processId);
+      setSaving(false);
+      return setToast({ message: friendlyError(insertion.error), type: "error" });
+    }
+    if (!editing && sourcePdf && pdfGenerated) {
+      const path = storagePath(processId, sourcePdf.name, "v1");
+      const upload = await supabase.storage.from("process-documents").upload(path, sourcePdf, { cacheControl: "3600", contentType: "application/pdf", upsert: false });
+      if (upload.error) {
+        await supabase.from("business_processes").delete().eq("id", processId);
+        setSaving(false);
+        return setToast({ message: friendlyError(upload.error), type: "error" });
+      }
+      const metadata = await supabase.from("business_processes").update({ source_file_path: path, source_file_name: sourcePdf.name.slice(0, 240) }).eq("id", processId);
+      if (metadata.error) {
+        await supabase.storage.from("process-documents").remove([path]);
+        await supabase.from("business_processes").delete().eq("id", processId);
+        setSaving(false);
+        return setToast({ message: friendlyError(metadata.error), type: "error" });
+      }
+    }
     setSaving(false);
-    if (insertion.error) return setToast({ message: friendlyError(insertion.error), type: "error" });
     setDialogOpen(false);
     setSelectedId(processId);
     setMessages([]);
     setToast({ message: editing ? "Processo atualizado." : "Processo criado.", type: "success" });
     await loadData();
+  }
+
+  async function openSourcePdf() {
+    if (!supabase || !selected?.source_file_path) return;
+    const { data, error } = await supabase.storage.from("process-documents").createSignedUrl(selected.source_file_path, 3600);
+    if (error || !data?.signedUrl) return setToast({ message: friendlyError(error), type: "error" });
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   async function askProcess(event: FormEvent) {
@@ -128,7 +190,7 @@ export default function ProcessesPage() {
       <main className="process-main">
         {selected ? <>
           <section className="content-card process-detail">
-            <div className="content-card-head"><div><span className="eyebrow">{selected.area}</span><h2>{selected.title}</h2><p>{selected.objective}</p></div>{canManage ? <Button variant="secondary" onClick={() => openEdit(selected)}><Pencil size={15} /> Editar</Button> : null}</div>
+            <div className="content-card-head"><div><span className="eyebrow">{selected.area} · Versão {selected.version || 1}</span><h2>{selected.title}</h2><p>{selected.objective}</p></div><div className="page-action-group">{selected.source_file_path ? <Button variant="secondary" onClick={openSourcePdf}><FileText size={15} /> Documento fonte</Button> : null}{canManage ? <Button variant="secondary" onClick={() => openEdit(selected)}><Pencil size={15} /> Editar</Button> : null}</div></div>
             <div className="process-guidance-grid"><article><h3>Regras de negócio</h3>{selected.rules.length ? <ul>{selected.rules.map((rule, index) => <li key={index}>{rule}</li>)}</ul> : <p>Nenhuma regra adicional registrada.</p>}</article><article><h3>Políticas</h3>{selected.policies.length ? <ul>{selected.policies.map((policy, index) => <li key={index}>{policy}</li>)}</ul> : <p>Nenhuma política adicional registrada.</p>}</article></div>
             <div className="process-step-list"><h3>Etapas do processo</h3>{selectedSteps.map((step, index) => <article key={step.id}><span>{index + 1}</span><div><strong>{step.title}</strong><p>{step.description}</p><small>{step.responsible_role ? `Responsável: ${step.responsible_role}` : "Responsável não definido"}{step.business_rule ? ` · Regra: ${step.business_rule}` : ""}</small></div></article>)}</div>
           </section>
@@ -143,6 +205,12 @@ export default function ProcessesPage() {
 
     <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title={editing ? "Editar processo" : "Novo processo"} description="Estruture o fluxo antes de publicá-lo para toda a equipe." wide>
       <form className="form-grid process-form" onSubmit={saveProcess}>
+        {!editing ? <fieldset className="department-access-fieldset process-pdf-import form-span-2">
+          <legend>Gerar versão 1 por PDF</legend>
+          <p>Envie um PDF de até 4 MB. O conteúdo é processado pela OpenAI para gerar os campos e as etapas como rascunho para sua revisão antes de salvar.</p>
+          <div><input type="file" accept="application/pdf,.pdf" aria-label="Documento PDF do processo" onChange={(event) => { setSourcePdf(event.target.files?.[0] || null); setPdfGenerated(false); }} /><Button type="button" variant="secondary" onClick={generateFromPdf} loading={generatingFromPdf} disabled={!sourcePdf}><Sparkles size={15} /> Gerar versão 1</Button></div>
+          {sourcePdf ? <small><FileText size={13} /> {sourcePdf.name} · {(sourcePdf.size / 1024 / 1024).toFixed(2)} MB</small> : null}
+        </fieldset> : null}
         <Field label="Nome do processo"><input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required maxLength={160} /></Field>
         <Field label="Área responsável"><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} required maxLength={100} /></Field>
         <Field label="Objetivo" className="form-span-2"><textarea value={form.objective} onChange={(event) => setForm({ ...form, objective: event.target.value })} required maxLength={3000} /></Field>

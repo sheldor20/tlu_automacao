@@ -274,6 +274,9 @@ export type BusinessProcess = {
   rules: string[];
   policies: string[];
   status: ProcessStatus;
+  version: number;
+  source_file_path: string | null;
+  source_file_name: string | null;
   created_by: string;
   updated_by: string;
   created_at: string;
