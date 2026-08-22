@@ -44,6 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!profile?.active || !meeting) return NextResponse.json({ error: "RA não encontrada." }, { status: 404 });
   if (!profile.is_admin && !department) return NextResponse.json({ error: "Acesso a Pauta e RA não autorizado." }, { status: 403 });
   if (!profile.is_admin && meeting.leader_user_id !== auth.user.id) return NextResponse.json({ error: "Somente o líder desta RA pode encerrá-la." }, { status: 403 });
+  if (meeting.archived_at) return NextResponse.json({ error: "Restaure a RA arquivada antes de encerrar ou reenviar a ATA." }, { status: 409 });
   if (meeting.status === "encerrada" && !resendRequested) return NextResponse.json({ ok: true, alreadyClosed: true, emailSent: false, recipientCount: 0, emailWarning: "Esta RA já estava encerrada." });
 
   const [participantResult, sectionResult, projectResult, decisionResult] = await Promise.all([

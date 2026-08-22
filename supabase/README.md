@@ -141,6 +141,11 @@ disponível. Depois do merge, execute também a migration
 `20260822010000_process_pdf_v1.sql`, que cria o bucket privado
 `process-documents` e as políticas de acesso.
 
+Para disponibilizar arquivamento, restauração e exclusão em Processos e Pauta e
+RA, execute em seguida `20260822020000_archive_delete_processes_ra.sql`. A
+migration mantém RAs arquivadas em modo somente leitura e permite que o PDF
+fonte seja limpo depois da exclusão definitiva de um processo.
+
 As credenciais são lidas apenas pelo endpoint no servidor e não são armazenadas
 nas tabelas. `data_connections` guarda somente a configuração não sensível;
 `data_connection_runs` registra sucesso, falha, duração e quantidade de linhas.

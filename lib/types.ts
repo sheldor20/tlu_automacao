@@ -307,6 +307,8 @@ export type RaMeeting = {
   status: RaMeetingStatus;
   minutes_text: string | null;
   closed_at: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

@@ -4,7 +4,7 @@ import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from 
 import { MAX_PROCESS_PDF_BYTES } from "@/lib/process-pdf";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { BusinessProcess, BusinessProcessStep, ProcessStatus } from "@/lib/types";
-import { Bot, FileText, GitBranch, MessageCircleQuestion, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, FileText, GitBranch, MessageCircleQuestion, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type StepForm = { title: string; description: string; responsible_role: string; business_rule: string };
@@ -19,10 +19,12 @@ export default function ProcessesPage() {
   const [steps, setSteps] = useState<BusinessProcessStep[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [canManage, setCanManage] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<BusinessProcess | null>(null);
+  const [processAction, setProcessAction] = useState<{ kind: "archive" | "delete"; process: BusinessProcess } | null>(null);
   const [sourcePdf, setSourcePdf] = useState<File | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
   const [generatingFromPdf, setGeneratingFromPdf] = useState(false);
@@ -35,8 +37,11 @@ export default function ProcessesPage() {
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
+    const processQuery = showArchived
+      ? supabase.from("business_processes").select("*").eq("status", "arquivado").order("updated_at", { ascending: false })
+      : supabase.from("business_processes").select("*").neq("status", "arquivado").order("updated_at", { ascending: false });
     const [processResult, stepResult, permissionResult] = await Promise.all([
-      supabase.from("business_processes").select("*").order("updated_at", { ascending: false }),
+      processQuery,
       supabase.from("business_process_steps").select("*").order("position"),
       supabase.rpc("can_manage_processes"),
     ]);
@@ -48,7 +53,7 @@ export default function ProcessesPage() {
     setCanManage(Boolean(permissionResult.data));
     setSelectedId((current) => nextProcesses.some((process) => process.id === current) ? current : nextProcesses[0]?.id || "");
     setLoading(false);
-  }, [supabase]);
+  }, [showArchived, supabase]);
 
   useEffect(() => { const timer = window.setTimeout(() => void loadData(), 0); return () => window.clearTimeout(timer); }, [loadData]);
 
@@ -166,6 +171,37 @@ export default function ProcessesPage() {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  async function changeProcessArchive(process: BusinessProcess, archive: boolean) {
+    if (!supabase || !canManage) return;
+    setSaving(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from("business_processes").update({ status: archive ? "arquivado" : "rascunho", updated_by: auth.user?.id }).eq("id", process.id).select("id").maybeSingle();
+    setSaving(false);
+    if (error || !data) return setToast({ message: error ? friendlyError(error) : "Você não tem permissão para alterar este processo.", type: "error" });
+    setProcessAction(null);
+    setSelectedId("");
+    setMessages([]);
+    setToast({ message: archive ? "Processo arquivado." : "Processo restaurado como rascunho.", type: "success" });
+    await loadData();
+  }
+
+  async function deleteProcess(process: BusinessProcess) {
+    if (!supabase || !canManage) return;
+    setSaving(true);
+    const deletion = await supabase.from("business_processes").delete().eq("id", process.id).select("id").single();
+    if (deletion.error) {
+      setSaving(false);
+      return setToast({ message: friendlyError(deletion.error), type: "error" });
+    }
+    const cleanup = process.source_file_path ? await supabase.storage.from("process-documents").remove([process.source_file_path]) : { error: null };
+    setSaving(false);
+    setProcessAction(null);
+    setSelectedId("");
+    setMessages([]);
+    setToast({ message: cleanup.error ? "Processo excluído. O PDF fonte não pôde ser removido e deverá ser limpo no Storage." : "Processo excluído definitivamente.", type: cleanup.error ? "error" : "success" });
+    await loadData();
+  }
+
   async function askProcess(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !selected || !question.trim()) return;
@@ -184,13 +220,13 @@ export default function ProcessesPage() {
     <PageIntro eyebrow="Departamento · Processos" title="Processos da TLU" description="Fluxos operacionais, regras, políticas e orientação para execução." action={canManage ? <Button onClick={openNew}><Plus size={17} /> Novo processo</Button> : undefined} />
     {loading ? <div className="list-loading">Carregando processos…</div> : <div className="process-layout">
       <aside className="content-card process-catalog">
-        <div className="content-card-head"><div><h2>Catálogo</h2><p>{processes.length} processo(s) disponível(is)</p></div></div>
-        {processes.length ? <div className="process-list">{processes.map((process) => <button type="button" key={process.id} className={selectedId === process.id ? "active" : ""} onClick={() => { setSelectedId(process.id); setMessages([]); }}><GitBranch size={17} /><span><strong>{process.title}</strong><small>{process.area}</small></span><StatusPill tone={process.status === "publicado" ? "success" : "neutral"}>{statusLabel[process.status]}</StatusPill></button>)}</div> : <EmptyState icon={<GitBranch size={22} />} title="Nenhum processo publicado" description={canManage ? "Crie o primeiro fluxo operacional da TLU." : "Os processos publicados aparecerão aqui."} />}
+        <div className="content-card-head"><div><h2>{showArchived ? "Arquivados" : "Catálogo"}</h2><p>{processes.length} processo(s) {showArchived ? "arquivado(s)" : "disponível(is)"}</p></div>{canManage ? <Button variant="ghost" onClick={() => setShowArchived((current) => !current)}>{showArchived ? <GitBranch size={15} /> : <Archive size={15} />}{showArchived ? " Ver ativos" : " Ver arquivados"}</Button> : null}</div>
+        {processes.length ? <div className="process-list">{processes.map((process) => <button type="button" key={process.id} className={selectedId === process.id ? "active" : ""} onClick={() => { setSelectedId(process.id); setMessages([]); }}><GitBranch size={17} /><span><strong>{process.title}</strong><small>{process.area}</small></span><StatusPill tone={process.status === "publicado" ? "success" : "neutral"}>{statusLabel[process.status]}</StatusPill></button>)}</div> : <EmptyState icon={showArchived ? <Archive size={22} /> : <GitBranch size={22} />} title={showArchived ? "Nenhum processo arquivado" : "Nenhum processo publicado"} description={showArchived ? "Os processos arquivados aparecerão aqui." : canManage ? "Crie o primeiro fluxo operacional da TLU." : "Os processos publicados aparecerão aqui."} />}
       </aside>
       <main className="process-main">
         {selected ? <>
           <section className="content-card process-detail">
-            <div className="content-card-head"><div><span className="eyebrow">{selected.area} · Versão {selected.version || 1}</span><h2>{selected.title}</h2><p>{selected.objective}</p></div><div className="page-action-group">{selected.source_file_path ? <Button variant="secondary" onClick={openSourcePdf}><FileText size={15} /> Documento fonte</Button> : null}{canManage ? <Button variant="secondary" onClick={() => openEdit(selected)}><Pencil size={15} /> Editar</Button> : null}</div></div>
+            <div className="content-card-head"><div><span className="eyebrow">{selected.area} · Versão {selected.version || 1}</span><h2>{selected.title}</h2><p>{selected.objective}</p></div><div className="page-action-group">{selected.source_file_path ? <Button variant="secondary" onClick={openSourcePdf}><FileText size={15} /> Documento fonte</Button> : null}{canManage ? <>{selected.status === "arquivado" ? <Button variant="secondary" onClick={() => void changeProcessArchive(selected, false)} loading={saving}><ArchiveRestore size={15} /> Restaurar</Button> : <><Button variant="secondary" onClick={() => setProcessAction({ kind: "archive", process: selected })}><Archive size={15} /> Arquivar</Button><Button variant="secondary" onClick={() => openEdit(selected)}><Pencil size={15} /> Editar</Button></>}<Button variant="danger" onClick={() => setProcessAction({ kind: "delete", process: selected })}><Trash2 size={15} /> Excluir</Button></> : null}</div></div>
             <div className="process-guidance-grid"><article><h3>Regras de negócio</h3>{selected.rules.length ? <ul>{selected.rules.map((rule, index) => <li key={index}>{rule}</li>)}</ul> : <p>Nenhuma regra adicional registrada.</p>}</article><article><h3>Políticas</h3>{selected.policies.length ? <ul>{selected.policies.map((policy, index) => <li key={index}>{policy}</li>)}</ul> : <p>Nenhuma política adicional registrada.</p>}</article></div>
             <div className="process-step-list"><h3>Etapas do processo</h3>{selectedSteps.map((step, index) => <article key={step.id}><span>{index + 1}</span><div><strong>{step.title}</strong><p>{step.description}</p><small>{step.responsible_role ? `Responsável: ${step.responsible_role}` : "Responsável não definido"}{step.business_rule ? ` · Regra: ${step.business_rule}` : ""}</small></div></article>)}</div>
           </section>
@@ -220,6 +256,9 @@ export default function ProcessesPage() {
         <div className="process-step-editor form-span-2"><div><strong>Etapas</strong><Button type="button" variant="secondary" onClick={() => setForm({ ...form, steps: [...form.steps, { ...emptyStep }] })}><Plus size={15} /> Adicionar etapa</Button></div>{form.steps.map((step, index) => <article key={index}><span>{index + 1}</span><div><input placeholder="Nome da etapa" value={step.title} onChange={(event) => updateStep(index, { title: event.target.value })} required /><textarea placeholder="O que deve ser feito" value={step.description} onChange={(event) => updateStep(index, { description: event.target.value })} required /><div><input placeholder="Papel responsável" value={step.responsible_role} onChange={(event) => updateStep(index, { responsible_role: event.target.value })} /><input placeholder="Regra ou condição desta etapa" value={step.business_rule} onChange={(event) => updateStep(index, { business_rule: event.target.value })} /></div></div>{form.steps.length > 1 ? <button type="button" onClick={() => setForm({ ...form, steps: form.steps.filter((_, stepIndex) => stepIndex !== index) })} aria-label="Remover etapa"><Trash2 size={16} /></button> : null}</article>)}</div>
         <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>{editing ? "Salvar processo" : "Criar processo"}</Button></div>
       </form>
+    </Dialog>
+    <Dialog open={Boolean(processAction)} onClose={() => setProcessAction(null)} title={processAction?.kind === "delete" ? "Excluir processo?" : "Arquivar processo?"} description={processAction?.kind === "delete" ? "A exclusão é definitiva e remove as etapas e o documento fonte deste processo." : "O processo sairá do catálogo ativo, mas todo o histórico será preservado e poderá ser restaurado."}>
+      <div className="confirmation-content"><strong>{processAction?.process.title}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProcessAction(null)}>Cancelar</Button>{processAction?.kind === "delete" ? <Button type="button" variant="danger" loading={saving} onClick={() => processAction && void deleteProcess(processAction.process)}><Trash2 size={16} /> Excluir definitivamente</Button> : <Button type="button" loading={saving} onClick={() => processAction && void changeProcessArchive(processAction.process, true)}><Archive size={16} /> Arquivar processo</Button>}</div></div>
     </Dialog>
     {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
   </>;
