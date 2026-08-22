@@ -213,18 +213,18 @@ export default function RaPage() {
     await loadData();
   }
 
-  async function closeMeeting() {
+  async function closeMeeting(resend = false) {
     if (!supabase || !selected) return;
     setSaving(true);
     const { data } = await supabase.auth.getSession();
-    const response = await fetch(`/api/ra/${selected.id}/close`, { method: "POST", headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
+    const response = await fetch(`/api/ra/${selected.id}/close${resend ? "?resend=true" : ""}`, { method: "POST", headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
     const result = await response.json().catch(() => ({}));
     setSaving(false);
     if (!response.ok) return setToast({ message: result.error || "Não foi possível encerrar a RA.", type: "error" });
     const message = result.emailSent
-      ? `RA encerrada, ATA salva e enviada para ${result.recipientCount} destinatário(s).${result.emailWarning ? ` ${result.emailWarning}` : ""}`
-      : `RA encerrada e ATA salva. ${result.emailWarning || "O e-mail não foi enviado."}`;
-    setToast({ message, type: "success" }); await loadData();
+      ? `${resend ? "ATA reenviada" : "RA encerrada, ATA salva e enviada"} para ${result.recipientCount} destinatário(s).${result.emailWarning ? ` ${result.emailWarning}` : ""}`
+      : `${resend ? "A ATA continua salva, mas o reenvio falhou." : "RA encerrada e ATA salva."} ${result.emailWarning || "O e-mail não foi enviado."}`;
+    setToast({ message, type: result.emailSent || !resend ? "success" : "error" }); await loadData();
   }
 
   return <>
@@ -235,7 +235,7 @@ export default function RaPage() {
         {selected ? <>
           <section className="content-card ra-header"><div><span className="eyebrow">{statusLabel[selected.status]}</span><h2>{selected.title}</h2><p>{dateBr(selected.scheduled_at)} · Líder: {userName(selected.leader_user_id)}</p><div className="ra-participant-chips">{selectedParticipants.map((participant) => <span key={participant.user_id}><Users size={12} /> {userName(participant.user_id)}</span>)}</div></div>{canManageSelected && selected.status !== "encerrada" ? <div className="page-action-group">{selected.status === "rascunho" ? <Button variant="secondary" onClick={() => void startMeeting()}><Play size={15} /> Iniciar RA</Button> : null}<Button onClick={() => void closeMeeting()} loading={saving}><Mail size={15} /> Encerrar e enviar ATA</Button></div> : null}</section>
 
-          {selected.status === "encerrada" ? <section className="content-card ra-minutes"><div className="content-card-head"><div><h2><FileText size={18} /> ATA da reunião</h2><p>Registro final da reunião</p></div></div><pre>{selected.minutes_text}</pre></section> : <>
+          {selected.status === "encerrada" ? <section className="content-card ra-minutes"><div className="content-card-head"><div><h2><FileText size={18} /> ATA da reunião</h2><p>Registro final da reunião</p></div>{canManageSelected ? <Button variant="secondary" onClick={() => void closeMeeting(true)} loading={saving}><Mail size={15} /> Reenviar ATA</Button> : null}</div><pre>{selected.minutes_text}</pre></section> : <>
             {selectedProjectIds.length ? <section className="content-card ra-project-snapshot"><div className="content-card-head"><div><h2>Projetos para discussão</h2><p>Tarefas abertas e vencidas dos projetos selecionados</p></div></div><div>{selectedProjectIds.map((projectId) => { const tasks = openProjectTasks.filter((task) => task.project_id === projectId); const overdue = tasks.filter((task) => task.due_date < todayIso()); return <article key={projectId}><div><FolderKanban size={17} /><span><strong>{projectName(projectId)}</strong><small>{overdue.length} atrasada(s) · {tasks.length} aberta(s)</small></span></div>{tasks.length ? <ul>{tasks.slice(0, 8).map((task) => <li key={task.id} className={task.due_date < todayIso() ? "danger" : ""}><span>{task.title}</span><small>{task.assignee_name} · {dateBr(task.due_date)}</small></li>)}</ul> : <p>Nenhuma tarefa aberta.</p>}</article>; })}</div></section> : null}
 
             <section className="content-card ra-agenda"><div className="content-card-head"><div><h2>Pauta da RA</h2><p>Tópicos, ações e itens a definir durante a reunião</p></div>{canManageSelected ? <Button variant="secondary" onClick={() => setSectionDialog(true)}><ListPlus size={15} /> Novo bloco</Button> : null}</div><div className="ra-section-list">{selectedSections.map((section, sectionIndex) => { const sectionItems = items.filter((item) => item.section_id === section.id); return <article key={section.id}><header><span>{sectionIndex + 1}</span><div><strong>{section.title}</strong>{section.project_id ? <small>{projectName(section.project_id)}</small> : null}</div>{canManageSelected ? <button type="button" onClick={() => openItem(section.id)}><Plus size={15} /> Tópico</button> : null}</header><div className="ra-item-list">{sectionItems.length ? sectionItems.map((item) => <div key={item.id}><span className="ra-bullet">•</span><div><strong>{item.owner_user_id ? `${userName(item.owner_user_id)}: ` : ""}{item.content}</strong><small>{kindLabel[item.kind]}{item.due_date ? ` · prazo ${dateBr(item.due_date)}` : ""}{item.project_id ? ` · ${projectName(item.project_id)}` : ""}</small>{item.decision_text ? <p><Check size={13} /> {item.decision_text}</p> : null}{item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space</p> : null}{canManageSelected && !item.task_id ? <div className="ra-item-controls"><Button variant="secondary" onClick={() => void convertToTask(item)}><Save size={14} /> Transformar em tarefa</Button>{item.kind === "definicao" || item.kind === "topico" ? <><input value={decisionDrafts[item.id] ?? item.decision_text ?? ""} onChange={(event) => setDecisionDrafts({ ...decisionDrafts, [item.id]: event.target.value })} placeholder="Definição tomada na reunião" /><Button variant="secondary" onClick={() => void recordDecision(item)}><Check size={14} /> Registrar definição</Button></> : null}</div> : null}</div></div>) : <div className="mini-empty">Nenhum tópico neste bloco.</div>}</div></article>; })}{!selectedSections.length ? <EmptyState icon={<ClipboardList size={22} />} title="Pauta vazia" description="Adicione blocos como projetos, entregas ou assuntos gerais." /> : null}</div></section>
