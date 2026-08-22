@@ -32,6 +32,7 @@ const statusLabel: Record<ProjectStatus, string> = {
 
 type ProjectFilter = "current" | "archived";
 type ProjectAction = "archive" | "delete";
+type ProjectsView = "projects" | "tasks";
 type TaskWithProject = ProjectTask & { projects?: { name: string; archived_at: string | null } | null };
 
 export default function ProjectsPage() {
@@ -41,6 +42,7 @@ export default function ProjectsPage() {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
+  const [view, setView] = useState<ProjectsView>("projects");
   const [filter, setFilter] = useState<ProjectFilter>("current");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
@@ -89,6 +91,14 @@ export default function ProjectsPage() {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedView = window.localStorage.getItem("terra-lotus-projects-view");
+      if (savedView === "projects" || savedView === "tasks") setView(savedView);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const currentProjects = useMemo(() => projects.filter((project) => !project.archived_at), [projects]);
   const archivedProjects = useMemo(() => projects.filter((project) => Boolean(project.archived_at)), [projects]);
   const visibleProjects = useMemo(() => {
@@ -118,6 +128,11 @@ export default function ProjectsPage() {
       : 0;
     return { active, completed, total, overdue, average };
   }, [currentProjects]);
+
+  function selectView(nextView: ProjectsView) {
+    setView(nextView);
+    window.localStorage.setItem("terra-lotus-projects-view", nextView);
+  }
 
   function openTaskForm(status: TaskStatus = "a_fazer") {
     setTaskForm({ project_id: "", title: "", description: "", assignee_user_id: fullAccess ? "" : currentUserId, due_date: todayIso(), status });
@@ -273,9 +288,41 @@ export default function ProjectsPage() {
       <PageIntro
         eyebrow="Departamento · Projetos"
         title="Projetos e entregas"
-        description="Uma visão simples, combinando tarefas visuais com contexto, arquivos e colaboração."
+        description="Alterne entre a carteira de projetos e o quadro de tarefas para trabalhar com mais foco."
         action={fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : undefined}
       />
+
+      <nav className="projects-view-switcher" aria-label="Alternar visão da página">
+        <div className="projects-view-switcher-copy">
+          <span>Visualização</span>
+          <strong>{view === "projects" ? "Carteira de projetos" : "Quadro de tarefas"}</strong>
+          <small>{view === "projects" ? "Acompanhe progresso, responsáveis e alertas." : "Organize as entregas por etapa e projeto."}</small>
+        </div>
+        <div className="projects-view-tabs" role="group" aria-label="Escolher conteúdo exibido">
+          <button
+            id="projects-view-tab"
+            type="button"
+            aria-pressed={view === "projects"}
+            aria-controls="projects-view-panel"
+            className={view === "projects" ? "active" : ""}
+            onClick={() => selectView("projects")}
+          >
+            <FolderKanban size={18} />
+            <span><strong>Projetos</strong><small>{currentProjects.length} atuais</small></span>
+          </button>
+          <button
+            id="tasks-view-tab"
+            type="button"
+            aria-pressed={view === "tasks"}
+            aria-controls="tasks-view-panel"
+            className={view === "tasks" ? "active" : ""}
+            onClick={() => selectView("tasks")}
+          >
+            <ListTodo size={18} />
+            <span><strong>Tarefas</strong><small>{tasks.length} abertas e concluídas</small></span>
+          </button>
+        </div>
+      </nav>
 
       <section className="kpi-grid projects-kpis">
         <KpiCard label="Projetos ativos" value={String(metrics.active)} helper={`${currentProjects.length} em acompanhamento`} icon={<FolderKanban size={17} />} />
@@ -283,7 +330,7 @@ export default function ProjectsPage() {
         <KpiCard label="Tarefas atrasadas" value={String(metrics.overdue)} helper={metrics.overdue ? "precisam de atenção" : "nenhum alerta aberto"} tone={metrics.overdue ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
       </section>
 
-      <section className="kanban-section global-task-board" id="quadro-tarefas">
+      {view === "tasks" ? <section className="kanban-section global-task-board" id="tasks-view-panel" role="region" aria-labelledby="tasks-view-tab">
         <div className="section-title-row">
           <div><h2>Quadro geral de tarefas</h2><p>{fullAccess ? "Todas as tarefas dos projetos e tarefas avulsas em uma visão Trello." : "Exibindo somente suas tarefas, conforme a configuração de acesso."}</p></div>
           <div className="global-task-actions">
@@ -308,9 +355,9 @@ export default function ProjectsPage() {
           onDeleteTask={deleteTask}
         />}
         <div className="global-task-board-foot"><ListTodo size={14} /> {boardTasks.length} tarefa(s) no recorte atual · tarefas avulsas não aparecem dentro de nenhum projeto.</div>
-      </section>
+      </section> : null}
 
-      <section className="content-card">
+      {view === "projects" ? <section className="content-card" id="projects-view-panel" role="region" aria-labelledby="projects-view-tab">
         <div className="content-card-head project-list-head">
           <div><h2>{filter === "current" ? "Projetos atuais" : "Projetos arquivados"}</h2><p>Progresso, responsáveis, alertas e gestão do histórico</p></div>
           <div className="segmented" aria-label="Filtrar projetos">
@@ -368,7 +415,7 @@ export default function ProjectsPage() {
             ))}
           </div>
         )}
-      </section>
+      </section> : null}
 
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Vincule a um projeto ou mantenha como tarefa avulsa, visível somente no quadro geral." wide>
         <form className="form-grid" onSubmit={createTask}>
