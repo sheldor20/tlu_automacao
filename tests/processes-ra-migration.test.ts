@@ -43,6 +43,8 @@ test("encerra e persiste a ATA antes de tentar o envio", () => {
   assert.match(closeRoute, /emailWarning/);
   assert.match(closeRoute, /AbortSignal\.timeout/);
   assert.match(closeRoute, /neq\("status", "encerrada"\)/);
+  assert.match(closeRoute, /resendRequested/);
+  assert.match(raPage, /Reenviar ATA/);
 });
 
 test("remove o gerador antigo de pauta da página de projetos", () => {
