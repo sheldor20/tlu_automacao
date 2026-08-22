@@ -128,11 +128,18 @@ do Instagram, configure opcionalmente:
 OPENAI_API_KEY=sua-chave-da-api
 OPENAI_MEETING_MODEL=gpt-5.6
 OPENAI_VISION_MODEL=gpt-5.6
+OPENAI_PROCESS_MODEL=gpt-5.6
 ```
 
 Sem `OPENAI_API_KEY`, a pauta continua sendo gerada com resumo determinístico e
 o Instagram tenta as superfícies públicas HTML/JSON. Capturas do Instagram são
 processadas somente em memória e não são gravadas.
+
+A mesma chave habilita a geração da versão 1 de Processos a partir de um PDF.
+Esse fluxo não possui fallback: sem a chave, o cadastro manual permanece
+disponível. Depois do merge, execute também a migration
+`20260822010000_process_pdf_v1.sql`, que cria o bucket privado
+`process-documents` e as políticas de acesso.
 
 As credenciais são lidas apenas pelo endpoint no servidor e não são armazenadas
 nas tabelas. `data_connections` guarda somente a configuração não sensível;
