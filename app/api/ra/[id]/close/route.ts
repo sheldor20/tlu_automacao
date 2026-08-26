@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { isValidEmailAddress, isValidEmailSender, validUniqueRecipients } from "@/lib/ra";
+import { isValidEmailAddress, isValidEmailSender, renderRaMinutesEmail, validUniqueRecipients } from "@/lib/ra";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,10 +7,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const idSchema = z.string().uuid();
-
-function escapeHtml(value: unknown) {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-}
 
 function dateTimeBr(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value));
@@ -121,7 +117,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           from, to: recipients, subject: `ATA da RA: ${meeting.title}`,
-          html: `<!doctype html><html><body style="margin:0;background:#f4f5f1;font-family:Arial,sans-serif;color:#1d241f"><div style="max-width:760px;margin:0 auto;padding:28px 16px"><div style="background:#263329;color:white;padding:24px 28px;border-radius:16px 16px 0 0"><strong style="font-size:18px">TERRA LÓTUS</strong><div style="margin-top:5px;font-size:11px;opacity:.65;letter-spacing:.08em">ATA – REUNIÃO RA</div></div><div style="background:white;padding:28px;border-radius:0 0 16px 16px"><h1 style="font-size:24px;margin:0 0 20px">${escapeHtml(meeting.title)}</h1><div style="white-space:pre-wrap;line-height:1.65;font-size:13px">${escapeHtml(minutes)}</div><p style="margin:25px 0 0;color:#6c756e;font-size:11px">Ata gerada e enviada pelo TLU Space.</p></div></div></body></html>`,
+          html: renderRaMinutesEmail(minutes),
         }),
       });
       const emailData = await emailResponse.json().catch(() => ({}));
