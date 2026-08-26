@@ -77,11 +77,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const sectionItems = items.filter((item) => item.section_id === section.id);
       return [
         `${sectionIndex + 1}. ${section.title}${section.project_id ? ` – ${projectName(section.project_id)}` : ""}`,
-        ...(sectionItems.length ? sectionItems.flatMap((item) => [
-          `   • ${item.owner_user_id ? `${profileName(item.owner_user_id)}: ` : ""}${item.content}`,
-          ...(item.decision_text ? [`     Definição: ${item.decision_text}`] : []),
-          ...(item.task_id ? [`     Tarefa criada${item.due_date ? ` para ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date(`${item.due_date}T12:00:00-03:00`))}` : ""}.`] : []),
-        ]) : ["   • Sem tópicos registrados."]),
+        ...(sectionItems.length ? sectionItems.flatMap((item) => {
+          const itemDecisions = decisions.filter((decision) => decision.item_id === item.id);
+          return [
+            `   • ${item.owner_user_id ? `${profileName(item.owner_user_id)}: ` : ""}${item.content}`,
+            ...itemDecisions.map((decision, decisionIndex) => `     Definição ${decisionIndex + 1}: ${decision.decision_text}`),
+            ...(item.task_id ? [`     Tarefa criada${item.due_date ? ` para ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date(`${item.due_date}T12:00:00-03:00`))}` : ""}.`] : []),
+          ];
+        }) : ["   • Sem tópicos registrados."]),
       ];
     }),
     "",
