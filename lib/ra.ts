@@ -40,7 +40,7 @@ export function renderRaMinutesEmail(minutes: string) {
       .ra-card { border-radius: 18px !important; }
       .ra-header-cell { padding: 17px !important; }
       .ra-content-cell { padding: 20px 17px 24px !important; }
-      .ra-document { font-size: 12px !important; line-height: 1.6 !important; }
+      .ra-document { font-size: 14px !important; line-height: 1.6 !important; }
     }
   </style>
 </head>
@@ -60,8 +60,8 @@ export function renderRaMinutesEmail(minutes: string) {
                     </span>
                   </td>
                   <td valign="top">
-                    <h1 style="margin:0;color:#1d241f;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;line-height:22px;letter-spacing:-.34px;">ATA da reunião</h1>
-                    <p style="margin:5px 0 0;color:#6c756e;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:400;line-height:17px;">Registro final da reunião</p>
+                    <h1 style="margin:0;color:#1d241f;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;line-height:25px;letter-spacing:-.34px;">ATA da reunião</h1>
+                    <p style="margin:5px 0 0;color:#6c756e;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:400;line-height:19px;">Registro final da reunião</p>
                   </td>
                 </tr>
               </table>
@@ -69,7 +69,7 @@ export function renderRaMinutesEmail(minutes: string) {
           </tr>
           <tr>
             <td class="ra-content-cell" style="padding:20px 22px 24px;">
-              <pre class="ra-document" style="margin:0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;color:#3f4842;font-family:SFMono-Regular,Consolas,Liberation Mono,Menlo,Courier New,monospace;font-size:10px;font-weight:400;line-height:1.65;text-align:left;">${escapeEmailHtml(minutes)}</pre>
+              <pre class="ra-document" style="margin:0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;color:#3f4842;font-family:SFMono-Regular,Consolas,Liberation Mono,Menlo,Courier New,monospace;font-size:14px;font-weight:400;line-height:1.65;text-align:left;">${escapeEmailHtml(minutes)}</pre>
             </td>
           </tr>
         </table>
