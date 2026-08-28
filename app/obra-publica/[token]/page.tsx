@@ -93,6 +93,8 @@ export default function PublicWorkPage() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status >= 500) throw new Error(result.error || "Servidor temporariamente indisponível.");
+        await clearPublicWorkOfflineData(token).catch(() => undefined);
+        navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_PUBLIC_WORK_CACHE", token });
         setWork(null);
         setStages([]);
         setPlans([]);

@@ -62,6 +62,7 @@ export async function POST(request: Request) {
           instructions: "Você é o assistente de processos da Terra Lótus. Responda em português do Brasil, de forma direta, usando exclusivamente o processo fornecido. Cite o nome da regra, política ou etapa usada. Se a resposta não estiver no conteúdo, diga claramente que a informação não está registrada. Nunca invente uma regra.",
           input: `DÚVIDA: ${parsed.data.question}\n\nPROCESSO: ${JSON.stringify(context).slice(0, 80_000)}`,
           max_output_tokens: 1200,
+          store: false,
         }),
         signal: AbortSignal.timeout(30_000),
       });
