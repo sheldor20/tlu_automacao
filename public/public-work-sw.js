@@ -159,9 +159,16 @@ async function cachePublicWorkAssets(urls) {
 }
 
 async function clearPublicWorkCache(token) {
-  const cache = await caches.open(DOCUMENT_CACHE);
-  const keys = await cache.keys();
-  await Promise.all(keys.filter((request) => new URL(request.url).pathname.includes(`/obra-publica/${token}`)).map((request) => cache.delete(request)));
+  const documentPath = `/obra-publica/${token}`;
+  const apiPath = `/api/public/obras/${token}/`;
+  await Promise.all([DOCUMENT_CACHE, ASSET_CACHE].map(async (cacheName) => {
+    const cache = await caches.open(cacheName);
+    const keys = await cache.keys();
+    await Promise.all(keys.filter((request) => {
+      const pathname = new URL(request.url).pathname;
+      return pathname === documentPath || pathname.startsWith(`${documentPath}/`) || pathname.startsWith(apiPath);
+    }).map((request) => cache.delete(request)));
+  }));
 }
 
 async function networkFirst(request) {
@@ -189,6 +196,29 @@ async function cacheFirst(request) {
   return response;
 }
 
+async function networkFirstPublicPlan(request) {
+  const cache = await caches.open(ASSET_CACHE);
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      await cache.put(request, response.clone());
+      return response;
+    }
+    if ([401, 403, 404, 410].includes(response.status)) {
+      await cache.delete(request);
+      return response;
+    }
+    return await cache.match(request) || response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return new Response("Abra este documento uma vez com internet para ativar o acesso offline.", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(ASSET_CACHE).then((cache) => cache.addAll(["/logo-terra-lotus.png"])));
   self.skipWaiting();
@@ -207,7 +237,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (/^\/api\/public\/obras\/[a-f0-9]{48}\/plans\/[0-9a-f-]+$/.test(url.pathname)) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirstPublicPlan(request));
     return;
   }
   if (url.pathname.startsWith("/api/public/obras/")) return;
