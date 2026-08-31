@@ -8,6 +8,7 @@ import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES } from "@/lib/constants";
 import { currency, dateBr, initials, todayIso } from "@/lib/format";
 import { generateProjectReport } from "@/lib/project-report";
+import { withProjectProgress } from "@/lib/project-progress";
 import { emptyProjectTaskDraft, PROJECT_TASK_RELATIONS, projectTaskRpcPayload } from "@/lib/project-tasks";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { BusinessStage, Project, ProjectCategory, ProjectComment, ProjectFile, ProjectMember, ProjectSubtask, ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
@@ -102,7 +103,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
     const { data: currentAuth } = await supabase.auth.getUser();
     const currentUserId = currentAuth.user?.id || "00000000-0000-0000-0000-000000000000";
     const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult, fullAccessResult, targetPermissionResult] = await Promise.all([
-      supabase.from("project_progress_summary").select("*").eq("id", params.id).eq("category", category).single(),
+      supabase.from("projects").select("*").eq("id", params.id).eq("category", category).single(),
       supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS}`).eq("project_id", params.id).eq("category", category).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("project_members").select("*").eq("project_id", params.id).order("name"),
@@ -126,9 +127,10 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
       return { ...item, signed_url: data?.signedUrl };
     }));
     const loadedProject = projectResult.data as Project;
-    setProject(loadedProject);
+    const loadedTasks = (taskResult.data || []) as ProjectTask[];
+    setProject(withProjectProgress(loadedProject, loadedTasks, todayIso()));
     setSummaryForm({ name: loadedProject.name, start_date: loadedProject.start_date, end_date: loadedProject.end_date || "", owner_user_id: loadedProject.owner_user_id || "", objective: loadedProject.objective, status: loadedProject.status });
-    setTasks((taskResult.data || []) as ProjectTask[]);
+    setTasks(loadedTasks);
     setComments((commentResult.data || []) as ProjectComment[]);
     setMembers((memberResult.data || []) as ProjectMember[]);
     setFiles(signedFiles);

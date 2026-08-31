@@ -7,6 +7,7 @@ import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
 import { dateBr, todayIso } from "@/lib/format";
 import { emptyProjectTaskDraft, PROJECT_TASK_RELATIONS, projectTaskRpcPayload } from "@/lib/project-tasks";
+import { withProjectProgress } from "@/lib/project-progress";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Project, ProjectCategory, ProjectStatus, ProjectSubtask, ProjectTask, ProjectTemplate, TaskStatus, UserProfile } from "@/lib/types";
 import {
@@ -75,7 +76,7 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     if (!silent) setLoading(true);
     const { data: authData } = await supabase.auth.getUser();
     const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult, targetPermissionResult] = await Promise.all([
-      supabase.from("project_progress_summary").select("*").eq("category", category).order("updated_at", { ascending: false }),
+      supabase.from("projects").select("*").eq("category", category).order("updated_at", { ascending: false }),
       supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("position"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
@@ -87,8 +88,9 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     if (taskResult.error) setToast({ message: friendlyError(taskResult.error), type: "error" });
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
     if (templateResult.error || templateTaskResult.error) setToast({ message: friendlyError(templateResult.error || templateTaskResult.error), type: "error" });
-    setProjects((projectResult.data || []) as Project[]);
-    setTasks(((taskResult.data || []) as TaskWithProject[]).filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Atividade avulsa" })));
+    const loadedTasks = (taskResult.data || []) as TaskWithProject[];
+    setProjects(((projectResult.data || []) as Project[]).map((project) => withProjectProgress(project, loadedTasks, todayIso())));
+    setTasks(loadedTasks.filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Atividade avulsa" })));
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
     setFullAccess(permissionResult.data !== "assigned_tasks");
