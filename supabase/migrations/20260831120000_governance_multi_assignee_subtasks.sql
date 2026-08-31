@@ -270,6 +270,51 @@ as $$
     and (public.is_system_admin() or public.project_permission_scope() = 'full');
 $$;
 
+create or replace function public.move_project_to_category(
+  p_project_id uuid,
+  p_category text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_category text;
+begin
+  if p_category not in ('operational', 'governance') then
+    raise exception using message = 'invalid_project_category';
+  end if;
+
+  select project.category into current_category
+  from public.projects project
+  where project.id = p_project_id;
+
+  if current_category is null then
+    raise exception using message = 'project_not_available';
+  end if;
+  if current_category = p_category then
+    return current_category;
+  end if;
+  if not public.has_project_full_access(p_project_id) then
+    raise exception using message = 'project_move_access_required';
+  end if;
+  if not public.can_create_project(p_category) then
+    raise exception using message = 'project_target_access_required';
+  end if;
+
+  update public.projects
+  set category = p_category
+  where id = p_project_id;
+
+  update public.project_tasks
+  set category = p_category
+  where project_id = p_project_id;
+
+  return p_category;
+end;
+$$;
+
 create or replace function public.can_read_project_task(p_task_id uuid)
 returns boolean
 language sql
@@ -343,10 +388,12 @@ $$;
 revoke all on function public.has_project_category_access(text) from public;
 revoke all on function public.project_category(uuid) from public;
 revoke all on function public.can_create_project(text) from public;
+revoke all on function public.move_project_to_category(uuid, text) from public;
 revoke all on function public.can_read_project_task(uuid) from public;
 revoke all on function public.can_manage_project_task(uuid) from public;
 grant execute on function public.has_project_category_access(text), public.project_category(uuid),
-  public.can_create_project(text), public.can_read_project_task(uuid),
+  public.can_create_project(text), public.move_project_to_category(uuid, text),
+  public.can_read_project_task(uuid),
   public.can_manage_project_task(uuid) to authenticated;
 
 drop policy if exists project_templates_department_access on public.project_templates;
@@ -735,19 +782,29 @@ returns table (
   name text,
   status public.project_status,
   archived_at timestamptz,
-  owner_name text
+  owner_name text,
+  category text
 )
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select project.id, project.name, project.status, project.archived_at, project.owner_name
+  select project.id, project.name, project.status, project.archived_at,
+    project.owner_name, project.category
   from public.projects project
   where public.has_department_access('novos-negocios')
-    and project.category = 'operational'
-    and project.archived_at is null
-    and project.status in ('ativo', 'concluido')
+    and (
+      (
+        project.category = 'operational'
+        and project.archived_at is null
+        and project.status in ('ativo', 'concluido')
+      )
+      or exists (
+        select 1 from public.businesses business
+        where business.project_id = project.id
+      )
+    )
   order by project.name;
 $$;
 

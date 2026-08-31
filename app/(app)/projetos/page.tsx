@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Archive,
   ArchiveRestore,
+  ArrowLeftRight,
   ArrowUpRight,
   CheckCircle2,
   FolderKanban,
@@ -32,7 +33,7 @@ const statusLabel: Record<ProjectStatus, string> = {
 };
 
 type ProjectFilter = "current" | "archived";
-type ProjectAction = "archive" | "delete";
+type ProjectAction = "archive" | "delete" | "move";
 type ProjectsView = "projects" | "tasks";
 type TaskWithProject = ProjectTask & { projects?: { name: string; archived_at: string | null; category: ProjectCategory } | null };
 
@@ -41,6 +42,9 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
   const supabase = getSupabase();
   const governance = category === "governance";
   const baseHref = governance ? "/governanca" : "/projetos";
+  const targetCategory: ProjectCategory = governance ? "operational" : "governance";
+  const targetHref = governance ? "/projetos" : "/governanca";
+  const targetLabel = governance ? "Projetos" : "Governança";
   const portfolioLabel = governance ? "Governança" : "Projetos";
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -54,6 +58,7 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fullAccess, setFullAccess] = useState(true);
+  const [canMoveCategory, setCanMoveCategory] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const [taskProjectFilter, setTaskProjectFilter] = useState("all");
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
@@ -69,13 +74,14 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     if (!supabase) return;
     if (!silent) setLoading(true);
     const { data: authData } = await supabase.auth.getUser();
-    const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult] = await Promise.all([
+    const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult, targetPermissionResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("category", category).order("updated_at", { ascending: false }),
       supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("position"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
       supabase.rpc("project_permission_scope"),
+      supabase.rpc("can_create_project", { p_category: targetCategory }),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
     if (taskResult.error) setToast({ message: friendlyError(taskResult.error), type: "error" });
@@ -86,9 +92,10 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
     setFullAccess(permissionResult.data !== "assigned_tasks");
+    setCanMoveCategory(Boolean(targetPermissionResult.data));
     setCurrentUserId(authData.user?.id || "");
     setLoading(false);
-  }, [category, supabase]);
+  }, [category, supabase, targetCategory]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -250,6 +257,19 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     await loadData();
   }
 
+  async function moveProject(project: Project) {
+    if (!supabase || !canMoveCategory) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("move_project_to_category", {
+      p_project_id: project.id,
+      p_category: targetCategory,
+    });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setActionProject(null);
+    router.push(`${targetHref}/${project.id}`);
+  }
+
   async function deleteProject(project: Project) {
     if (!supabase) return;
     setSaving(true);
@@ -408,6 +428,12 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
                     >
                       {project.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}
                     </button> : null}
+                    {fullAccess && canMoveCategory ? <button
+                      type="button"
+                      onClick={() => requestAction(project, "move")}
+                      aria-label={`Mover ${project.name} para ${targetLabel}`}
+                      title={`Mover para ${targetLabel}`}
+                    ><ArrowLeftRight size={16} /></button> : null}
                     {fullAccess ? <button type="button" className="danger" onClick={() => requestAction(project, "delete")} aria-label={`Excluir ${project.name}`} title="Excluir projeto"><Trash2 size={16} /></button> : null}
                 </div>
               </article>
@@ -435,8 +461,12 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
       <Dialog
         open={Boolean(actionProject)}
         onClose={() => setActionProject(null)}
-        title={projectAction === "delete" ? "Excluir projeto?" : "Arquivar projeto?"}
-        description={projectAction === "delete" ? "A exclusão é definitiva e remove tarefas, comentários e arquivos. Projetos ligados a negócios não podem ser excluídos." : "O projeto sairá da visão atual, mas todo o histórico será preservado e poderá ser restaurado."}
+        title={projectAction === "delete" ? "Excluir projeto?" : projectAction === "move" ? `Mover para ${targetLabel}?` : "Arquivar projeto?"}
+        description={projectAction === "delete"
+          ? "A exclusão é definitiva e remove tarefas, comentários e arquivos. Projetos ligados a negócios não podem ser excluídos."
+          : projectAction === "move"
+            ? `O projeto e todas as atividades passarão para ${targetLabel}. Responsáveis, subtarefas, comentários, arquivos e vínculos serão preservados.`
+            : "O projeto sairá da visão atual, mas todo o histórico será preservado e poderá ser restaurado."}
       >
         <div className="confirmation-content">
           <strong>{actionProject?.name}</strong>
@@ -446,9 +476,17 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
               type="button"
               variant={projectAction === "delete" ? "danger" : "primary"}
               loading={saving}
-              onClick={() => actionProject && (projectAction === "delete" ? void deleteProject(actionProject) : void archiveProject(actionProject))}
+              onClick={() => actionProject && (projectAction === "delete"
+                ? void deleteProject(actionProject)
+                : projectAction === "move"
+                  ? void moveProject(actionProject)
+                  : void archiveProject(actionProject))}
             >
-              {projectAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar projeto</>}
+              {projectAction === "delete"
+                ? <><Trash2 size={16} /> Excluir definitivamente</>
+                : projectAction === "move"
+                  ? <><ArrowLeftRight size={16} /> Mover para {targetLabel}</>
+                  : <><Archive size={16} /> Arquivar projeto</>}
             </Button>
           </div>
         </div>

@@ -66,7 +66,7 @@ const emptyForm: BusinessForm = {
 
 type BusinessFilter = "current" | "archived";
 type BusinessAction = "archive" | "delete";
-type ProjectOption = Pick<Project, "id" | "name" | "status" | "archived_at" | "owner_name">;
+type ProjectOption = Pick<Project, "id" | "name" | "status" | "archived_at" | "owner_name" | "category">;
 
 export default function NewBusinessPage() {
   const supabase = getSupabase();
@@ -102,7 +102,7 @@ export default function NewBusinessPage() {
       ...business,
       project: options.find((project) => project.id === business.project_id) || null,
     })));
-    setProjects(options);
+    setProjects(options.filter((project) => project.category === "operational" && !project.archived_at));
     setHistory((historyData || []) as StageHistory[]);
     setLoading(false);
   }, [supabase]);
