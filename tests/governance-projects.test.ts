@@ -31,3 +31,9 @@ test("mostra, edita, conclui e exclui atividades e subitens", () => {
   assert.match(migration, /create or replace function public\.set_project_subtask_completed/);
   assert.match(migration, /delete from public\.project_subtasks subtask/);
 });
+
+test("recria as opções de projetos sem conflito de tipo de retorno", () => {
+  assert.match(migration, /drop function if exists public\.business_project_options\(\);\s*create function public\.business_project_options\(\)/);
+  assert.match(migration, /archived_at timestamptz,\s*owner_name text/);
+  assert.match(migration, /grant execute on function public\.business_project_options\(\) to authenticated/);
+});

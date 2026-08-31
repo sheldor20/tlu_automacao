@@ -726,19 +726,23 @@ $$;
 revoke all on function public.create_project_from_template(text, uuid, date, uuid, text) from public;
 grant execute on function public.create_project_from_template(text, uuid, date, uuid, text) to authenticated;
 
-create or replace function public.business_project_options()
+-- A versão anterior expõe owner_name. Como PostgreSQL não permite alterar os
+-- parâmetros OUT com CREATE OR REPLACE, remova a assinatura antes de recriá-la.
+drop function if exists public.business_project_options();
+create function public.business_project_options()
 returns table (
   id uuid,
   name text,
   status public.project_status,
-  archived_at timestamptz
+  archived_at timestamptz,
+  owner_name text
 )
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select project.id, project.name, project.status, project.archived_at
+  select project.id, project.name, project.status, project.archived_at, project.owner_name
   from public.projects project
   where public.has_department_access('novos-negocios')
     and project.category = 'operational'
@@ -746,6 +750,9 @@ as $$
     and project.status in ('ativo', 'concluido')
   order by project.name;
 $$;
+
+revoke all on function public.business_project_options() from public;
+grant execute on function public.business_project_options() to authenticated;
 
 create or replace function public.current_user_today_alert_count()
 returns integer
