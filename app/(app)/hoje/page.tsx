@@ -3,13 +3,14 @@
 import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { DEPARTMENTS } from "@/lib/constants";
 import { dateBr, todayIso } from "@/lib/format";
+import { PROJECT_TASK_RELATIONS } from "@/lib/project-tasks";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Construction, DepartmentSlug, ProjectTask, Rental, RentalStatus, TaskStatus, TodayVisibleUser, UserNotification } from "@/lib/types";
 import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type TaskRow = ProjectTask & { projects?: { name: string } | null };
+type TaskRow = ProjectTask & { projects?: { name: string; category: "operational" | "governance" } | null };
 type TodayTask = ProjectTask & { project_name: string };
 type UnifiedAlert = {
   id: string;
@@ -36,6 +37,11 @@ function taskWindow(task: TodayTask) {
   if (days === 0) return { label: "Vence hoje", tone: "warning" as const, order: 1 };
   if (days <= 7) return { label: `Vence em ${days} dia(s)`, tone: "info" as const, order: 2 };
   return { label: dateBr(task.due_date), tone: "neutral" as const, order: 3 };
+}
+
+function taskHref(task: ProjectTask) {
+  const base = task.category === "governance" ? "/governanca" : "/projetos";
+  return task.project_id ? `${base}/${task.project_id}?tab=tarefas` : `${base}#quadro-tarefas`;
 }
 
 function nextAdjustmentDays(rental: Rental) {
@@ -97,12 +103,13 @@ export default function TodayPage() {
         ? selectedUserId
         : ownUserId;
     const hasAccess = (department: DepartmentSlug) => departments.includes(department);
+    const hasProjectAccess = hasAccess("projetos") || hasAccess("governanca");
     const emptyResult = Promise.resolve({ data: [], error: null });
     const [taskResult, workResult, rentalResult, notificationResult] = await Promise.all([
-      hasAccess("projetos") ? supabase.from("project_tasks").select("*,projects(name)").eq("assignee_user_id", targetUserId).neq("status", "concluida").order("due_date") : emptyResult,
+      hasProjectAccess ? supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,category)`).neq("status", "concluida").order("due_date") : emptyResult,
       hasAccess("obras") ? supabase.from("construction_progress_summary").select("*").eq("responsible_user_id", targetUserId).is("archived_at", null).eq("status", "em_andamento") : emptyResult,
       hasAccess("alugueis") ? supabase.from("rentals").select("*").order("lease_end_date") : emptyResult,
-      hasAccess("projetos") ? supabase.from("user_notifications").select("*").eq("recipient_user_id", targetUserId).is("read_at", null).order("created_at", { ascending: false }).limit(30) : emptyResult,
+      hasProjectAccess ? supabase.from("user_notifications").select("*").eq("recipient_user_id", targetUserId).is("read_at", null).order("created_at", { ascending: false }).limit(30) : emptyResult,
     ]);
     const failure = [taskResult.error, workResult.error, rentalResult.error, notificationResult.error].find(Boolean);
     if (failure) setToast({ message: friendlyError(failure), type: "error" });
@@ -110,7 +117,10 @@ export default function TodayPage() {
     setAuthorizedDepartments(departments);
     setVisibleUsers(availableUsers);
     setSelectedUserId(targetUserId);
-    setTasks(((taskResult.data || []) as TaskRow[]).map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Tarefa avulsa" })));
+    setTasks(((taskResult.data || []) as TaskRow[])
+      .filter((task) => task.assignees?.some((assignee) => assignee.user_id === targetUserId)
+        || task.subtasks?.some((subtask) => subtask.assignees?.some((assignee) => assignee.user_id === targetUserId)))
+      .map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Atividade avulsa" })));
     setWorks((workResult.data || []) as Construction[]);
     setRentals((rentalResult.data || []) as Rental[]);
     setNotifications((notificationResult.data || []) as UserNotification[]);
@@ -123,6 +133,7 @@ export default function TodayPage() {
   }, [loadData]);
 
   const selectedUser = visibleUsers.find((user) => user.user_id === selectedUserId);
+  const hasProjectAccess = authorizedDepartments.includes("projetos") || authorizedDepartments.includes("governanca");
   const sortedTasks = useMemo(() => [...tasks].sort((a, b) => taskWindow(a).order - taskWindow(b).order || a.due_date.localeCompare(b.due_date)), [tasks]);
   const todoTasks = useMemo(() => tasks.filter((task) => task.status === "a_fazer"), [tasks]);
   const progressTasks = useMemo(() => tasks.filter((task) => task.status === "em_andamento"), [tasks]);
@@ -146,7 +157,7 @@ export default function TodayPage() {
       description: `${task.project_name} · atraso de ${Math.abs(daysUntil(task.due_date))} dia(s)`,
       category: "task" as const,
       tone: "danger" as const,
-      href: task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas",
+      href: taskHref(task),
       actionLabel: "Resolver",
       order: daysUntil(task.due_date),
     })),
@@ -179,12 +190,12 @@ export default function TodayPage() {
       description: `${notification.message} · ${dateBr(notification.created_at)}`,
       category: "notification" as const,
       tone: "info" as const,
-      href: "/projetos#quadro-tarefas",
+      href: tasks.find((task) => task.id === notification.entity_id) ? taskHref(tasks.find((task) => task.id === notification.entity_id)!) : "/projetos#quadro-tarefas",
       actionLabel: "Abrir",
       order: 500,
       notification,
     })),
-  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts]);
+  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts, tasks]);
 
   async function updateTask(task: TodayTask, status: TaskStatus) {
     if (!supabase) return;
@@ -214,7 +225,7 @@ export default function TodayPage() {
         action={<div className="page-action-group">{visibleUsers.length > 1 ? <select value={selectedUserId} onChange={(event) => void loadData(event.target.value)} aria-label="Selecionar visão do usuário">{visibleUsers.map((user) => <option key={user.user_id} value={user.user_id}>{user.is_self ? "Minha visão" : user.full_name || user.email}</option>)}</select> : null}<Button variant="secondary" onClick={() => void loadData(selectedUserId)} disabled={loading}><RefreshCw size={17} /> Atualizar</Button></div>}
       />
 
-      {authorizedDepartments.includes("projetos") ? <section className="kpi-grid today-kpis">
+      {hasProjectAccess ? <section className="kpi-grid today-kpis">
         <KpiCard label="A fazer" value={String(todoTasks.length)} helper="tarefas ainda não iniciadas" icon={<ListTodo size={17} />} />
         <KpiCard label="Em andamento" value={String(progressTasks.length)} helper="tarefas em execução" icon={<ListChecks size={17} />} />
         <KpiCard label="Atrasadas" value={String(overdueTasks.length)} helper={overdueTasks.length ? "exigem atenção" : "nenhuma pendência"} tone={overdueTasks.length ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
@@ -222,12 +233,12 @@ export default function TodayPage() {
       </section> : null}
 
       {loading ? <div className="list-loading today-loading">Carregando tarefas e alertas…</div> : <div className="today-layout">
-        {authorizedDepartments.includes("projetos") ? <section className="content-card today-primary-card">
+        {hasProjectAccess ? <section className="content-card today-primary-card">
           <div className="content-card-head"><div><h2>Visão geral das tarefas</h2><p>A fazer, em andamento, prazos e responsáveis</p></div><StatusPill tone={overdueTasks.length ? "danger" : "success"}>{tasks.length} abertas</StatusPill></div>
-          {sortedTasks.length ? <div className="today-action-list">{sortedTasks.map((task) => { const window = taskWindow(task); return <article key={task.id}><span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span><div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.status === "em_andamento" ? "Em andamento" : "A fazer"} · {task.assignee_name}</span></div><div className="today-item-actions">{selectedUserId === currentUserId ? <Button variant="secondary" onClick={() => void updateTask(task, "concluida")} disabled={saving}><Check size={15} /> Concluir</Button> : null}<Link className="button button-primary" href={task.project_id ? `/projetos/${task.project_id}?tab=tarefas` : "/projetos#quadro-tarefas"}>Abrir</Link></div></article>; })}</div> : <EmptyState icon={<Check size={22} />} title="Nenhuma tarefa aberta" description="Não há tarefas a fazer ou em andamento nesta visão." />}
+          {sortedTasks.length ? <div className="today-action-list">{sortedTasks.map((task) => { const window = taskWindow(task); const assignees = task.assignees?.map((assignee) => assignee.assignee_name).join(", ") || task.assignee_name; return <article key={task.id}><span className={`exception-mark exception-${window.tone}`}><Clock3 size={16} /></span><div className="today-item-main"><div><StatusPill tone={window.tone}>{window.label}</StatusPill><small>{task.project_name}</small></div><strong>{task.title}</strong><span>{task.status === "em_andamento" ? "Em andamento" : "A fazer"} · {assignees}</span></div><div className="today-item-actions">{selectedUserId === currentUserId ? <Button variant="secondary" onClick={() => void updateTask(task, "concluida")} disabled={saving}><Check size={15} /> Concluir</Button> : null}<Link className="button button-primary" href={taskHref(task)}>Abrir</Link></div></article>; })}</div> : <EmptyState icon={<Check size={22} />} title="Nenhuma atividade aberta" description="Não há atividades a fazer ou em andamento nesta visão." />}
         </section> : null}
 
-        {authorizedDepartments.some((department) => ["projetos", "obras", "alugueis"].includes(department)) ? <section className="content-card today-primary-card">
+        {authorizedDepartments.some((department) => ["projetos", "governanca", "obras", "alugueis"].includes(department)) ? <section className="content-card today-primary-card">
           <div className="content-card-head"><div><h2>Alertas</h2><p>Tarefas, vistorias e imóveis que precisam de atenção</p></div><StatusPill tone={unifiedAlerts.length ? "danger" : "success"}>{unifiedAlerts.length} pendente(s)</StatusPill></div>
           {unifiedAlerts.length ? <div className="today-compact-list today-alert-list">{unifiedAlerts.map((alert) => <article key={alert.id}>
             <span className={`exception-mark exception-${alert.tone}`}>
@@ -241,7 +252,7 @@ export default function TodayPage() {
           </article>)}</div> : <div className="mini-empty">Nenhum alerta exige atenção agora.</div>}
         </section> : null}
 
-        {!authorizedDepartments.some((department) => ["projetos", "obras", "alugueis"].includes(department)) ? <EmptyState icon={<Building2 size={22} />} title="Sem áreas operacionais" description="Solicite acesso a Projetos, Obras ou Aluguéis para visualizar tarefas e alertas." /> : null}
+        {!authorizedDepartments.some((department) => ["projetos", "governanca", "obras", "alugueis"].includes(department)) ? <EmptyState icon={<Building2 size={22} />} title="Sem áreas operacionais" description="Solicite acesso a Projetos, Governança, Obras ou Aluguéis para visualizar atividades e alertas." /> : null}
       </div>}
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>

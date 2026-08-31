@@ -4,7 +4,7 @@ import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from 
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { DepartmentSlug, ManagementAreaSlug, ProcessPermission, ProfileDepartment, ProfileIndicatorArea, ProfileProjectPermission, ProfileReportingLine, UserProfile } from "@/lib/types";
-import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, UserRoundCog, Users } from "lucide-react";
+import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserRoundCog, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; leader_user_id: string | null };
@@ -49,7 +49,7 @@ export default function AdministrationPage() {
     if (!supabase) return;
     setLoading(true);
     const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult] = await Promise.all([
-      supabase.from("profiles").select("user_id,full_name,email,active,is_admin").order("full_name"),
+      supabase.from("profiles").select("user_id,full_name,email,active,is_admin").is("deleted_at", null).order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
       supabase.from("profile_indicator_areas").select("user_id,area"),
       supabase.from("profile_project_permissions").select("user_id,access_scope,allow_files,allow_updates"),
@@ -180,6 +180,22 @@ export default function AdministrationPage() {
     await loadUsers();
   }
 
+  async function deleteUser(user: ManagedUser) {
+    if (!supabase || !window.confirm(`Excluir definitivamente o usuário “${user.full_name || user.email}”?`)) return;
+    setSaving(true);
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch("/api/admin/users", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token || ""}` },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok) return setToast({ message: result.error || "Não foi possível excluir o usuário.", type: "error" });
+    setToast({ message: "Usuário excluído do sistema.", type: "success" });
+    await loadUsers();
+  }
+
   return (
     <>
       <PageIntro
@@ -212,11 +228,11 @@ export default function AdministrationPage() {
                 <div className="admin-user-departments">
                   {user.is_admin ? <span>Todos os departamentos</span> : DEPARTMENTS.map((department) => user.departments.includes(department.slug) ? <span key={department.slug}>{department.name}</span> : null)}
                   {!user.is_admin && user.departments.includes("indicadores") ? <small>{user.indicator_areas.length} de {MANAGEMENT_AREAS.length} visões de Indicadores</small> : null}
-                  {!user.is_admin && user.departments.includes("projetos") ? <small>{user.project_permission.access_scope === "full" ? "Gestão dos projetos envolvidos" : "Somente tarefas envolvidas"}</small> : null}
+                  {!user.is_admin && (user.departments.includes("projetos") || user.departments.includes("governanca")) ? <small>{user.project_permission.access_scope === "full" ? "Gestão dos projetos envolvidos" : "Somente tarefas e subtarefas envolvidas"}</small> : null}
                   {!user.is_admin && user.departments.includes("processos") ? <small>{user.process_permission.can_manage ? "Pode criar e editar processos" : "Somente consulta de processos"}</small> : null}
                   {user.leader_user_id ? <small>Líder: {users.find((candidate) => candidate.user_id === user.leader_user_id)?.full_name || users.find((candidate) => candidate.user_id === user.leader_user_id)?.email || "Usuário"}</small> : null}
                 </div>
-                <button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button>
+                <div className="table-actions admin-user-actions"><button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button><button className="table-action danger" onClick={() => void deleteUser(user)} disabled={saving} aria-label={`Excluir ${user.full_name || user.email}`}><Trash2 size={16} /></button></div>
               </article>
             ))}
           </div>
@@ -269,13 +285,13 @@ export default function AdministrationPage() {
             </fieldset>
           ) : null}
 
-          {form.departments.includes("projetos") && !form.is_admin && form.active ? (
+          {(form.departments.includes("projetos") || form.departments.includes("governanca")) && !form.is_admin && form.active ? (
             <fieldset className="department-access-fieldset project-access-fieldset form-span-2">
-              <legend>Acesso a Projetos</legend>
-              <p>Escolha o alcance das tarefas e se arquivos e atualizações ficam disponíveis.</p>
+              <legend>Acesso a Projetos e Governança</legend>
+              <p>Escolha o alcance das tarefas e subtarefas e se arquivos e atualizações ficam disponíveis.</p>
               <div className="admin-toggle-grid">
                 <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "full"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "full" } })} /><span><strong>Gestão completa</strong><small>Administra integralmente apenas os projetos em que está envolvido.</small></span></label>
-                <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "assigned_tasks"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "assigned_tasks" } })} /><span><strong>Somente envolvimento</strong><small>Visualiza projetos envolvidos e apenas as próprias tarefas.</small></span></label>
+                <label><input type="radio" name="project-scope" checked={form.project_permission.access_scope === "assigned_tasks"} onChange={() => setForm({ ...form, project_permission: { ...form.project_permission, access_scope: "assigned_tasks" } })} /><span><strong>Somente envolvimento</strong><small>Visualiza projetos envolvidos e apenas as tarefas e subtarefas atribuídas.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_files} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_files: event.target.checked } })} /><span><strong>Liberar arquivos</strong><small>Permite consultar e enviar arquivos nos projetos visíveis.</small></span></label>
                 <label><input type="checkbox" checked={form.project_permission.allow_updates} onChange={(event) => setForm({ ...form, project_permission: { ...form.project_permission, allow_updates: event.target.checked } })} /><span><strong>Liberar atualizações</strong><small>Permite consultar e registrar comentários e atualizações.</small></span></label>
               </div>

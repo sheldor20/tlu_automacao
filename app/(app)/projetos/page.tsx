@@ -2,12 +2,13 @@
 
 import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { ListToolbar } from "@/components/list-toolbar";
+import { ProjectTaskEditor, taskToDraft, type ProjectTaskDraft } from "@/components/project-task-editor";
 import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
-import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, todayIso } from "@/lib/format";
+import { emptyProjectTaskDraft, PROJECT_TASK_RELATIONS, projectTaskRpcPayload } from "@/lib/project-tasks";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Project, ProjectStatus, ProjectTask, ProjectTemplate, TaskStatus, UserProfile } from "@/lib/types";
+import type { Project, ProjectCategory, ProjectStatus, ProjectSubtask, ProjectTask, ProjectTemplate, TaskStatus, UserProfile } from "@/lib/types";
 import {
   AlertTriangle,
   Archive,
@@ -33,11 +34,14 @@ const statusLabel: Record<ProjectStatus, string> = {
 type ProjectFilter = "current" | "archived";
 type ProjectAction = "archive" | "delete";
 type ProjectsView = "projects" | "tasks";
-type TaskWithProject = ProjectTask & { projects?: { name: string; archived_at: string | null } | null };
+type TaskWithProject = ProjectTask & { projects?: { name: string; archived_at: string | null; category: ProjectCategory } | null };
 
-export default function ProjectsPage() {
+export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
   const router = useRouter();
   const supabase = getSupabase();
+  const governance = category === "governance";
+  const baseHref = governance ? "/governanca" : "/projetos";
+  const portfolioLabel = governance ? "Governança" : "Projetos";
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -59,15 +63,15 @@ export default function ProjectsPage() {
   const [projectAction, setProjectAction] = useState<ProjectAction>("archive");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [form, setForm] = useState({ name: "", start_date: todayIso(), owner_user_id: "", template_id: "" });
-  const [taskForm, setTaskForm] = useState({ project_id: "", title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" as TaskStatus });
+  const [taskForm, setTaskForm] = useState<ProjectTaskDraft>(() => emptyProjectTaskDraft("", todayIso()));
 
   const loadData = useCallback(async (silent = false) => {
     if (!supabase) return;
     if (!silent) setLoading(true);
     const { data: authData } = await supabase.auth.getUser();
     const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult] = await Promise.all([
-      supabase.from("project_progress_summary").select("*").order("updated_at", { ascending: false }),
-      supabase.from("project_tasks").select("*,projects(name,archived_at)").order("position"),
+      supabase.from("project_progress_summary").select("*").eq("category", category).order("updated_at", { ascending: false }),
+      supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("position"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
@@ -78,13 +82,13 @@ export default function ProjectsPage() {
     if (userResult.error) setToast({ message: friendlyError(userResult.error), type: "error" });
     if (templateResult.error || templateTaskResult.error) setToast({ message: friendlyError(templateResult.error || templateTaskResult.error), type: "error" });
     setProjects((projectResult.data || []) as Project[]);
-    setTasks(((taskResult.data || []) as TaskWithProject[]).filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Tarefa avulsa" })));
+    setTasks(((taskResult.data || []) as TaskWithProject[]).filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Atividade avulsa" })));
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
     setFullAccess(permissionResult.data !== "assigned_tasks");
     setCurrentUserId(authData.user?.id || "");
     setLoading(false);
-  }, [supabase]);
+  }, [category, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -93,11 +97,11 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const savedView = window.localStorage.getItem("terra-lotus-projects-view");
+      const savedView = window.localStorage.getItem(`terra-lotus-${category}-projects-view`);
       if (savedView === "projects" || savedView === "tasks") setView(savedView);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [category]);
 
   const currentProjects = useMemo(() => projects.filter((project) => !project.archived_at), [projects]);
   const archivedProjects = useMemo(() => projects.filter((project) => Boolean(project.archived_at)), [projects]);
@@ -131,43 +135,37 @@ export default function ProjectsPage() {
 
   function selectView(nextView: ProjectsView) {
     setView(nextView);
-    window.localStorage.setItem("terra-lotus-projects-view", nextView);
+    window.localStorage.setItem(`terra-lotus-${category}-projects-view`, nextView);
   }
 
   function openTaskForm(status: TaskStatus = "a_fazer") {
-    setTaskForm({ project_id: "", title: "", description: "", assignee_user_id: fullAccess ? "" : currentUserId, due_date: todayIso(), status });
+    setTaskForm(emptyProjectTaskDraft("", todayIso(), status, fullAccess ? [] : [currentUserId]));
     setTaskDialog(true);
   }
 
-  async function createTask(event: FormEvent) {
+  function editTask(task: ProjectTask) {
+    setTaskForm(taskToDraft(task));
+    setTaskDialog(true);
+  }
+
+  async function saveTask(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
     if (!fullAccess && taskForm.project_id) {
       setToast({ message: "Seu acesso permite criar somente tarefas avulsas para você.", type: "error" });
       return;
     }
-    const assignee = users.find((user) => user.user_id === (fullAccess ? taskForm.assignee_user_id : currentUserId));
-    if (!assignee?.email) {
-      setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
+    if (!taskForm.assignee_user_ids.length) {
+      setToast({ message: "Selecione ao menos uma pessoa responsável.", type: "error" });
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("project_tasks").insert({
-      project_id: taskForm.project_id || null,
-      title: taskForm.title.trim(),
-      description: taskForm.description.trim() || null,
-      assignee_user_id: assignee.user_id,
-      assignee_name: assignee.full_name?.trim() || assignee.email.split("@")[0],
-      assignee_email: assignee.email.toLowerCase(),
-      due_date: taskForm.due_date,
-      status: taskForm.status,
-      position: tasks.filter((task) => task.status === taskForm.status).length,
-    });
+    const { error } = await supabase.rpc("save_project_task", projectTaskRpcPayload(taskForm, category));
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setTaskDialog(false);
-    setTaskForm({ project_id: "", title: "", description: "", assignee_user_id: "", due_date: todayIso(), status: "a_fazer" });
-    setToast({ message: taskForm.project_id ? "Tarefa adicionada ao projeto e ao quadro geral." : "Tarefa avulsa adicionada ao quadro geral.", type: "success" });
+    setTaskForm(emptyProjectTaskDraft("", todayIso()));
+    setToast({ message: taskForm.id ? "Atividade atualizada." : taskForm.project_id ? "Atividade adicionada ao projeto." : "Atividade avulsa adicionada.", type: "success" });
     await loadData(true);
   }
 
@@ -187,13 +185,12 @@ export default function ProjectsPage() {
     setMovingTaskId(null);
   }
 
-  async function changeTaskDetails(task: ProjectTask, updates: Partial<Pick<ProjectTask, "assignee_user_id" | "due_date">>) {
+  async function toggleSubtask(task: ProjectTask, subtask: ProjectSubtask, completed: boolean) {
     if (!supabase || movingTaskId) return;
     setMovingTaskId(task.id);
-    const { error } = await supabase.from("project_tasks").update(updates).eq("id", task.id);
+    const { error } = await supabase.rpc("set_project_subtask_completed", { p_subtask_id: subtask.id, p_completed: completed });
     setMovingTaskId(null);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: "Responsável ou prazo da tarefa atualizado.", type: "success" });
     await loadData(true);
   }
 
@@ -220,6 +217,7 @@ export default function ProjectsPage() {
       p_owner_user_id: form.owner_user_id,
       p_start_date: form.start_date,
       p_template_id: form.template_id || null,
+      p_category: category,
     });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
@@ -228,7 +226,7 @@ export default function ProjectsPage() {
     setForm({ name: "", start_date: todayIso(), owner_user_id: "", template_id: "" });
     setToast({ message: selectedTemplate ? "Projeto criado com as tarefas do modelo." : "Projeto criado e pronto para receber tarefas.", type: "success" });
     await loadData();
-    if (data) router.push(`/projetos/${data}`);
+    if (data) router.push(`${baseHref}/${data}`);
   }
 
   function requestAction(project: Project, action: ProjectAction) {
@@ -286,9 +284,9 @@ export default function ProjectsPage() {
   return (
     <>
       <PageIntro
-        eyebrow="Departamento · Projetos"
-        title="Projetos e entregas"
-        description="Alterne entre a carteira de projetos e o quadro de tarefas para trabalhar com mais foco."
+        eyebrow={`Departamento · ${portfolioLabel}`}
+        title={governance ? "Governança e iniciativas estratégicas" : "Projetos e entregas"}
+        description={governance ? "Acompanhe os projetos estratégicos com a mesma estrutura operacional, em uma carteira independente." : "Acompanhe os projetos de obras e do dia a dia em uma carteira operacional."}
         action={fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : undefined}
       />
 
@@ -308,7 +306,7 @@ export default function ProjectsPage() {
             onClick={() => selectView("projects")}
           >
             <FolderKanban size={18} />
-            <span><strong>Projetos</strong><small>{currentProjects.length} atuais</small></span>
+            <span><strong>{portfolioLabel}</strong><small>{currentProjects.length} atuais</small></span>
           </button>
           <button
             id="tasks-view-tab"
@@ -319,7 +317,7 @@ export default function ProjectsPage() {
             onClick={() => selectView("tasks")}
           >
             <ListTodo size={18} />
-            <span><strong>Tarefas</strong><small>{tasks.length} abertas e concluídas</small></span>
+            <span><strong>Atividades</strong><small>{tasks.length} abertas e concluídas</small></span>
           </button>
         </div>
       </nav>
@@ -327,19 +325,19 @@ export default function ProjectsPage() {
       <section className="kpi-grid projects-kpis">
         <KpiCard label="Projetos ativos" value={String(metrics.active)} helper={`${currentProjects.length} em acompanhamento`} icon={<FolderKanban size={17} />} />
         <KpiCard label="Avanço médio" value={`${metrics.average.toFixed(0)}%`} helper={`${metrics.completed}/${metrics.total} tarefas concluídas`} tone="success" icon={<CheckCircle2 size={17} />} />
-        <KpiCard label="Tarefas atrasadas" value={String(metrics.overdue)} helper={metrics.overdue ? "precisam de atenção" : "nenhum alerta aberto"} tone={metrics.overdue ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
+        <KpiCard label="Atividades atrasadas" value={String(metrics.overdue)} helper={metrics.overdue ? "precisam de atenção" : "nenhum alerta aberto"} tone={metrics.overdue ? "warning" : "success"} icon={<AlertTriangle size={17} />} />
       </section>
 
       {view === "tasks" ? <section className="kanban-section global-task-board" id="tasks-view-panel" role="region" aria-labelledby="tasks-view-tab">
         <div className="section-title-row">
-          <div><h2>Quadro geral de tarefas</h2><p>{fullAccess ? "Todas as tarefas dos projetos e tarefas avulsas em uma visão Trello." : "Exibindo somente suas tarefas, conforme a configuração de acesso."}</p></div>
+          <div><h2>Quadro geral de atividades</h2><p>{fullAccess ? "Todas as atividades da carteira, com responsáveis e subtarefas." : "Exibindo as atividades e subtarefas em que você está envolvido."}</p></div>
           <div className="global-task-actions">
             <select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)} aria-label="Filtrar quadro por projeto">
               <option value="all">Todos os projetos</option>
-              <option value="standalone">Somente tarefas avulsas</option>
+              <option value="standalone">Somente atividades avulsas</option>
               {currentProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
-            <Button onClick={() => openTaskForm()}><Plus size={17} /> Nova tarefa</Button>
+            <Button onClick={() => openTaskForm()}><Plus size={17} /> Nova atividade</Button>
           </div>
         </div>
         {loading ? <div className="list-loading">Carregando tarefas…</div> : <ProjectTaskBoard
@@ -347,14 +345,15 @@ export default function ProjectsPage() {
           users={users}
           movingTaskId={movingTaskId}
           onStatusChange={changeTaskStatus}
-          onTaskUpdate={changeTaskDetails}
           onAddTask={openTaskForm}
+          onEditTask={editTask}
+          onToggleSubtask={toggleSubtask}
           canAddTask
-          canReassign={fullAccess}
+          canEdit
           canDelete
           onDeleteTask={deleteTask}
         />}
-        <div className="global-task-board-foot"><ListTodo size={14} /> {boardTasks.length} tarefa(s) no recorte atual · tarefas avulsas não aparecem dentro de nenhum projeto.</div>
+        <div className="global-task-board-foot"><ListTodo size={14} /> {boardTasks.length} atividade(s) no recorte atual · atividades avulsas não aparecem dentro de nenhum projeto.</div>
       </section> : null}
 
       {view === "projects" ? <section className="content-card" id="projects-view-panel" role="region" aria-labelledby="projects-view-tab">
@@ -387,20 +386,20 @@ export default function ProjectsPage() {
                     {Number(project.overdue_tasks || 0) > 0 ? <StatusPill tone="danger"><AlertTriangle size={11} /> {project.overdue_tasks}</StatusPill> : null}
                   </div>
                 </div>
-                <Link href={`/projetos/${project.id}`} className="project-list-identity">
+                <Link href={`${baseHref}/${project.id}`} className="project-list-identity">
                   <h3>{project.name}</h3>
                   <span>{project.owner_name} · prazo {dateBr(project.end_date)}</span>
                 </Link>
-                <Link href={`/projetos/${project.id}`} className="project-list-progress">
+                <Link href={`${baseHref}/${project.id}`} className="project-list-progress">
                   <div><span>Progresso</span><strong>{Number(project.progress_percent || 0).toFixed(0)}%</strong></div>
                   <ProgressBar value={Number(project.progress_percent || 0)} />
                 </Link>
-                <Link href={`/projetos/${project.id}?tab=tarefas`} className="project-list-tasks">
-                  <span>Tarefas</span>
+                <Link href={`${baseHref}/${project.id}?tab=tarefas`} className="project-list-tasks">
+                  <span>Atividades</span>
                   <strong>{project.completed_tasks || 0}/{project.total_tasks || 0}</strong>
                 </Link>
                 <div className="project-list-actions">
-                  <Link href={`/projetos/${project.id}`} className="button button-secondary">Abrir <ArrowUpRight size={14} /></Link>
+                  <Link href={`${baseHref}/${project.id}`} className="button button-secondary">Abrir <ArrowUpRight size={14} /></Link>
                     {fullAccess ? <button
                       type="button"
                       onClick={() => project.archived_at ? void archiveProject(project) : requestAction(project, "archive")}
@@ -417,24 +416,9 @@ export default function ProjectsPage() {
         )}
       </section> : null}
 
-      <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="Nova tarefa" description="Vincule a um projeto ou mantenha como tarefa avulsa, visível somente no quadro geral." wide>
-        <form className="form-grid" onSubmit={createTask}>
-          <Field label="Projeto" hint={fullAccess ? "Opcional. Sem projeto, a tarefa será avulsa." : "Seu perfil pode criar uma tarefa avulsa para si."}>
-            <select value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })} disabled={!fullAccess}>
-              <option value="">Tarefa avulsa</option>
-              {currentProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Status inicial"><select value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{TASK_COLUMNS.map((column) => <option value={column.key} key={column.key}>{column.label}</option>)}</select></Field>
-          <Field label="Tarefa" className="form-span-2"><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required maxLength={220} autoFocus /></Field>
-          <Field label="Responsável" hint="Usuário ativo do Supabase."><UserSelect users={users} value={fullAccess ? taskForm.assignee_user_id : currentUserId} onChange={(user) => setTaskForm({ ...taskForm, assignee_user_id: user?.user_id || "" })} required disabled={!fullAccess} /></Field>
-          <Field label="Data de entrega"><input type="date" value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field>
-          <Field label="Descrição" className="form-span-2"><textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} maxLength={2000} /></Field>
-          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!(fullAccess ? taskForm.assignee_user_id : currentUserId)}>Criar tarefa</Button></div>
-        </form>
-      </Dialog>
+      <ProjectTaskEditor open={taskDialog} onClose={() => setTaskDialog(false)} onSubmit={saveTask} form={taskForm} onChange={setTaskForm} users={users} projects={currentProjects} lockProject={!fullAccess} saving={saving} />
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo projeto" description="Comece com o essencial e use um modelo para criar as tarefas automaticamente." wide>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title={`Novo projeto de ${governance ? "governança" : "operação"}`} description="Comece com o essencial e use um modelo para criar as atividades automaticamente." wide>
         <form className="form-grid" onSubmit={createProject}>
           <Field label="Nome do projeto"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required autoFocus /></Field>
           <Field label="Responsável" hint="Lista de usuários ativos cadastrados no Supabase.">
@@ -442,8 +426,8 @@ export default function ProjectsPage() {
             {users.length === 0 ? <span className="field-empty-hint">Nenhum usuário ativo com e-mail foi encontrado no Supabase.</span> : null}
           </Field>
           <Field label="Data de início"><input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></Field>
-          <Field label="Modelo de tarefas" hint="Opcional. Prazos são calculados a partir da data de início."><select value={form.template_id} onChange={(event) => setForm({ ...form, template_id: event.target.value })}><option value="">Sem modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></Field>
-          {selectedTemplate ? <div className="template-preview form-span-2"><strong>{selectedTemplate.name}</strong><p>{selectedTemplate.description}</p><span>{selectedTemplate.task_count} tarefas com prazos relativos · responsável inicial herdado do projeto</span></div> : null}
+          <Field label="Modelo de atividades" hint="Opcional. Prazos são calculados a partir da data de início."><select value={form.template_id} onChange={(event) => setForm({ ...form, template_id: event.target.value })}><option value="">Sem modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></Field>
+          {selectedTemplate ? <div className="template-preview form-span-2"><strong>{selectedTemplate.name}</strong><p>{selectedTemplate.description}</p><span>{selectedTemplate.task_count} atividades com prazos relativos · responsável inicial herdado do projeto</span></div> : null}
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar e abrir projeto</Button></div>
         </form>
       </Dialog>
@@ -473,4 +457,8 @@ export default function ProjectsPage() {
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
   );
+}
+
+export default function ProjectsPage() {
+  return <ProjectsWorkspace category="operational" />;
 }

@@ -4,10 +4,11 @@ export const DEPARTMENTS: Department[] = [
   { slug: "novos-negocios", name: "Novos negócios", position: 1 },
   { slug: "obras", name: "Obras", position: 2 },
   { slug: "projetos", name: "Projetos", position: 3 },
-  { slug: "alugueis", name: "Aluguéis", position: 4 },
-  { slug: "processos", name: "Processos", position: 5 },
-  { slug: "pauta-ra", name: "Pauta e RA", position: 6 },
-  { slug: "indicadores", name: "Indicadores", position: 7 },
+  { slug: "governanca", name: "Governança", position: 4 },
+  { slug: "alugueis", name: "Aluguéis", position: 5 },
+  { slug: "processos", name: "Processos", position: 6 },
+  { slug: "pauta-ra", name: "Pauta e RA", position: 7 },
+  { slug: "indicadores", name: "Indicadores", position: 8 },
 ];
 
 export const MANAGEMENT_AREAS: Array<{ slug: ManagementAreaSlug; name: string }> = [
