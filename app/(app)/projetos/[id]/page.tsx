@@ -14,6 +14,7 @@ import type { BusinessStage, Project, ProjectCategory, ProjectComment, ProjectFi
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowLeftRight,
   Building2,
   Calendar,
   CheckCircle2,
@@ -36,7 +37,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 type LinkedBusiness = {
@@ -57,9 +58,13 @@ const projectTabs = [
 
 export function ProjectDetailWorkspace({ category }: { category: ProjectCategory }) {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const supabase = getSupabase();
   const governance = category === "governance";
   const baseHref = governance ? "/governanca" : "/projetos";
+  const targetCategory: ProjectCategory = governance ? "operational" : "governance";
+  const targetHref = governance ? "/projetos" : "/governanca";
+  const targetLabel = governance ? "Projetos" : "Governança";
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [comments, setComments] = useState<ProjectComment[]>([]);
@@ -68,6 +73,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
   const [linkedBusinesses, setLinkedBusinesses] = useState<LinkedBusiness[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [fullAccess, setFullAccess] = useState(true);
+  const [canMoveCategory, setCanMoveCategory] = useState(false);
   const [allowFiles, setAllowFiles] = useState(true);
   const [allowUpdates, setAllowUpdates] = useState(true);
   const [activeTab, setActiveTab] = useState<ProjectTab>(() => {
@@ -82,6 +88,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
   const [taskDialog, setTaskDialog] = useState(false);
   const [memberDialog, setMemberDialog] = useState(false);
   const [fileDialog, setFileDialog] = useState(false);
+  const [moveDialog, setMoveDialog] = useState(false);
   const [taskForm, setTaskForm] = useState<ProjectTaskDraft>(() => emptyProjectTaskDraft(params.id, todayIso()));
   const [memberForm, setMemberForm] = useState({ user_id: "", role: "" });
   const [fileForm, setFileForm] = useState({ file: null as globalThis.File | null });
@@ -94,7 +101,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
     if (!silent) setLoading(true);
     const { data: currentAuth } = await supabase.auth.getUser();
     const currentUserId = currentAuth.user?.id || "00000000-0000-0000-0000-000000000000";
-    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult, fullAccessResult] = await Promise.all([
+    const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult, fullAccessResult, targetPermissionResult] = await Promise.all([
       supabase.from("project_progress_summary").select("*").eq("id", params.id).eq("category", category).single(),
       supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS}`).eq("project_id", params.id).eq("category", category).order("position"),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
@@ -105,6 +112,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
       supabase.from("profiles").select("is_admin").eq("user_id", currentUserId).maybeSingle(),
       supabase.from("profile_project_permissions").select("access_scope,allow_files,allow_updates").eq("user_id", currentUserId).maybeSingle(),
       supabase.rpc("has_project_full_access", { p_project_id: params.id }),
+      supabase.rpc("can_create_project", { p_category: targetCategory }),
     ]);
     if (projectResult.error) {
       setToast({ message: friendlyError(projectResult.error), type: "error" });
@@ -128,10 +136,11 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
     setUsers((userResult.data || []) as UserProfile[]);
     const administrator = Boolean(profileResult.data?.is_admin);
     setFullAccess(administrator || Boolean(fullAccessResult.data));
+    setCanMoveCategory(Boolean(targetPermissionResult.data));
     setAllowFiles(administrator || permissionResult.data?.allow_files !== false);
     setAllowUpdates(administrator || permissionResult.data?.allow_updates !== false);
     setLoading(false);
-  }, [category, params.id, supabase]);
+  }, [category, params.id, supabase, targetCategory]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -231,6 +240,19 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setToast({ message: "Dados gerais do projeto atualizados.", type: "success" });
     await loadData();
+  }
+
+  async function moveProject() {
+    if (!supabase || !project || !canMoveCategory) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("move_project_to_category", {
+      p_project_id: project.id,
+      p_category: targetCategory,
+    });
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    setMoveDialog(false);
+    router.replace(`${targetHref}/${project.id}`);
   }
 
   async function addComment(event: FormEvent) {
@@ -385,7 +407,10 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
           <h1>{project.name}</h1>
           <p><Users size={14} /> {project.owner_name} · {project.owner_email} <span /> <Calendar size={14} /> {dateBr(project.start_date)} a {dateBr(project.end_date)}</p>
         </div>
-        <div className="email-actions"><Button onClick={saveProjectPdf} loading={generatingPdf}><FileDown size={16} /> Salvar PDF</Button></div>
+        <div className="email-actions">
+          {fullAccess && canMoveCategory ? <Button variant="secondary" onClick={() => setMoveDialog(true)}><ArrowLeftRight size={16} /> Mover para {targetLabel}</Button> : null}
+          <Button onClick={saveProjectPdf} loading={generatingPdf}><FileDown size={16} /> Salvar PDF</Button>
+        </div>
       </header>
 
       <section className="project-progress-strip">
@@ -477,6 +502,20 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
       <ProjectTaskEditor open={taskDialog} onClose={() => setTaskDialog(false)} onSubmit={saveTask} form={taskForm} onChange={setTaskForm} users={users} lockProject saving={saving} />
       <Dialog open={memberDialog} onClose={() => setMemberDialog(false)} title="Adicionar envolvido" description="Selecione um usuário do Supabase para participar do projeto."><form className="form-grid" onSubmit={addMember}><Field label="Usuário" hint="A lista exibe nome e e-mail dos usuários ativos." className="form-span-2"><UserSelect users={users} value={memberForm.user_id} onChange={(user) => setMemberForm({ ...memberForm, user_id: user?.user_id || "" })} required /></Field><Field label="Papel no projeto" className="form-span-2"><input value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} placeholder="Ex.: Diretoria, Engenharia" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMemberDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!memberForm.user_id}>Adicionar</Button></div></form></Dialog>
       <Dialog open={fileDialog} onClose={() => setFileDialog(false)} title="Adicionar arquivo" description="Arquivos ficam protegidos no storage do Supabase."><form className="form-grid" onSubmit={uploadFile}><Field label="Arquivo" hint="Imagens ou documentos de até 20 MB."><label className="file-drop"><Upload size={21} /><span>{fileForm.file?.name || "Selecionar arquivo"}</span><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => setFileForm({ file: event.target.files?.[0] || null })} required /></label></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setFileDialog(false)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!fileForm.file}>Enviar arquivo</Button></div></form></Dialog>
+      <Dialog
+        open={moveDialog}
+        onClose={() => setMoveDialog(false)}
+        title={`Mover para ${targetLabel}?`}
+        description={`O projeto e todas as atividades passarão para ${targetLabel}. Responsáveis, subtarefas, comentários, arquivos e vínculos serão preservados.`}
+      >
+        <div className="confirmation-content">
+          <strong>{project.name}</strong>
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setMoveDialog(false)}>Cancelar</Button>
+            <Button type="button" loading={saving} onClick={() => void moveProject()}><ArrowLeftRight size={16} /> Mover para {targetLabel}</Button>
+          </div>
+        </div>
+      </Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
   );

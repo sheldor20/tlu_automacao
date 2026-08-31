@@ -90,6 +90,12 @@ export function friendlyError(error: unknown) {
   if (message.includes("department_access_required")) {
     return "Seu usuário não possui acesso a este departamento.";
   }
+  if (message.includes("project_move_access_required")) {
+    return "Seu usuário não possui permissão para mover este projeto.";
+  }
+  if (message.includes("project_target_access_required")) {
+    return "Seu usuário não possui permissão para criar projetos na área de destino.";
+  }
   if (message.includes("management_indicator_values") || message.includes("management_business_funnel_snapshot")) {
     return "A base de indicadores ainda não foi instalada. Execute a migration de indicadores no Supabase.";
   }
