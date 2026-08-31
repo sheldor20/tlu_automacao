@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from "@supabase/supabase
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "alugueis", "processos", "pauta-ra", "indicadores"]);
+const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "governanca", "alugueis", "processos", "pauta-ra", "indicadores"]);
 const indicatorAreaSchema = z.enum([
   "empresa",
   "juridico-vendas-cobranca",
@@ -25,7 +25,7 @@ const createUserSchema = z.object({
   password: z.string().min(8).max(72),
   active: z.boolean().default(true),
   is_admin: z.boolean().default(false),
-  departments: z.array(departmentSchema).max(7),
+  departments: z.array(departmentSchema).max(8),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
@@ -44,7 +44,7 @@ const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
   active: z.boolean(),
   is_admin: z.boolean(),
-  departments: z.array(departmentSchema).max(7),
+  departments: z.array(departmentSchema).max(8),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
@@ -223,7 +223,7 @@ export async function POST(request: Request) {
       created.user.id,
       departments.includes("indicadores") ? indicator_areas : [],
     );
-    await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos"), project_permission);
+    await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, created.user.id, departments.includes("processos"), process_permission.can_manage);
     await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
@@ -288,7 +288,7 @@ export async function PATCH(request: Request) {
       user_id,
       departments.includes("indicadores") ? indicator_areas : [],
     );
-    await replaceProjectPermission(context.service, user_id, departments.includes("projetos"), project_permission);
+    await replaceProjectPermission(context.service, user_id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, user_id, departments.includes("processos"), process_permission.can_manage);
     await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {
@@ -297,4 +297,33 @@ export async function PATCH(request: Request) {
   }
 
   return NextResponse.json({ ok: true, caller_id: context.caller.id });
+}
+
+export async function DELETE(request: Request) {
+  const context = await requireAdmin(request);
+  if (context instanceof NextResponse) return context;
+
+  const parsed = z.object({ user_id: z.string().uuid() }).safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Usuário inválido." }, { status: 400 });
+  if (parsed.data.user_id === context.caller.id) {
+    return NextResponse.json({ error: "Você não pode excluir o próprio acesso." }, { status: 409 });
+  }
+
+  const { data: target, error: targetError } = await context.service
+    .from("profiles")
+    .select("is_admin,active")
+    .eq("user_id", parsed.data.user_id)
+    .single();
+  if (targetError || !target) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+
+  if (target.is_admin && target.active) {
+    const { count } = await context.service.from("profiles").select("user_id", { count: "exact", head: true }).eq("is_admin", true).eq("active", true);
+    if ((count || 0) <= 1) return NextResponse.json({ error: "Mantenha ao menos um administrador ativo no sistema." }, { status: 409 });
+  }
+
+  const { error } = await context.service.auth.admin.deleteUser(parsed.data.user_id, true);
+  if (error) return NextResponse.json({ error: error.message || "Não foi possível excluir o usuário." }, { status: 400 });
+  const { error: profileError } = await context.service.from("profiles").update({ active: false, is_admin: false, deleted_at: new Date().toISOString() }).eq("user_id", parsed.data.user_id);
+  if (profileError) return NextResponse.json({ error: "O login foi removido, mas o perfil precisa ser ocultado manualmente." }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }

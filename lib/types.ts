@@ -128,6 +128,7 @@ export type UserProfile = {
   email: string;
   active: boolean;
   is_admin: boolean;
+  deleted_at?: string | null;
 };
 
 export type ProfileReportingLine = {
@@ -139,7 +140,7 @@ export type TodayVisibleUser = Pick<UserProfile, "user_id" | "full_name" | "emai
   is_self: boolean;
 };
 
-export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "alugueis" | "processos" | "pauta-ra" | "indicadores";
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "governanca" | "alugueis" | "processos" | "pauta-ra" | "indicadores";
 
 export type Department = {
   slug: DepartmentSlug;
@@ -226,9 +227,11 @@ export type ConstructionBudget = {
 
 export type ProjectStatus = "planejamento" | "ativo" | "pausado" | "concluido";
 export type TaskStatus = "a_fazer" | "em_andamento" | "concluida";
+export type ProjectCategory = "operational" | "governance";
 
 export type Project = {
   id: string;
+  category: ProjectCategory;
   name: string;
   start_date: string;
   end_date: string | null;
@@ -251,6 +254,7 @@ export type ProjectTask = {
   id: string;
   project_id: string | null;
   project_name?: string | null;
+  category: ProjectCategory;
   title: string;
   description: string | null;
   assignee_user_id: string | null;
@@ -262,6 +266,33 @@ export type ProjectTask = {
   completed_at: string | null;
   created_by?: string;
   created_at: string;
+  assignees?: ProjectTaskAssignee[];
+  subtasks?: ProjectSubtask[];
+};
+
+export type ProjectTaskAssignee = {
+  task_id: string;
+  user_id: string;
+  assignee_name: string;
+  assignee_email: string;
+};
+
+export type ProjectSubtaskAssignee = {
+  subtask_id: string;
+  user_id: string;
+  assignee_name: string;
+  assignee_email: string;
+};
+
+export type ProjectSubtask = {
+  id: string;
+  task_id: string;
+  title: string;
+  position: number;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  assignees?: ProjectSubtaskAssignee[];
 };
 
 export type ProcessStatus = "rascunho" | "publicado" | "arquivado";
@@ -337,7 +368,9 @@ export type ProjectComment = {
   project_id: string;
   body: string;
   author_name: string;
+  created_by: string;
   created_at: string;
+  updated_at: string;
 };
 
 export type ProjectMember = {
@@ -347,6 +380,8 @@ export type ProjectMember = {
   name: string;
   email: string;
   role: string | null;
+  created_by?: string;
+  created_at?: string;
 };
 
 export type ProjectFile = {
@@ -355,6 +390,7 @@ export type ProjectFile = {
   file_path: string;
   file_name: string;
   mime_type: string | null;
+  uploaded_by?: string;
   created_at: string;
   signed_url?: string;
 };
