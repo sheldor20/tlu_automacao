@@ -5,7 +5,7 @@ import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
 import { sumMetricSeries } from "@/lib/management-metrics";
-import { monthsThroughLastClosed } from "@/lib/management-period";
+import { monthsThroughLastClosed, previousClosedMonth } from "@/lib/management-period";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
   ManagementAreaSlug,
@@ -122,13 +122,6 @@ function buildCurrentYearMonths(year: number) {
       isCurrent: index === currentMonth,
     };
   });
-}
-
-function previousClosedMonth(months: Array<{ key: string; label: string; isCurrent: boolean }>, year: number) {
-  const currentIndex = months.findIndex((month) => month.isCurrent);
-  if (currentIndex > 0) return months[currentIndex - 1];
-  const date = new Date(year - 1, 11, 1, 12);
-  return { key: `${year - 1}-12-01`, label: monthFormatter.format(date).replace(".", ""), isCurrent: false };
 }
 
 function toNumber(value: unknown) {
@@ -527,16 +520,12 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   const latestRevenue = metricValue("receita_consolidada");
   const latestExpense = metricValue("despesa_consolidada");
   const result = reportedResult ?? (latestRevenue !== null && latestExpense !== null ? latestRevenue - latestExpense : null);
-  const derivedResultSeries = months.map((_, index) => {
-    const reported = seriesFor("resultado_gerencial")[index];
-    const monthRevenue = seriesFor("receita_consolidada")[index];
-    const monthExpense = seriesFor("despesa_consolidada")[index];
-    return reported ?? (monthRevenue !== null && monthExpense !== null ? monthRevenue - monthExpense : null);
-  });
   const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
   const previousRevenue = previousMonth ? metricValueForMonth("receita_consolidada", previousMonth.key) : null;
   const previousExpense = previousMonth ? metricValueForMonth("despesa_consolidada", previousMonth.key) : null;
   const previousResult = previousMonth ? metricValueForMonth("resultado_gerencial", previousMonth.key) ?? (previousRevenue !== null && previousExpense !== null ? previousRevenue - previousExpense : null) : null;
+  const previousCash = previousMonth ? metricValueForMonth("valor_caixa", previousMonth.key) : null;
+  const closedMonthLabels = [previousMonth.label];
   const cash = metricValue("valor_caixa");
   const availableCash = metricValue("caixa_disponivel");
   const rentalCash = cash !== null && availableCash !== null ? cash - availableCash : null;
@@ -566,8 +555,8 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
         <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult)}</strong></article>
       </section>
       <section className="management-two-columns">
-        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Evolução mensal</span><h2>Receitas e despesas</h2></div></div><GroupedBarChart labels={months.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: revenueSeries }, { label: "Despesas", color: "#b3875b", values: expenseSeries }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Resultado e liquidez</span><h2>Resultado gerencial e caixa</h2></div></div><TrendChart labels={months.map((month) => month.label)} series={[{ label: "Resultado", color: "#405343", values: derivedResultSeries }, { label: "Caixa", color: "#8aa083", values: seriesFor("valor_caixa") }]} /></article>
+        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Fechamento de {previousMonth.label}</span><h2>Receitas e despesas</h2><p>Somente o último mês fechado.</p></div></div><GroupedBarChart labels={closedMonthLabels} series={[{ label: "Receitas", color: "#405343", values: [previousRevenue] }, { label: "Despesas", color: "#b3875b", values: [previousExpense] }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Fechamento de {previousMonth.label}</span><h2>Resultado gerencial e caixa</h2><p>Somente o último mês fechado.</p></div></div><TrendChart labels={closedMonthLabels} series={[{ label: "Resultado", color: "#405343", values: [previousResult] }, { label: "Caixa", color: "#8aa083", values: [previousCash] }]} /></article>
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Composição</span><h2>Receitas por plano de contas</h2></div></div><BreakdownList items={revenueBreakdown} emptyLabel="As contas de receita aparecerão após a primeira carga." /></article>

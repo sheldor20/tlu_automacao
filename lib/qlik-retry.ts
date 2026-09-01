@@ -4,5 +4,5 @@ export function isRecoverableQlikBrowserError(error: unknown) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-  return /target closed|session closed|browser (?:has )?disconnected|connection closed|protocol error.*closed|tempo esgotado ao abrir o websocket|nao foi possivel abrir o websocket autenticado|pagina nao abriu uma conexao nativa autenticada/.test(message);
+  return /target closed|session closed|browser (?:has )?disconnected|connection closed|protocol error.*closed|waiting failed:\s*\d+ms exceeded|tempo esgotado ao abrir o websocket|nao foi possivel abrir o websocket autenticado|pagina nao abriu uma conexao nativa autenticada/.test(message);
 }

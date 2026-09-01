@@ -9,6 +9,7 @@ import {
   validateFinanceSnapshots,
 } from "@/lib/qlik-finance";
 import { saoPauloYearMonth } from "@/lib/qlik-legal-sales";
+import { isRecoverableQlikBrowserError } from "@/lib/qlik-retry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,16 +78,30 @@ export async function GET(request: Request) {
     .eq("slug", QLIK_FINANCE_CONNECTION_SLUG);
 
   let phase = "load-browser-runtime";
+  let recoveredBrowserSession = false;
   try {
     const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
-    phase = "open-finance-app-and-read-indicators";
-    const rawSnapshots = await scrapeQlikCloudMetrics({
-      username,
-      password,
-      apps: QLIK_FINANCE_APPS,
-      year,
-      throughMonth: month,
-    });
+    let rawSnapshots: Awaited<ReturnType<typeof scrapeQlikCloudMetrics>> = [];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      phase = `open-finance-app-and-read-indicators:attempt-${attempt}`;
+      try {
+        rawSnapshots = await scrapeQlikCloudMetrics({
+          username,
+          password,
+          apps: QLIK_FINANCE_APPS,
+          year,
+          throughMonth: month,
+        });
+        recoveredBrowserSession = attempt === 2;
+        break;
+      } catch (error) {
+        if (attempt === 2 || !isRecoverableQlikBrowserError(error)) throw error;
+        console.warn("A sessão financeira do Qlik falhou; iniciando uma tentativa limpa.", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
     phase = "validate-finance-indicators";
     const snapshotsWithOverrides = applyFinanceMetricOverrides(
       rawSnapshots,
@@ -122,6 +137,7 @@ export async function GET(request: Request) {
           through_month: month,
           company_rows: companyRows.length,
           finance_purchases_rows: rentalRows.length,
+          recovered_browser_session: recoveredBrowserSession,
           duration_ms: Date.now() - startedAt,
         },
       }).eq("id", run.id),
@@ -157,6 +173,7 @@ export async function GET(request: Request) {
       },
       rows_read: rawSnapshots.length,
       rows_written: written,
+      recovered_browser_session: recoveredBrowserSession,
       duration_ms: Date.now() - startedAt,
     });
   } catch (error) {
