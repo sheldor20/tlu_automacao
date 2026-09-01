@@ -17,6 +17,7 @@ test("repete o lote quando a abertura do WebSocket Qlik expira", () => {
 test("mantém a recuperação de encerramentos transitórios do Chromium", () => {
   assert.equal(isRecoverableQlikBrowserError(new Error("Protocol error: Target closed")), true);
   assert.equal(isRecoverableQlikBrowserError(new Error("Browser has disconnected")), true);
+  assert.equal(isRecoverableQlikBrowserError(new Error("TimeoutError: Waiting failed: 120000ms exceeded")), true);
 });
 
 test("não repete erros funcionais ou de validação dos indicadores", () => {
