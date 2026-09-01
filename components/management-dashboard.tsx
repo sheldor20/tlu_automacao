@@ -608,7 +608,7 @@ function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metric
       <section className="management-panel">
         <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Sem processo e Autorizadas no último dia útil disponível de cada mês, de janeiro até o fechamento de {closedMonth.label}.</p></div></div>
         <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(closedValue(key))}</strong><small>{closedHelper(key)}</small></article>)}</div>
-        <TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b96c62", values: closedSeries("unidades_sem_processo") }, { label: "Autorizadas", color: "#405343", values: closedSeries("unidades_autorizadas_escrituracao") }]} />
+        <TrendChart compact labels={chartMonths.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b47c73", values: closedSeries("unidades_sem_processo") }, { label: "Autorizadas", color: "#667d68", values: closedSeries("unidades_autorizadas_escrituracao") }]} />
       </section>
     </div>
   );

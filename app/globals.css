@@ -1435,6 +1435,18 @@ h1, h2, h3, p { margin-top: 0; }
 .chart-legend { min-height: 28px; padding: 0 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 8px; height: 8px; border-radius: 3px; }
+.management-chart-wrap-compact { width: min(100%,760px); min-height: 228px; margin: 0 auto; padding: 5px 10px 8px; }
+.management-chart-compact { min-height: 198px; }
+.management-chart-compact .chart-grid-line { stroke: #eef0ec; stroke-dasharray: 2 6; }
+.management-chart-compact .chart-axis-value { fill: #989f9a; font-size: 11px; font-weight: 580; }
+.management-chart-compact .chart-axis-label { fill: #7c857f; font-size: 12px; font-weight: 650; }
+.management-chart-compact .chart-axis-label-current { fill: var(--moss-700); font-weight: 760; }
+.management-chart-compact .chart-current-band { fill: #f7f9f6; stroke: #e9eee7; }
+.management-chart-compact .chart-data-label { fill: #5c665f; font-size: 11px; font-weight: 680; stroke-width: 2px; }
+.management-chart-compact .chart-data-label-current { fill: white; font-size: 11px; font-weight: 760; stroke: none; }
+.management-chart-wrap-compact .chart-current-value-bg { fill: #55695a; filter: drop-shadow(0 2px 3px rgba(31,46,35,.12)); }
+.management-chart-wrap-compact .chart-legend { min-height: 22px; padding: 0 8px; gap: 18px; font-size: 11px; font-weight: 650; }
+.management-chart-wrap-compact .chart-legend i { width: 7px; height: 7px; border-radius: 999px; }
 .chart-empty-state { position: absolute; inset: 26px 24px 47px 62px; display: flex; align-items: center; justify-content: center; gap: 9px; background: rgba(255,255,255,.78); color: var(--muted); font-size: 10px; font-weight: 680; backdrop-filter: blur(2px); }
 .chart-empty-state span { width: 8px; height: 8px; border-radius: 999px; background: var(--sage-300); }
 .management-people-view .management-panel-head h2,
@@ -1534,6 +1546,8 @@ h1, h2, h3, p { margin-top: 0; }
   .management-panel-head .button { width: 39px; padding: 0; font-size: 0; }
   .management-chart-wrap { min-height: 245px; padding: 6px 5px; overflow-x: auto; }
   .management-chart { min-width: 620px; min-height: 215px; }
+  .management-chart-wrap-compact { min-height: 208px; padding: 3px 4px 7px; }
+  .management-chart-compact { min-width: 560px; min-height: 180px; }
   .chart-legend { position: sticky; left: 0; }
   .chart-empty-state { position: sticky; left: 0; width: calc(100vw - 70px); min-height: 150px; margin-top: -210px; margin-bottom: 46px; inset: auto; }
   .management-stage-kpis { padding: 13px 13px 0; grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -1622,6 +1636,13 @@ body.management-presenting .chart-axis-label { font-size: 16px; }
 body.management-presenting .chart-data-label,
 body.management-presenting .chart-data-label-current { font-size: 15px; }
 body.management-presenting .chart-legend { min-height: 23px; padding: 0 7px; gap: 10px; font-size: 12px; }
+body.management-presenting .management-chart-wrap-compact { width: min(100%,720px); height: 154px; min-height: 154px; margin: 0 auto; }
+body.management-presenting .management-chart-compact { height: 130px; min-height: 130px; }
+body.management-presenting .management-chart-compact .chart-axis-value,
+body.management-presenting .management-chart-compact .chart-axis-label,
+body.management-presenting .management-chart-compact .chart-data-label,
+body.management-presenting .management-chart-compact .chart-data-label-current { font-size: 11px; }
+body.management-presenting .management-chart-wrap-compact .chart-legend { font-size: 11px; }
 body.management-presenting .management-people-view .management-chart-wrap { height: 210px; min-height: 210px; }
 body.management-presenting .management-people-view .management-chart { height: 184px; min-height: 184px; }
 body.management-presenting .management-people-view .management-panel-head h2 { font-size: 18px; }
