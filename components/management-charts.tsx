@@ -49,16 +49,20 @@ export function TrendChart({
   series,
   emptyLabel = "Aguardando dados mensais",
   fixedRange,
+  compact = false,
 }: {
   labels: string[];
   series: ChartSeries[];
   emptyLabel?: string;
   fixedRange?: { min: number; max: number };
+  compact?: boolean;
 }) {
   const gradientId = useId().replace(/:/g, "");
-  const width = 680;
-  const height = 300;
-  const padding = { left: 58, right: 26, top: 48, bottom: 50 };
+  const width = compact ? 760 : 680;
+  const height = compact ? 210 : 300;
+  const padding = compact
+    ? { left: 48, right: 20, top: 34, bottom: 36 }
+    : { left: 58, right: 26, top: 48, bottom: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const calculatedBounds = chartBounds(series);
@@ -68,13 +72,15 @@ export function TrendChart({
   const range = bounds.max - bounds.min || 1;
   const x = (index: number) => padding.left + (labels.length <= 1 ? chartWidth / 2 : index * chartWidth / (labels.length - 1));
   const y = (value: number) => padding.top + (bounds.max - value) * chartHeight / range;
-  const ticks = Array.from({ length: 5 }, (_, index) => bounds.min + range * index / 4).reverse();
+  const tickCount = compact ? 4 : 5;
+  const tickDivisor = tickCount - 1;
+  const ticks = Array.from({ length: tickCount }, (_, index) => bounds.min + range * index / tickDivisor).reverse();
   const latestIndex = latestDataIndex(series);
   const monthSpacing = labels.length > 1 ? chartWidth / (labels.length - 1) : chartWidth;
 
   return (
-    <div className="management-chart-wrap">
-      <svg className="management-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={series.map((item) => item.label).join(" e ")}>
+    <div className={`management-chart-wrap${compact ? " management-chart-wrap-compact" : ""}`}>
+      <svg className={`management-chart${compact ? " management-chart-compact" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={series.map((item) => item.label).join(" e ")}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={series[0]?.color || "#405343"} stopOpacity=".22" />
@@ -84,15 +90,15 @@ export function TrendChart({
         {latestIndex >= 0 ? (
           <rect
             x={clamp(x(latestIndex) - monthSpacing * .42, padding.left, width - padding.right - monthSpacing * .84)}
-            y={padding.top - 26}
+            y={padding.top - (compact ? 18 : 26)}
             width={monthSpacing * .84}
-            height={chartHeight + 31}
-            rx="9"
+            height={chartHeight + (compact ? 22 : 31)}
+            rx={compact ? 7 : 9}
             className="chart-current-band"
           />
         ) : null}
         {ticks.map((tick, index) => {
-          const tickY = padding.top + index * chartHeight / 4;
+          const tickY = padding.top + index * chartHeight / tickDivisor;
           return (
             <g key={`${tick}-${index}`}>
               <line x1={padding.left} x2={width - padding.right} y1={tickY} y2={tickY} className="chart-grid-line" />
@@ -101,9 +107,9 @@ export function TrendChart({
           );
         })}
         {labels.map((label, index) => (
-          <text key={`${label}-${index}`} x={x(index)} y={height - 14} textAnchor="middle" className={`chart-axis-label${index === latestIndex ? " chart-axis-label-current" : ""}`}>{label}</text>
+          <text key={`${label}-${index}`} x={x(index)} y={height - (compact ? 10 : 14)} textAnchor="middle" className={`chart-axis-label${index === latestIndex ? " chart-axis-label-current" : ""}`}>{label}</text>
         ))}
-        {bounds.hasData && series[0] ? (() => {
+        {!compact && bounds.hasData && series[0] ? (() => {
           const areaPoints = series[0].values
             .map((value, index) => value === null ? null : { value, index })
             .filter((point): point is { value: number; index: number } => Boolean(point));
@@ -117,21 +123,22 @@ export function TrendChart({
           const currentPoint = validPoints.at(-1);
           return (
             <g key={item.label}>
-              {path ? <path d={path} fill="none" stroke={item.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
+              {path ? <path d={path} fill="none" stroke={item.color} strokeWidth={compact ? 2 : 3} strokeLinecap="round" strokeLinejoin="round" /> : null}
               {validPoints.map((point) => {
                 const isCurrent = currentPoint?.index === point.index;
                 const label = dataLabel(point.value);
-                const labelWidth = Math.max(34, label.length * 8.4 + 16);
+                const labelWidth = compact ? Math.max(28, label.length * 6.8 + 12) : Math.max(34, label.length * 8.4 + 16);
                 const labelX = isCurrent
                   ? clamp(x(point.index), padding.left + labelWidth / 2, width - padding.right - labelWidth / 2)
                   : x(point.index);
-                const preferredLabelY = y(point.value) + (seriesIndex % 2 === 0 ? -16 : 23);
-                const labelY = clamp(preferredLabelY, padding.top - 16, padding.top + chartHeight + 23);
+                const preferredLabelY = y(point.value) + (seriesIndex % 2 === 0 ? (compact ? -11 : -16) : (compact ? 17 : 23));
+                const labelY = clamp(preferredLabelY, padding.top - (compact ? 11 : 16), padding.top + chartHeight + (compact ? 17 : 23));
+                const currentLabelHeight = compact ? 18 : 23;
                 return (
                   <g key={`${item.label}-${point.index}`}>
-                    {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - 16} width={labelWidth} height="23" rx="11.5" className="chart-current-value-bg" /> : null}
+                    {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - (compact ? 13 : 16)} width={labelWidth} height={currentLabelHeight} rx={currentLabelHeight / 2} className="chart-current-value-bg" /> : null}
                     <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text>
-                    <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? 6 : 4} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth="3">
+                    <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? (compact ? 4.5 : 6) : (compact ? 3 : 4)} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth={compact ? 2 : 3}>
                       <title>{`${item.label}: ${point.value.toLocaleString("pt-BR")}`}</title>
                     </circle>
                   </g>
