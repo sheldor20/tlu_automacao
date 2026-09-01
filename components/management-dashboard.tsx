@@ -524,8 +524,17 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   const previousRevenue = previousMonth ? metricValueForMonth("receita_consolidada", previousMonth.key) : null;
   const previousExpense = previousMonth ? metricValueForMonth("despesa_consolidada", previousMonth.key) : null;
   const previousResult = previousMonth ? metricValueForMonth("resultado_gerencial", previousMonth.key) ?? (previousRevenue !== null && previousExpense !== null ? previousRevenue - previousExpense : null) : null;
-  const previousCash = previousMonth ? metricValueForMonth("valor_caixa", previousMonth.key) : null;
-  const closedMonthLabels = [previousMonth.label];
+  const closedMonths = monthsThroughLastClosed(months);
+  const chartMonths = closedMonths.length ? closedMonths : [previousMonth];
+  const chartRevenue = chartMonths.map((month) => metricValueForMonth("receita_consolidada", month.key));
+  const chartExpenses = chartMonths.map((month) => metricValueForMonth("despesa_consolidada", month.key));
+  const chartResult = chartMonths.map((month, index) => {
+    const reported = metricValueForMonth("resultado_gerencial", month.key);
+    const revenueValue = chartRevenue[index];
+    const expenseValue = chartExpenses[index];
+    return reported ?? (revenueValue !== null && expenseValue !== null ? revenueValue - expenseValue : null);
+  });
+  const chartCash = chartMonths.map((month) => metricValueForMonth("valor_caixa", month.key));
   const cash = metricValue("valor_caixa");
   const availableCash = metricValue("caixa_disponivel");
   const rentalCash = cash !== null && availableCash !== null ? cash - availableCash : null;
@@ -555,8 +564,8 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
         <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult)}</strong></article>
       </section>
       <section className="management-two-columns">
-        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Fechamento de {previousMonth.label}</span><h2>Receitas e despesas</h2><p>Somente o último mês fechado.</p></div></div><GroupedBarChart labels={closedMonthLabels} series={[{ label: "Receitas", color: "#405343", values: [previousRevenue] }, { label: "Despesas", color: "#b3875b", values: [previousExpense] }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Fechamento de {previousMonth.label}</span><h2>Resultado gerencial e caixa</h2><p>Somente o último mês fechado.</p></div></div><TrendChart labels={closedMonthLabels} series={[{ label: "Resultado", color: "#405343", values: [previousResult] }, { label: "Caixa", color: "#8aa083", values: [previousCash] }]} /></article>
+        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Histórico até {previousMonth.label}</span><h2>Receitas e despesas</h2><p>Todos os meses até o último fechamento.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: chartRevenue }, { label: "Despesas", color: "#b3875b", values: chartExpenses }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Histórico até {previousMonth.label}</span><h2>Resultado gerencial e caixa</h2><p>Todos os meses até o último fechamento.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Resultado", color: "#405343", values: chartResult }, { label: "Caixa", color: "#8aa083", values: chartCash }]} /></article>
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Composição</span><h2>Receitas por plano de contas</h2></div></div><BreakdownList items={revenueBreakdown} emptyLabel="As contas de receita aparecerão após a primeira carga." /></article>
