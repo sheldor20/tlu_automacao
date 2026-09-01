@@ -1,10 +1,10 @@
 "use client";
 
-import { ManagementDashboard } from "@/components/management-dashboard";
-import type { ManagementAreaSlug } from "@/lib/types";
+import { ManagementDashboardRefresh } from "@/components/management-dashboard-refresh";
+import type { ManagementIndicatorArea } from "@/lib/indicator-refresh";
 import { useParams } from "next/navigation";
 
 export default function ManagementAreaPage() {
   const params = useParams<{ area: string }>();
-  return <ManagementDashboard area={params.area as ManagementAreaSlug} />;
+  return <ManagementDashboardRefresh area={params.area as ManagementIndicatorArea} />;
 }
