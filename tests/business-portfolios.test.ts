@@ -10,7 +10,8 @@ import {
 
 const migration = readFileSync(new URL("../supabase/migrations/20260908120000_new_business_portfolios_and_files.sql", import.meta.url), "utf8");
 const uploadFixMigration = readFileSync(new URL("../supabase/migrations/20260908150000_business_video_upload_limit.sql", import.meta.url), "utf8");
-const funnelMigration = readFileSync(new URL("../supabase/migrations/20260908170000_single_business_funnel_by_stage.sql", import.meta.url), "utf8");
+const stageMigration = readFileSync(new URL("../supabase/migrations/20260908170000_add_awaiting_business_stage.sql", import.meta.url), "utf8");
+const funnelMigration = readFileSync(new URL("../supabase/migrations/20260908170100_single_business_funnel_by_stage.sql", import.meta.url), "utf8");
 const portfolio = readFileSync(new URL("../components/new-business-portfolio.tsx", import.meta.url), "utf8");
 const fileManager = readFileSync(new URL("../components/business-file-manager.tsx", import.meta.url), "utf8");
 const storageUpload = readFileSync(new URL("../lib/business-storage-upload.ts", import.meta.url), "utf8");
@@ -33,6 +34,9 @@ test("particiona o funil único pela fase atual", () => {
   assert.equal(businessPortfolioSectionForStage("contrato"), "prospeccao");
   assert.equal(businessPortfolioSectionForStage("obra"), "esteira_negocios");
   assert.match(portfolio, /\.in\("stage", \[\.\.\.sectionStageKeys\]\)/);
+  assert.match(stageMigration, /add value if not exists 'aguardando' before 'prospeccao'/);
+  assert.doesNotMatch(stageMigration, /business_portfolio_section_for_stage/);
+  assert.doesNotMatch(funnelMigration, /add value if not exists 'aguardando'/);
   assert.match(funnelMigration, /before insert or update of stage, portfolio_section/);
   assert.match(funnelMigration, /new\.portfolio_section := public\.business_portfolio_section_for_stage\(new\.stage\)/);
 });
