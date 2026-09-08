@@ -25,12 +25,13 @@ export const BUSINESS_STAGES: Array<{
   label: string;
   shortLabel: string;
 }> = [
+  { key: "aguardando", label: "Aguardando", shortLabel: "Aguardando" },
   { key: "prospeccao", label: "Prospecção", shortLabel: "Prospecção" },
   { key: "viabilidade", label: "Viabilidade", shortLabel: "Viabilidade" },
   { key: "contrato", label: "Contrato", shortLabel: "Contrato" },
   {
     key: "viabilidade_mercadologica",
-    label: "Viabilidade mercadológica e desenvolvimento",
+    label: "Mercado e negócio",
     shortLabel: "Mercado e negócio",
   },
   { key: "masterplan", label: "Masterplan", shortLabel: "Masterplan" },
@@ -47,6 +48,18 @@ export const BUSINESS_PORTFOLIO_SECTIONS: Array<{
   { key: "esteira_negocios", label: "Esteira de negócios", href: "/novos-negocios/esteira-de-negocios" },
   { key: "landing_bank", label: "Landing Bank", href: "/novos-negocios/landing-bank" },
 ];
+
+export const BUSINESS_PORTFOLIO_STAGE_KEYS: Record<BusinessPortfolioSection, readonly BusinessStage[]> = {
+  prospeccao: ["prospeccao", "viabilidade", "contrato", "viabilidade_mercadologica"],
+  esteira_negocios: ["masterplan", "aprovacao", "obra"],
+  landing_bank: ["aguardando"],
+};
+
+export function businessPortfolioSectionForStage(stage: BusinessStage): BusinessPortfolioSection {
+  if (stage === "aguardando") return "landing_bank";
+  if (BUSINESS_PORTFOLIO_STAGE_KEYS.prospeccao.includes(stage)) return "prospeccao";
+  return "esteira_negocios";
+}
 
 export const TASK_COLUMNS: Array<{ key: TaskStatus; label: string }> = [
   { key: "a_fazer", label: "A fazer" },

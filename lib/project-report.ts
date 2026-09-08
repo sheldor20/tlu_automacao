@@ -38,10 +38,11 @@ const taskStatusLabels: Record<TaskStatus, string> = {
 };
 
 const businessStageLabels: Record<BusinessStage, string> = {
+  aguardando: "Aguardando",
   prospeccao: "Prospeccao",
   viabilidade: "Viabilidade",
   contrato: "Contrato",
-  viabilidade_mercadologica: "Viabilidade mercadologica e desenvolvimento",
+  viabilidade_mercadologica: "Mercado e negocio",
   masterplan: "Masterplan",
   aprovacao: "Aprovacao",
   obra: "Obra",
