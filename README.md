@@ -113,7 +113,8 @@ de áreas à Prospecção.
 
 Novos cadastros exigem um KMZ. O sistema extrai o ponto central da área para o
 atalho do Google Maps; imagens, PDFs e vídeos podem ser adicionados depois pelo
-botão de arquivos de cada negócio atual.
+botão de arquivos de cada negócio atual. A ação **Mover área** transfere o
+registro entre Prospecção, Esteira de negócios e Landing Bank sem perder dados.
 
 ## Sincronização semanal do NPS
 
