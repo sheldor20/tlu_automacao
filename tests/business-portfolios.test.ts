@@ -55,7 +55,7 @@ test("move uma área de menu ao alterar sua fase", () => {
 });
 
 test("carrega os 21 status individuais da planilha preservando fases compatíveis", () => {
-  const importValues = funnelMigration.match(/insert into business_status_import[\s\S]*?values([\s\S]*?);/)?.[1] || "";
+  const importValues = funnelMigration.match(/from \(values([\s\S]*?)\n    \) as status/)?.[1] || "";
   const importedSections = [...importValues.matchAll(/, '(prospeccao|esteira_negocios|landing_bank)'\)/g)].map((match) => match[1]);
   assert.equal(importedSections.length, 21);
   assert.equal(importedSections.filter((section) => section === "prospeccao").length, 10);
@@ -64,6 +64,7 @@ test("carrega os 21 status individuais da planilha preservando fases compatívei
   assert.match(funnelMigration, /when business\.stage in \('prospeccao', 'viabilidade', 'contrato', 'viabilidade_mercadologica'\) then business\.stage/);
   assert.match(funnelMigration, /when business\.stage in \('masterplan', 'aprovacao', 'obra'\) then business\.stage/);
   assert.match(funnelMigration, /when 'landing_bank' then 'aguardando'::public\.business_stage/);
+  assert.doesNotMatch(funnelMigration, /create temporary table|pg_temp\./);
 });
 
 test("permite abrir e fechar os submenus de Novos negócios", () => {
