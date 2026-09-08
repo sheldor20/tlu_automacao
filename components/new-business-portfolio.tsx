@@ -22,6 +22,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowRight,
+  ArrowRightLeft,
   Building2,
   Clock3,
   ExternalLink,
@@ -77,6 +78,8 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Business | null>(null);
   const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
+  const [moveBusiness, setMoveBusiness] = useState<Business | null>(null);
+  const [targetSection, setTargetSection] = useState<BusinessPortfolioSection>(section);
   const [planBusiness, setPlanBusiness] = useState<Business | null>(null);
   const [fileBusiness, setFileBusiness] = useState<Business | null>(null);
   const [businessAction, setBusinessAction] = useState<BusinessAction>("archive");
@@ -285,6 +288,24 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
     setBusinessAction(action);
   }
 
+  function requestMove(business: Business) {
+    const firstDestination = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key !== business.portfolio_section);
+    setMoveBusiness(business);
+    setTargetSection(firstDestination?.key || business.portfolio_section);
+  }
+
+  async function moveToSection() {
+    if (!supabase || !moveBusiness || targetSection === moveBusiness.portfolio_section) return;
+    setSaving(true);
+    const { error } = await supabase.from("businesses").update({ portfolio_section: targetSection }).eq("id", moveBusiness.id);
+    setSaving(false);
+    if (error) return setToast({ message: friendlyError(error), type: "error" });
+    const destination = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key === targetSection)?.label || "nova carteira";
+    setMoveBusiness(null);
+    setToast({ message: `${moveBusiness.name} foi movido para ${destination}.`, type: "success" });
+    await loadData();
+  }
+
   async function archiveBusiness(business: Business) {
     if (!supabase) return;
     setSaving(true);
@@ -420,7 +441,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                           <MapPin size={14} /> <span>{business.location_file_name || "Ver no Google Maps"}</span> <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
+                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => requestMove(business)} aria-label={`Mover ${business.name}`} title="Mover para outra carteira"><ArrowRightLeft size={16} /></button><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
                     </tr>
                   );
                 })}
@@ -494,6 +515,18 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       </Dialog>
 
       <Dialog open={Boolean(actionBusiness)} onClose={() => setActionBusiness(null)} title={businessAction === "delete" ? "Excluir negócio?" : "Arquivar negócio?"} description={businessAction === "delete" ? "A exclusão é definitiva e remove o histórico do funil. Se existir uma obra vinculada, ela será preservada como obra avulsa." : "O negócio sairá do funil atual, mas todo o histórico será preservado e poderá ser restaurado."}><div className="confirmation-content"><strong>{actionBusiness?.name}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setActionBusiness(null)}>Cancelar</Button><Button type="button" variant={businessAction === "delete" ? "danger" : "primary"} loading={saving} onClick={() => actionBusiness && (businessAction === "delete" ? void deleteBusiness(actionBusiness) : void archiveBusiness(actionBusiness))}>{businessAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar negócio</>}</Button></div></div></Dialog>
+
+      <Dialog open={Boolean(moveBusiness)} onClose={() => setMoveBusiness(null)} title="Mover área" description="O histórico, o KMZ, os anexos e o projeto conectado serão preservados.">
+        <div className="confirmation-content">
+          <strong>{moveBusiness?.name}</strong>
+          <Field label="Carteira de destino">
+            <select value={targetSection} onChange={(event) => setTargetSection(event.target.value as BusinessPortfolioSection)}>
+              {BUSINESS_PORTFOLIO_SECTIONS.filter((item) => item.key !== moveBusiness?.portfolio_section).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+          </Field>
+          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMoveBusiness(null)}>Cancelar</Button><Button type="button" loading={saving} disabled={!moveBusiness || targetSection === moveBusiness.portfolio_section} onClick={() => void moveToSection()}><ArrowRightLeft size={16} /> Mover área</Button></div>
+        </div>
+      </Dialog>
 
       <PlanDocumentManager key={planBusiness?.id || "closed"} business={planBusiness} onClose={() => setPlanBusiness(null)} />
       <BusinessFileManager key={fileBusiness?.id || "closed-files"} business={fileBusiness} onClose={() => setFileBusiness(null)} />

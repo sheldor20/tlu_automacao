@@ -19,6 +19,12 @@ test("restringe a exclusão definitiva à Prospecção", () => {
   assert.match(portfolio, /const allowDelete = section === "prospeccao"/);
 });
 
+test("permite mover uma área entre as três carteiras", () => {
+  assert.match(portfolio, /update\(\{ portfolio_section: targetSection \}\)/);
+  assert.match(portfolio, /title="Mover área"/);
+  assert.match(portfolio, /BUSINESS_PORTFOLIO_SECTIONS\.filter/);
+});
+
 test("aceita anexos multimídia e localização KMZ", () => {
   assert.match(migration, /create table if not exists public\.business_files/);
   assert.match(migration, /mime_type like 'image\/%'/);
