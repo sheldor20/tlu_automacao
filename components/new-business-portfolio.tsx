@@ -13,7 +13,12 @@ import {
 import { ListToolbar } from "@/components/list-toolbar";
 import { PlanDocumentManager } from "@/components/plan-document-manager";
 import { BusinessFileManager } from "@/components/business-file-manager";
-import { BUSINESS_PORTFOLIO_SECTIONS, BUSINESS_STAGES } from "@/lib/constants";
+import {
+  BUSINESS_PORTFOLIO_SECTIONS,
+  BUSINESS_PORTFOLIO_STAGE_KEYS,
+  BUSINESS_STAGES,
+  businessPortfolioSectionForStage,
+} from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { extractKmzCenter, googleMapsUrl, kmzStoragePath } from "@/lib/kmz";
 import { friendlyError, getSupabase } from "@/lib/supabase";
@@ -22,7 +27,6 @@ import {
   Archive,
   ArchiveRestore,
   ArrowRight,
-  ArrowRightLeft,
   Building2,
   Clock3,
   ExternalLink,
@@ -78,21 +82,24 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Business | null>(null);
   const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
-  const [moveBusiness, setMoveBusiness] = useState<Business | null>(null);
-  const [targetSection, setTargetSection] = useState<BusinessPortfolioSection>(section);
   const [planBusiness, setPlanBusiness] = useState<Business | null>(null);
   const [fileBusiness, setFileBusiness] = useState<Business | null>(null);
   const [businessAction, setBusinessAction] = useState<BusinessAction>("archive");
   const [form, setForm] = useState<BusinessForm>(emptyForm);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const sectionInfo = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key === section)!;
+  const sectionStageKeys = BUSINESS_PORTFOLIO_STAGE_KEYS[section];
+  const sectionStages = useMemo(
+    () => BUSINESS_STAGES.filter((stage) => sectionStageKeys.includes(stage.key)),
+    [sectionStageKeys],
+  );
   const allowDelete = section === "prospeccao";
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     const [{ data: businessData, error }, { data: historyData }, { data: projectData, error: projectError }] = await Promise.all([
-      supabase.from("business_operational_summary").select("*").eq("portfolio_section", section).order("updated_at", { ascending: false }),
+      supabase.from("business_operational_summary").select("*").in("stage", [...sectionStageKeys]).order("updated_at", { ascending: false }),
       supabase.from("business_stage_history").select("*").order("entered_at"),
       supabase.rpc("business_project_options"),
     ]);
@@ -106,7 +113,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
     setProjects(options.filter((project) => project.category === "operational" && !project.archived_at));
     setHistory((historyData || []) as StageHistory[]);
     setLoading(false);
-  }, [section, supabase]);
+  }, [sectionStageKeys, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -142,18 +149,18 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   const metrics = useMemo(() => {
     const total = currentBusinesses.length;
     const totalVgv = currentBusinesses.reduce((sum, item) => sum + Number(item.potential_vgv || 0), 0);
-    const workCount = currentBusinesses.filter((item) => item.stage === "obra").length;
+    const finalStageCount = currentBusinesses.filter((item) => item.stage === sectionStageKeys[sectionStageKeys.length - 1]).length;
     const averageDays = currentHistory.length
       ? Math.round(currentHistory.reduce((sum, item) => sum + daysBetween(item.entered_at, item.exited_at), 0) / currentHistory.length)
       : 0;
-    return { total, totalVgv, workCount, averageDays };
-  }, [currentBusinesses, currentHistory]);
+    return { total, totalVgv, finalStageCount, averageDays };
+  }, [currentBusinesses, currentHistory, sectionStageKeys]);
 
   const byStage = useMemo(() => {
-    return BUSINESS_STAGES.map((stage, index) => {
+    return sectionStages.map((stage, index) => {
       const items = currentBusinesses.filter((business) => business.stage === stage.key);
       const reached = currentBusinesses.filter(
-        (business) => BUSINESS_STAGES.findIndex((item) => item.key === business.stage) >= index,
+        (business) => sectionStages.findIndex((item) => item.key === business.stage) >= index,
       ).length;
       const durations = currentHistory.filter((item) => item.stage === stage.key);
       const avgDays = durations.length
@@ -167,11 +174,11 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
         avgDays,
       };
     });
-  }, [currentBusinesses, currentHistory]);
+  }, [currentBusinesses, currentHistory, sectionStages]);
 
   function openNew() {
     setEditing(null);
-    setForm({ ...emptyForm });
+    setForm({ ...emptyForm, stage: sectionStageKeys[0] });
     setDialogOpen(true);
   }
 
@@ -247,7 +254,6 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
           ...payload,
           id: businessId,
           name: form.name.trim(),
-          portfolio_section: section,
           address: "Área definida pelo arquivo KMZ",
           city: "Área mapeada",
           state: "PR",
@@ -280,31 +286,20 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       setBusinesses(previous);
       return setToast({ message: friendlyError(error), type: "error" });
     }
-    setToast({ message: `Fase de ${business.name} atualizada.`, type: "success" });
+    const destinationSection = businessPortfolioSectionForStage(stage);
+    const destination = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key === destinationSection)?.label;
+    setToast({
+      message: destinationSection === section
+        ? `Fase de ${business.name} atualizada.`
+        : `${business.name} avançou para ${destination}.`,
+      type: "success",
+    });
     await loadData();
   }
 
   function requestAction(business: Business, action: BusinessAction) {
     setActionBusiness(business);
     setBusinessAction(action);
-  }
-
-  function requestMove(business: Business) {
-    const firstDestination = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key !== business.portfolio_section);
-    setMoveBusiness(business);
-    setTargetSection(firstDestination?.key || business.portfolio_section);
-  }
-
-  async function moveToSection() {
-    if (!supabase || !moveBusiness || targetSection === moveBusiness.portfolio_section) return;
-    setSaving(true);
-    const { error } = await supabase.from("businesses").update({ portfolio_section: targetSection }).eq("id", moveBusiness.id);
-    setSaving(false);
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
-    const destination = BUSINESS_PORTFOLIO_SECTIONS.find((item) => item.key === targetSection)?.label || "nova carteira";
-    setMoveBusiness(null);
-    setToast({ message: `${moveBusiness.name} foi movido para ${destination}.`, type: "success" });
-    await loadData();
   }
 
   async function archiveBusiness(business: Business) {
@@ -348,15 +343,15 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       <PageIntro
         eyebrow="Novos negócios"
         title={sectionInfo.label}
-        description={`Acompanhe as áreas de ${sectionInfo.label}, o VGV potencial e a velocidade de avanço até o início da obra.`}
+        description={`Acompanhe esta parte do funil único, o VGV potencial e a velocidade de avanço das áreas.`}
         action={<Button onClick={openNew}><Plus size={18} /> Novo negócio</Button>}
       />
 
       <section className="kpi-grid">
-        <KpiCard label="VGV potencial" value={currency(metrics.totalVgv, true)} helper="soma de todo o funil" icon={<TrendingUp size={17} />} />
-        <KpiCard label="Negócios ativos" value={String(metrics.total)} helper="em todas as fases" icon={<Building2 size={17} />} />
-        <KpiCard label="Conversão até obra" value={`${metrics.total ? Math.round(metrics.workCount / metrics.total * 100) : 0}%`} helper={`${metrics.workCount} em obra`} tone="success" icon={<Route size={17} />} />
-        <KpiCard label="Tempo médio por fase" value={`${metrics.averageDays} dias`} helper="histórico do funil" icon={<Clock3 size={17} />} />
+        <KpiCard label="VGV potencial" value={currency(metrics.totalVgv, true)} helper="soma desta parte do funil" icon={<TrendingUp size={17} />} />
+        <KpiCard label="Negócios ativos" value={String(metrics.total)} helper="nesta parte do funil" icon={<Building2 size={17} />} />
+        <KpiCard label={`Na fase ${sectionStages.at(-1)?.shortLabel}`} value={String(metrics.finalStageCount)} helper="fase final desta parte" tone="success" icon={<Route size={17} />} />
+        <KpiCard label="Tempo médio por fase" value={`${metrics.averageDays} dias`} helper="histórico desta parte" icon={<Clock3 size={17} />} />
       </section>
 
       <section className="content-card funnel-card">
@@ -408,7 +403,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
         <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por nome, matrícula, projeto ou arquivo KMZ">
           <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value as BusinessStage | "all")} aria-label="Filtrar por fase">
             <option value="all">Todas as fases</option>
-            {BUSINESS_STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.shortLabel}</option>)}
+            {sectionStages.map((stage) => <option key={stage.key} value={stage.key}>{stage.shortLabel}</option>)}
           </select>
           <label className="filter-check"><input type="checkbox" checked={exceptionOnly} onChange={(event) => setExceptionOnly(event.target.checked)} /> Parados há 30+ dias</label>
         </ListToolbar>
@@ -442,7 +437,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                           <MapPin size={14} /> <span>{business.location_file_name || "Ver no Google Maps"}</span> <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => requestMove(business)} aria-label={`Mover ${business.name}`} title="Mover para outra carteira"><ArrowRightLeft size={16} /></button><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
+                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
                     </tr>
                   );
                 })}
@@ -488,7 +483,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
             <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required />
           </Field> : null}
           {editing ? (
-            <Field label="Fase atual" hint="Ao chegar em Obra, o projeto aparece automaticamente no departamento de Obras.">
+            <Field label="Fase atual" hint="A fase define automaticamente em qual menu o negócio aparece. Ao chegar em Obra, ele também aparece no departamento de Obras.">
               <select value={form.stage} onChange={(event) => setForm({ ...form, stage: event.target.value as BusinessStage })}>
                 {BUSINESS_STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.label}</option>)}
               </select>
@@ -516,18 +511,6 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       </Dialog>
 
       <Dialog open={Boolean(actionBusiness)} onClose={() => setActionBusiness(null)} title={businessAction === "delete" ? "Excluir negócio?" : "Arquivar negócio?"} description={businessAction === "delete" ? "A exclusão é definitiva e remove o histórico do funil. Se existir uma obra vinculada, ela será preservada como obra avulsa." : "O negócio sairá do funil atual, mas todo o histórico será preservado e poderá ser restaurado."}><div className="confirmation-content"><strong>{actionBusiness?.name}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setActionBusiness(null)}>Cancelar</Button><Button type="button" variant={businessAction === "delete" ? "danger" : "primary"} loading={saving} onClick={() => actionBusiness && (businessAction === "delete" ? void deleteBusiness(actionBusiness) : void archiveBusiness(actionBusiness))}>{businessAction === "delete" ? <><Trash2 size={16} /> Excluir definitivamente</> : <><Archive size={16} /> Arquivar negócio</>}</Button></div></div></Dialog>
-
-      <Dialog open={Boolean(moveBusiness)} onClose={() => setMoveBusiness(null)} title="Mover área" description="O histórico, o KMZ, os anexos e o projeto conectado serão preservados.">
-        <div className="confirmation-content">
-          <strong>{moveBusiness?.name}</strong>
-          <Field label="Carteira de destino">
-            <select value={targetSection} onChange={(event) => setTargetSection(event.target.value as BusinessPortfolioSection)}>
-              {BUSINESS_PORTFOLIO_SECTIONS.filter((item) => item.key !== moveBusiness?.portfolio_section).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-            </select>
-          </Field>
-          <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMoveBusiness(null)}>Cancelar</Button><Button type="button" loading={saving} disabled={!moveBusiness || targetSection === moveBusiness.portfolio_section} onClick={() => void moveToSection()}><ArrowRightLeft size={16} /> Mover área</Button></div>
-        </div>
-      </Dialog>
 
       <PlanDocumentManager key={planBusiness?.id || "closed"} business={planBusiness} onClose={() => setPlanBusiness(null)} />
       <BusinessFileManager key={fileBusiness?.id || "closed-files"} business={fileBusiness} onClose={() => setFileBusiness(null)} />

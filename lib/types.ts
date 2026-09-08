@@ -1,6 +1,7 @@
 import type { PlanMeasurementType, PlanPath, PlanPoint } from "@/lib/construction-plan-geometry";
 
 export type BusinessStage =
+  | "aguardando"
   | "prospeccao"
   | "viabilidade"
   | "contrato"
