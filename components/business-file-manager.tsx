@@ -1,13 +1,15 @@
 "use client";
 
 import { Button, Dialog, EmptyState, Field, StatusPill } from "@/components/ui";
+import { uploadBusinessStorageFile } from "@/lib/business-storage-upload";
 import { dateBr } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { Business, BusinessFile } from "@/lib/types";
 import { ExternalLink, FileImage, FileText, FileVideo, LoaderCircle, Paperclip, Trash2, Upload } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "pdf", "mp4", "mov", "webm", "mpeg", "mpg"]);
 
 function extension(fileName: string) {
@@ -47,6 +49,7 @@ export function BusinessFileManager({ business, onClose }: { business: Business 
   const [inputKey, setInputKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
 
   const load = useCallback(async () => {
@@ -78,17 +81,31 @@ export function BusinessFileManager({ business, onClose }: { business: Business 
     if (invalid) return setMessage({ text: `O arquivo “${invalid.name}” não é uma imagem, PDF ou vídeo compatível.`, error: true });
     const empty = selectedFiles.find((file) => file.size === 0);
     if (empty) return setMessage({ text: `O arquivo “${empty.name}” está vazio.`, error: true });
-    const oversized = selectedFiles.find((file) => file.size > MAX_FILE_SIZE);
-    if (oversized) return setMessage({ text: `O arquivo “${oversized.name}” ultrapassa o limite de 100 MB.`, error: true });
+    const oversized = selectedFiles.find((file) => {
+      const limit = normalizedMimeType(file).startsWith("video/") ? MAX_VIDEO_SIZE : MAX_DOCUMENT_SIZE;
+      return file.size > limit;
+    });
+    if (oversized) {
+      const limit = normalizedMimeType(oversized).startsWith("video/") ? "2 GB" : "100 MB";
+      return setMessage({ text: `O arquivo “${oversized.name}” ultrapassa o limite de ${limit}.`, error: true });
+    }
 
     setSaving(true);
+    setUploadProgress(0);
     let uploaded = 0;
     for (const file of selectedFiles) {
       const filePath = storagePath(business.id, file.name, "anexos");
       const mimeType = normalizedMimeType(file);
-      const upload = await supabase.storage.from("business-files").upload(filePath, file, { contentType: mimeType, upsert: false });
-      if (upload.error) {
-        setMessage({ text: friendlyError(upload.error), error: true });
+      try {
+        await uploadBusinessStorageFile({
+          supabase,
+          filePath,
+          file,
+          mimeType,
+          onProgress: (percentage) => setUploadProgress(Math.round(((uploaded + percentage / 100) / selectedFiles.length) * 100)),
+        });
+      } catch (error) {
+        setMessage({ text: friendlyError(error), error: true });
         break;
       }
       const insert = await supabase.from("business_files").insert({
@@ -106,6 +123,7 @@ export function BusinessFileManager({ business, onClose }: { business: Business 
       uploaded += 1;
     }
     setSaving(false);
+    setUploadProgress(null);
     if (uploaded === selectedFiles.length) {
       setSelectedFiles([]);
       setInputKey((value) => value + 1);
@@ -130,7 +148,7 @@ export function BusinessFileManager({ business, onClose }: { business: Business 
   return <Dialog open={Boolean(business)} onClose={onClose} title={`Arquivos · ${business?.name || "negócio"}`} description="Guarde imagens, documentos em PDF e vídeos relacionados a esta área." wide>
     <div className="plan-manager-layout">
       <form className="plan-upload-form" onSubmit={uploadFiles}>
-        <Field label="Imagens, PDFs ou vídeos" hint="Você pode selecionar vários arquivos. Limite de 100 MB por arquivo.">
+        <Field label="Imagens, PDFs ou vídeos" hint="Imagens e PDFs: até 100 MB. Vídeos: até 2 GB, com envio retomável.">
           <label className="file-drop">
             <Upload size={20} />
             <span>{selectedFiles.length ? `${selectedFiles.length} arquivo(s) selecionado(s)` : "Selecionar arquivos"}</span>
@@ -138,7 +156,7 @@ export function BusinessFileManager({ business, onClose }: { business: Business 
           </label>
         </Field>
         {selectedFiles.length ? <div className="business-selected-files">{selectedFiles.map((file) => <span key={`${file.name}-${file.size}-${file.lastModified}`}>{file.name}</span>)}</div> : null}
-        <Button type="submit" loading={saving} disabled={!selectedFiles.length}><Upload size={16} /> Enviar arquivos</Button>
+        <Button type="submit" loading={saving} disabled={!selectedFiles.length}><Upload size={16} /> {uploadProgress === null ? "Enviar arquivos" : `Enviando ${uploadProgress}%`}</Button>
       </form>
       <section className="plan-document-list business-file-list">
         <div><strong>Arquivos deste negócio</strong><span>{files.length} anexo(s)</span></div>

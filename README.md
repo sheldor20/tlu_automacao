@@ -116,6 +116,11 @@ atalho do Google Maps; imagens, PDFs e vídeos podem ser adicionados depois pelo
 botão de arquivos de cada negócio atual. A ação **Mover área** transfere o
 registro entre Prospecção, Esteira de negócios e Landing Bank sem perder dados.
 
+Para liberar vídeos maiores, execute também
+`supabase/migrations/20260908150000_business_video_upload_limit.sql` e configure
+o **Global file size limit** do Storage em pelo menos 2 GB. Imagens e PDFs
+continuam limitados a 100 MB; vídeos aceitam até 2 GB e usam envio retomável.
+
 ## Sincronização semanal do NPS
 
 O endpoint `/api/cron/nps` autentica no ASCSAC e consulta separadamente os 12
