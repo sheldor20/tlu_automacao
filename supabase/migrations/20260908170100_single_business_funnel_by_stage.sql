@@ -89,99 +89,89 @@ begin
 end;
 $$;
 
-create temporary table business_status_import (
-  source_name text primary key,
-  target_section text not null check (target_section in ('prospeccao', 'esteira_negocios', 'landing_bank'))
-) on commit drop;
-
-insert into business_status_import (source_name, target_section) values
-  ('Rio Verde', 'prospeccao'),
-  ('Mineiros (Residencial Araguaia - Etapa III) - Parceria', 'esteira_negocios'),
-  ('Anápolis (Antonio Fernandes)', 'prospeccao'),
-  ('Jaciara (Vale das Águas II) - Parceria', 'esteira_negocios'),
-  ('Itumbiara (Senhor Sebastião) - Parceria', 'esteira_negocios'),
-  ('Itumbiara (Fazenda Pombas) - Lírios', 'prospeccao'),
-  ('Anápolis (Fazenda Formiga)', 'landing_bank'),
-  ('Anápolis (Área dos padres) - Lírios', 'landing_bank'),
-  ('Anápolis (Fazenda Extrema - Maria da Luz) - Lírios', 'landing_bank'),
-  ('Rondonópolis (Remanescente) - Lírios', 'prospeccao'),
-  ('Palmeiras de Goiás (Fazenda Boa Esperança) - Parceria', 'landing_bank'),
-  ('Anápolis (Primavera - Fazenda Sozinha - Paulo Couto) - Lírios', 'landing_bank'),
-  ('Anápolis (Fazenda Extrema - Jader)', 'landing_bank'),
-  ('Senador Canedo (Fazenda Retiro) - Parceria', 'prospeccao'),
-  ('Rio Verde (São Tomas)', 'prospeccao'),
-  ('Jataí Etapa 02', 'prospeccao'),
-  ('Rio Verde - Etapa 02', 'prospeccao'),
-  ('Jataí', 'prospeccao'),
-  ('Anápolis (Colorado) - Parceria', 'prospeccao'),
-  ('Mineiros (Residencial Araguaia - Etapa II) - Parceria', 'esteira_negocios'),
-  ('Anápolis (Boa Vista) - Parceria', 'esteira_negocios');
-
-create or replace function pg_temp.normalize_business_name(p_value text)
-returns text
-language sql
-immutable
-strict
-as $$
-  select regexp_replace(
-    translate(lower(btrim(p_value)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
-    '[^a-z0-9]+',
-    '',
-    'g'
-  );
-$$;
-
 do $$
 declare
-  ambiguous_names text;
+  import_row record;
+  normalized_source text;
+  match_count integer;
   unmatched_names text;
 begin
-  select string_agg(matches.source_name, ', ' order by matches.source_name)
-  into ambiguous_names
-  from (
-    select import.source_name
-    from business_status_import import
-    join public.businesses business
-      on pg_temp.normalize_business_name(business.name) = pg_temp.normalize_business_name(import.source_name)
-    group by import.source_name
-    having count(*) > 1
-  ) matches;
+  for import_row in
+    select *
+    from (values
+      ('Rio Verde', 'prospeccao'),
+      ('Mineiros (Residencial Araguaia - Etapa III) - Parceria', 'esteira_negocios'),
+      ('Anápolis (Antonio Fernandes)', 'prospeccao'),
+      ('Jaciara (Vale das Águas II) - Parceria', 'esteira_negocios'),
+      ('Itumbiara (Senhor Sebastião) - Parceria', 'esteira_negocios'),
+      ('Itumbiara (Fazenda Pombas) - Lírios', 'prospeccao'),
+      ('Anápolis (Fazenda Formiga)', 'landing_bank'),
+      ('Anápolis (Área dos padres) - Lírios', 'landing_bank'),
+      ('Anápolis (Fazenda Extrema - Maria da Luz) - Lírios', 'landing_bank'),
+      ('Rondonópolis (Remanescente) - Lírios', 'prospeccao'),
+      ('Palmeiras de Goiás (Fazenda Boa Esperança) - Parceria', 'landing_bank'),
+      ('Anápolis (Primavera - Fazenda Sozinha - Paulo Couto) - Lírios', 'landing_bank'),
+      ('Anápolis (Fazenda Extrema - Jader)', 'landing_bank'),
+      ('Senador Canedo (Fazenda Retiro) - Parceria', 'prospeccao'),
+      ('Rio Verde (São Tomas)', 'prospeccao'),
+      ('Jataí Etapa 02', 'prospeccao'),
+      ('Rio Verde - Etapa 02', 'prospeccao'),
+      ('Jataí', 'prospeccao'),
+      ('Anápolis (Colorado) - Parceria', 'prospeccao'),
+      ('Mineiros (Residencial Araguaia - Etapa II) - Parceria', 'esteira_negocios'),
+      ('Anápolis (Boa Vista) - Parceria', 'esteira_negocios')
+    ) as status(source_name, target_section)
+  loop
+    normalized_source := regexp_replace(
+      translate(lower(btrim(import_row.source_name)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
+      '[^a-z0-9]+',
+      '',
+      'g'
+    );
 
-  if ambiguous_names is not null then
-    raise exception 'Nomes duplicados impedem a carga da planilha: %', ambiguous_names;
-  end if;
-
-  select string_agg(import.source_name, ', ' order by import.source_name)
-  into unmatched_names
-  from business_status_import import
-  where not exists (
-    select 1
+    select count(*)
+    into match_count
     from public.businesses business
-    where pg_temp.normalize_business_name(business.name) = pg_temp.normalize_business_name(import.source_name)
-  );
+    where regexp_replace(
+      translate(lower(btrim(business.name)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
+      '[^a-z0-9]+',
+      '',
+      'g'
+    ) = normalized_source;
+
+    if match_count > 1 then
+      raise exception 'Nome duplicado impede a carga da planilha: %', import_row.source_name;
+    elsif match_count = 0 then
+      unmatched_names := concat_ws(', ', unmatched_names, import_row.source_name);
+    else
+      -- Preserva a fase detalhada quando ela já pertence ao trecho indicado.
+      -- Em uma incompatibilidade, move somente para a primeira fase do trecho.
+      update public.businesses business
+      set stage = case import_row.target_section
+        when 'landing_bank' then 'aguardando'::public.business_stage
+        when 'prospeccao' then case
+          when business.stage in ('prospeccao', 'viabilidade', 'contrato', 'viabilidade_mercadologica') then business.stage
+          else 'prospeccao'::public.business_stage
+        end
+        else case
+          when business.stage in ('masterplan', 'aprovacao', 'obra') then business.stage
+          else 'masterplan'::public.business_stage
+        end
+      end
+      where regexp_replace(
+        translate(lower(btrim(business.name)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
+        '[^a-z0-9]+',
+        '',
+        'g'
+      ) = normalized_source;
+    end if;
+  end loop;
 
   if unmatched_names is not null then
     raise warning 'Áreas da planilha não encontradas no cadastro e mantidas sem alteração: %', unmatched_names;
   end if;
 end;
 $$;
-
--- Preserva a fase detalhada quando ela já pertence ao trecho indicado na planilha.
--- Quando há incompatibilidade, move somente para a primeira fase daquele trecho.
-update public.businesses business
-set stage = case import.target_section
-  when 'landing_bank' then 'aguardando'::public.business_stage
-  when 'prospeccao' then case
-    when business.stage in ('prospeccao', 'viabilidade', 'contrato', 'viabilidade_mercadologica') then business.stage
-    else 'prospeccao'::public.business_stage
-  end
-  else case
-    when business.stage in ('masterplan', 'aprovacao', 'obra') then business.stage
-    else 'masterplan'::public.business_stage
-  end
-end
-from business_status_import import
-where pg_temp.normalize_business_name(business.name) = pg_temp.normalize_business_name(import.source_name);
 
 comment on column public.businesses.portfolio_section is
   'Trecho derivado da fase do funil; mantido por compatibilidade e sincronizado automaticamente.';
