@@ -9,6 +9,8 @@ export type BusinessStage =
   | "aprovacao"
   | "obra";
 
+export type BusinessPortfolioSection = "prospeccao" | "esteira_negocios" | "landing_bank";
+
 export type Business = {
   id: string;
   project_id: string | null;
@@ -21,6 +23,9 @@ export type Business = {
   state: string;
   latitude: number | null;
   longitude: number | null;
+  portfolio_section: BusinessPortfolioSection;
+  location_file_path: string | null;
+  location_file_name: string | null;
   potential_vgv: number;
   notes: string | null;
   archived_at: string | null;
@@ -30,6 +35,18 @@ export type Business = {
   current_stage_entered_at?: string | null;
   days_in_stage?: number;
   project?: Pick<Project, "id" | "name" | "status" | "archived_at" | "owner_name"> | null;
+};
+
+export type BusinessFile = {
+  id: string;
+  business_id: string;
+  file_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_by: string | null;
+  created_at: string;
+  signed_url?: string;
 };
 
 export type StageHistory = {

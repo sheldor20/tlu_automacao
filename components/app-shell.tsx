@@ -2,12 +2,14 @@
 
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
-import { MANAGEMENT_AREAS } from "@/lib/constants";
+import { BUSINESS_PORTFOLIO_SECTIONS, MANAGEMENT_AREAS } from "@/lib/constants";
 import type { DepartmentSlug, ManagementAreaSlug } from "@/lib/types";
 import {
   Building2,
   ChartNoAxesCombined,
   CalendarDays,
+  ChevronDown,
+  Database,
   FolderKanban,
   GitBranch,
   Home,
@@ -18,7 +20,9 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   NotebookTabs,
+  Search,
   TrendingUp,
+  Workflow,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -45,6 +49,12 @@ const departmentLinks: Array<{
 const adminLink = { href: "/administracao", label: "Administração", icon: ShieldCheck };
 const todayLink = { href: "/hoje", label: "Hoje", icon: CalendarDays };
 const indicatorsLink = departmentLinks.find((link) => link.slug === "indicadores")!;
+const businessSubmenuLinks = [
+  { ...BUSINESS_PORTFOLIO_SECTIONS[0], icon: Search },
+  { ...BUSINESS_PORTFOLIO_SECTIONS[1], icon: Workflow },
+  { key: "obras", label: "Obras", href: "/obras", icon: Building2 },
+  { ...BUSINESS_PORTFOLIO_SECTIONS[2], icon: Database },
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -302,7 +312,33 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
           <span className="nav-caption nav-caption-spaced">Departamentos</span>
-          {visibleDepartmentLinks.map(({ href, label, icon: Icon }) => {
+          {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
+            if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
+            if (slug === "novos-negocios") {
+              const businessAreaActive = pathname.startsWith("/novos-negocios") || (allowedDepartments.includes("obras") && pathname.startsWith("/obras"));
+              return <div className="nav-group" key={href}>
+                <Link
+                  href="/novos-negocios/prospeccao"
+                  className={businessAreaActive ? "nav-link nav-parent active" : "nav-link nav-parent"}
+                  title={label}
+                  onClick={() => setMobileMenu(false)}
+                >
+                  <Icon size={19} />
+                  <span>{label}</span>
+                  <ChevronDown className="nav-parent-chevron" size={15} />
+                </Link>
+                <div className="nav-submenu" aria-label="Submenus de Novos negócios">
+                  {businessSubmenuLinks.map(({ href: childHref, label: childLabel, icon: ChildIcon }) => {
+                    if (childHref === "/obras" && !allowedDepartments.includes("obras")) return null;
+                    const childActive = childHref === "/obras" ? pathname.startsWith("/obras") : pathname === childHref;
+                    return <Link key={childHref} href={childHref} className={childActive ? "nav-sublink active" : "nav-sublink"} onClick={() => setMobileMenu(false)}>
+                      <ChildIcon size={15} />
+                      <span>{childLabel}</span>
+                    </Link>;
+                  })}
+                </div>
+              </div>;
+            }
             const active = pathname.startsWith(href);
             return (
               <Link
