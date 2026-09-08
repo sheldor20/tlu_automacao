@@ -69,6 +69,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const businessAreaPathActive = pathname.startsWith("/novos-negocios") || pathname.startsWith("/obras");
+  const [businessMenuPreference, setBusinessMenuPreference] = useState({
+    pathname,
+    open: businessAreaPathActive,
+  });
+  const businessMenuOpen = businessMenuPreference.pathname === pathname
+    ? businessMenuPreference.open
+    : businessAreaPathActive;
   const [todayAlertCount, setTodayAlertCount] = useState(0);
 
   const loadTodayAlertCount = useCallback(async () => {
@@ -317,17 +325,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             if (slug === "novos-negocios") {
               const businessAreaActive = pathname.startsWith("/novos-negocios") || (allowedDepartments.includes("obras") && pathname.startsWith("/obras"));
               return <div className="nav-group" key={href}>
-                <Link
-                  href="/novos-negocios/prospeccao"
+                <button
+                  type="button"
                   className={businessAreaActive ? "nav-link nav-parent active" : "nav-link nav-parent"}
                   title={label}
-                  onClick={() => setMobileMenu(false)}
+                  aria-expanded={businessMenuOpen}
+                  aria-controls="new-business-submenu"
+                  onClick={() => setBusinessMenuPreference({ pathname, open: !businessMenuOpen })}
                 >
                   <Icon size={19} />
                   <span>{label}</span>
-                  <ChevronDown className="nav-parent-chevron" size={15} />
-                </Link>
-                <div className="nav-submenu" aria-label="Submenus de Novos negócios">
+                  <ChevronDown className={`nav-parent-chevron${businessMenuOpen ? " open" : ""}`} size={15} />
+                </button>
+                <div id="new-business-submenu" className="nav-submenu" aria-label="Submenus de Novos negócios" hidden={!businessMenuOpen}>
                   {businessSubmenuLinks.map(({ href: childHref, label: childLabel, icon: ChildIcon }) => {
                     if (childHref === "/obras" && !allowedDepartments.includes("obras")) return null;
                     const childActive = childHref === "/obras" ? pathname.startsWith("/obras") : pathname === childHref;

@@ -211,7 +211,8 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       try {
         const coordinates = await extractKmzCenter(form.kmz_file);
         uploadedLocationPath = kmzStoragePath(businessId, form.kmz_file.name);
-        const upload = await supabase.storage.from("business-locations").upload(uploadedLocationPath, form.kmz_file, {
+        const kmzUploadBody = new Blob([form.kmz_file], { type: "application/vnd.google-earth.kmz" });
+        const upload = await supabase.storage.from("business-locations").upload(uploadedLocationPath, kmzUploadBody, {
           contentType: "application/vnd.google-earth.kmz",
           upsert: false,
         });

@@ -47,6 +47,13 @@ test("mantém o segredo das crons somente no servidor e autentica o acionamento 
   assert.match(clientRefresh, /Authorization: `Bearer \$\{token\}`/);
 });
 
+test("executa as fontes no servidor sem uma chamada HTTP para a própria implantação", () => {
+  assert.match(serverRoute, /cronHandlerFor/);
+  assert.match(serverRoute, /await handler\(new Request/);
+  assert.doesNotMatch(serverRoute, /fetch\(new URL\(job\.path/);
+  assert.doesNotMatch(serverRoute, /VERCEL_URL/);
+});
+
 test("intercepta somente o botão de atualização do painel e depois relê o dashboard", () => {
   assert.match(dashboardBridge, /management-sync-actions button/);
   assert.match(dashboardBridge, /lucide-refresh-cw/);

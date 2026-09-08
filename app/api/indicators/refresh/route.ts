@@ -102,21 +102,6 @@ async function requireAreaAccess(
   return { service };
 }
 
-function internalOrigin(request: Request) {
-  const deploymentUrl = process.env.VERCEL_URL?.trim();
-  if (deploymentUrl) {
-    const hostname = deploymentUrl.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-    return `https://${hostname}`;
-  }
-
-  const requestUrl = new URL(request.url);
-  if (requestUrl.hostname === "localhost" || requestUrl.hostname === "127.0.0.1") {
-    return requestUrl.origin;
-  }
-
-  throw new Error("A URL interna da implantação não está disponível no ambiente da Vercel.");
-}
-
 function responseError(payload: unknown, status: number) {
   if (payload && typeof payload === "object" && "error" in payload) {
     const value = (payload as { error?: unknown }).error;
@@ -125,22 +110,34 @@ function responseError(payload: unknown, status: number) {
   return `A fonte respondeu com status ${status}.`;
 }
 
+async function cronHandlerFor(job: IndicatorRefreshJob) {
+  switch (job.key) {
+    case "qlik-finance":
+      return (await import("@/app/api/cron/qlik/finance/route")).GET;
+    case "qlik-legal-sales":
+      return (await import("@/app/api/cron/qlik/legal-sales/route")).GET;
+    case "qlik-delinquency":
+      return (await import("@/app/api/cron/qlik/delinquency/route")).GET;
+    case "nps":
+      return (await import("@/app/api/cron/nps/route")).GET;
+    case "instagram-followers":
+      return (await import("@/app/api/cron/instagram-followers/route")).GET;
+  }
+}
+
 async function runJob(
-  origin: string,
   cronSecret: string,
   job: IndicatorRefreshJob,
 ): Promise<RefreshJobResult> {
   const startedAt = Date.now();
   try {
-    const response = await fetch(new URL(job.path, origin), {
-      method: "GET",
+    const handler = await cronHandlerFor(job);
+    const response = await handler(new Request(`https://indicator-refresh.internal${job.path}`, {
       headers: {
         Authorization: `Bearer ${cronSecret}`,
         "User-Agent": "terra-lotus-manual-indicator-refresh/1.0",
       },
-      cache: "no-store",
-      redirect: "error",
-    });
+    }));
     const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
     const ok = response.ok && payload?.ok !== false;
     return {
@@ -194,17 +191,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let origin: string;
-  try {
-    origin = internalOrigin(request);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Não foi possível localizar a implantação atual." },
-      { status: 503, headers: noStoreHeaders() },
-    );
-  }
-
-  const results = await Promise.all(jobs.map((job) => runJob(origin, cronSecret, job)));
+  const results = await Promise.all(jobs.map((job) => runJob(cronSecret, job)));
   const failed = results.filter((result) => !result.ok);
   const succeeded = results.length - failed.length;
   const status = failed.length === 0 ? 200 : succeeded > 0 ? 207 : 502;
