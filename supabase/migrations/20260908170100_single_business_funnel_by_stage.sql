@@ -1,9 +1,6 @@
 -- Um único funil de Novos Negócios, particionado nos menus pela fase atual.
 -- A carga ao final usa o status individual das 21 áreas da planilha recebida.
 
-alter type public.business_stage
-  add value if not exists 'aguardando' before 'prospeccao';
-
 begin;
 
 create or replace function public.business_portfolio_section_for_stage(p_stage public.business_stage)
