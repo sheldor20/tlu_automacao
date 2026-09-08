@@ -115,10 +115,11 @@ Novos cadastros exigem um KMZ. O sistema extrai o ponto central da área para o
 atalho do Google Maps; imagens, PDFs e vídeos podem ser adicionados depois pelo
 botão de arquivos de cada negócio atual.
 
-Execute também
-`supabase/migrations/20260908170000_single_business_funnel_by_stage.sql`.
-Essa migration cria a fase inicial **Aguardando**, aplica os 21 status individuais
-da planilha recebida e transforma os três menus em partes de um único funil:
+Execute também, nesta ordem e em execuções separadas,
+`supabase/migrations/20260908170000_add_awaiting_business_stage.sql` e
+`supabase/migrations/20260908170100_single_business_funnel_by_stage.sql`.
+A primeira migration cria e confirma a fase inicial **Aguardando**; a segunda
+aplica os 21 status individuais da planilha recebida e transforma os três menus em partes de um único funil:
 Landing Bank mostra Aguardando; Prospecção mostra Prospecção, Viabilidade,
 Contrato e Mercado e negócio; e Esteira mostra Masterplan, Aprovação e Obra.
 Ao alterar a fase, o negócio muda de menu automaticamente sem perder histórico,
