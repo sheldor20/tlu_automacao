@@ -102,6 +102,19 @@ O fluxo funcional é:
 Não existem novas variáveis de ambiente. PDFs ficam privados e o link público
 entrega somente as bases aprovadas, sem expor arquivos financeiros.
 
+## Carteiras de Novos Negócios
+
+Depois do merge, execute
+`supabase/migrations/20260908120000_new_business_portfolios_and_files.sql`
+no SQL Editor com a role `postgres`. A migration mantém os negócios existentes
+na **Esteira de negócios**, cria as carteiras de **Prospecção** e **Landing Bank**,
+os buckets privados de anexos e localização KMZ e restringe a exclusão definitiva
+de áreas à Prospecção.
+
+Novos cadastros exigem um KMZ. O sistema extrai o ponto central da área para o
+atalho do Google Maps; imagens, PDFs e vídeos podem ser adicionados depois pelo
+botão de arquivos de cada negócio atual.
+
 ## Sincronização semanal do NPS
 
 O endpoint `/api/cron/nps` autentica no ASCSAC e consulta separadamente os 12

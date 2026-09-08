@@ -75,6 +75,9 @@ export function friendlyError(error: unknown) {
   if (message.includes("business_project_not_eligible")) {
     return "O projeto selecionado precisa estar ativo ou concluído e não pode estar arquivado.";
   }
+  if (message.includes("business_delete_only_allowed_in_prospeccao")) {
+    return "A exclusão definitiva de áreas só é permitida em Prospecção.";
+  }
   if (message.includes("profile_required") || message.includes("profile_not_available")) {
     return "Selecione um usuário ativo cadastrado no Supabase.";
   }

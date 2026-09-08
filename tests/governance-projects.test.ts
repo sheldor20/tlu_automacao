@@ -7,7 +7,7 @@ const progressViewFix = readFileSync(new URL("../supabase/migrations/20260831184
 const shell = readFileSync(new URL("../components/app-shell.tsx", import.meta.url), "utf8");
 const projectsPage = readFileSync(new URL("../app/(app)/projetos/page.tsx", import.meta.url), "utf8");
 const projectDetailPage = readFileSync(new URL("../app/(app)/projetos/[id]/page.tsx", import.meta.url), "utf8");
-const businessPage = readFileSync(new URL("../app/(app)/novos-negocios/page.tsx", import.meta.url), "utf8");
+const businessPage = readFileSync(new URL("../components/new-business-portfolio.tsx", import.meta.url), "utf8");
 const taskBoard = readFileSync(new URL("../components/project-task-board.tsx", import.meta.url), "utf8");
 
 test("separa projetos operacionais e de governança com acesso próprio", () => {
