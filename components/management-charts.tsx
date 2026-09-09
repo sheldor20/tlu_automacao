@@ -17,10 +17,10 @@ function compactNumber(value: number) {
   }).format(value);
 }
 
-function dataLabel(value: number) {
+function dataLabel(value: number, maximumFractionDigits = 1) {
   return new Intl.NumberFormat("pt-BR", {
     notation: Math.abs(value) >= 1_000 ? "compact" : "standard",
-    maximumFractionDigits: 1,
+    maximumFractionDigits,
   }).format(value);
 }
 
@@ -50,12 +50,14 @@ export function TrendChart({
   emptyLabel = "Aguardando dados mensais",
   fixedRange,
   compact = false,
+  maximumFractionDigits = 1,
 }: {
   labels: string[];
   series: ChartSeries[];
   emptyLabel?: string;
   fixedRange?: { min: number; max: number };
   compact?: boolean;
+  maximumFractionDigits?: number;
 }) {
   const gradientId = useId().replace(/:/g, "");
   const width = compact ? 760 : 680;
@@ -126,7 +128,7 @@ export function TrendChart({
               {path ? <path d={path} fill="none" stroke={item.color} strokeWidth={compact ? 2 : 3} strokeLinecap="round" strokeLinejoin="round" /> : null}
               {validPoints.map((point) => {
                 const isCurrent = currentPoint?.index === point.index;
-                const label = dataLabel(point.value);
+                const label = dataLabel(point.value, maximumFractionDigits);
                 const labelWidth = compact ? Math.max(28, label.length * 6.8 + 12) : Math.max(34, label.length * 8.4 + 16);
                 const labelX = isCurrent
                   ? clamp(x(point.index), padding.left + labelWidth / 2, width - padding.right - labelWidth / 2)
@@ -139,7 +141,7 @@ export function TrendChart({
                     {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - (compact ? 13 : 16)} width={labelWidth} height={currentLabelHeight} rx={currentLabelHeight / 2} className="chart-current-value-bg" /> : null}
                     <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text>
                     <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? (compact ? 4.5 : 6) : (compact ? 3 : 4)} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth={compact ? 2 : 3}>
-                      <title>{`${item.label}: ${point.value.toLocaleString("pt-BR")}`}</title>
+                      <title>{`${item.label}: ${point.value.toLocaleString("pt-BR", { maximumFractionDigits })}`}</title>
                     </circle>
                   </g>
                 );

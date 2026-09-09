@@ -35,6 +35,7 @@ test("usa somente competências fechadas e exige o mês anterior", () => {
   ]), new Date("2026-08-12T12:00:00-03:00"));
 
   assert.deepEqual(result.map((month) => month.referenceMonth), ["2026-06-01", "2026-07-01"]);
+  assert.equal(result.at(-1)?.delinquencyInitial, 11_261_711.11);
   assert.equal(result.at(-1)?.delinquencyBalance, 9_882_647.34);
   assert.equal(result.at(-1)?.reductionPercent, 12.25);
 });
@@ -57,12 +58,25 @@ test("gera os dois indicadores mensais esperados", () => {
     referenceMonth: "2026-07-01",
     periodLabel: "Jul 2026",
     status: "✅ Concluído",
+    delinquencyInitial: 11_261_711.11,
     delinquencyBalance: 9_882_647.34,
     reductionPercent: 12.25,
   }], "2026-08-12T15:00:00.000Z");
 
+  assert.equal(rows[0].metadata.delinquency_initial, 11_261_711.11);
   assert.deepEqual(rows.map((row) => [row.metric_key, row.value]), [
     ["inadimplencia_total", 9_882_647.34],
     ["eficiencia_cobranca", 12.25],
   ]);
+});
+
+
+test("preserva início zero e rejeita início ausente sem confundi-lo com saldo", () => {
+  const row = ["Jul 2026", "✅ Concluído", "0,00", "0", "0", "0", "0", "0", "123,45", "0%"];
+  const now = new Date("2026-08-12T12:00:00-03:00");
+  const [month] = parseDelinquencySnapshot(snapshot([row]), now);
+  assert.equal(month.delinquencyInitial, 0);
+  assert.equal(month.delinquencyBalance, 123.45);
+  assert.equal(toDelinquencyIndicatorRows([month], now.toISOString())[0].metadata.delinquency_initial, 0);
+  assert.throws(() => parseDelinquencySnapshot(snapshot([[...row.slice(0, 2), "—", ...row.slice(3)]]), now), /valor numérico inválido/);
 });

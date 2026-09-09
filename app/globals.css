@@ -1876,3 +1876,8 @@ body.management-presenting .management-setup-error { min-height: 620px; }
   .public-map-head p { font-size: 9px; }
   .public-map-summary > div:last-child { justify-content: space-between; }
 }
+
+.management-kpi-grid .management-kpi-delinquency > strong { display: grid; gap: 6px; font-size: 14px; font-weight: 400; line-height: 1.4; }
+.management-kpi-delinquency > strong > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.management-kpi-delinquency > strong b { font-size: 24px; font-variant-numeric: tabular-nums; }
+body.management-presenting .management-kpi-grid .management-kpi-delinquency > strong { font-size: 14px; line-height: 1.4; }
