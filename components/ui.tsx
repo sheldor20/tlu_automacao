@@ -103,7 +103,7 @@ export function KpiCard({
   className = "",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   helper?: ReactNode;
   icon?: ReactNode;
   tone?: "default" | "success" | "warning";

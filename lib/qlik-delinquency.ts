@@ -30,6 +30,7 @@ export type DelinquencyMonth = {
   referenceMonth: string;
   periodLabel: string;
   status: string;
+  delinquencyInitial: number;
   delinquencyBalance: number;
   reductionPercent: number;
 };
@@ -135,6 +136,7 @@ export function parseDelinquencySnapshot(snapshot: QlikTableSnapshot, now = new 
       referenceMonth,
       periodLabel: cells[0].trim(),
       status,
+      delinquencyInitial: parseBrazilianNumber(cells[2]),
       delinquencyBalance: parseBrazilianNumber(cells[8]),
       reductionPercent: parseBrazilianNumber(cells[9]),
     });
@@ -154,6 +156,7 @@ export function toDelinquencyIndicatorRows(months: DelinquencyMonth[], synchroni
       connection: QLIK_DELINQUENCY_CONNECTION_SLUG,
       qlik_status: month.status,
       qlik_period: month.periodLabel,
+      delinquency_initial: month.delinquencyInitial,
       filters: Object.fromEntries(QLIK_DELINQUENCY_FILTERS.map((item) => [item.field, item.value])),
       synchronized_at: synchronizedAt,
     };

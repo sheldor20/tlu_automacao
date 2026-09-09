@@ -129,9 +129,9 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function displayNumber(value: number | null, suffix = "") {
+function displayNumber(value: number | null, suffix = "", maximumFractionDigits = 1) {
   if (value === null) return "—";
-  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value)}${suffix}`;
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits }).format(value)}${suffix}`;
 }
 
 function BreakdownList({
@@ -487,7 +487,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
       ) : (
         <>
           {area === "empresa" ? <CompanyView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
-          {area === "juridico-vendas-cobranca" ? <LegalSalesView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} metricHelperForMonth={metricHelperForMonth} seriesFor={seriesFor} months={months} /> : null}
+          {area === "juridico-vendas-cobranca" ? <LegalSalesView delinquencyInitial={latestMetric("inadimplencia_total")?.metadata?.delinquency_initial} metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} metricHelperForMonth={metricHelperForMonth} seriesFor={seriesFor} months={months} /> : null}
           {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
           {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
           {area === "novos-negocios" ? <NewBusinessView stages={businessStages} /> : null}
@@ -575,8 +575,9 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   );
 }
 
-function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metricHelperForMonth, months }: MetricViewProps & {
+function LegalSalesView({ delinquencyInitial, metricValue, metricValueForMonth, metricHelper, metricHelperForMonth, months }: MetricViewProps & {
   metricHelperForMonth: (key: string, referenceMonth: string, fallback?: string) => string;
+  delinquencyInitial: unknown;
 }) {
   const closedMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
   const closedMonthIndex = months.findIndex((month) => month.key === closedMonth.key);
@@ -584,6 +585,11 @@ function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metric
   const closedValue = (key: string) => metricValueForMonth(key, closedMonth.key);
   const closedHelper = (key: string) => metricHelperForMonth(key, closedMonth.key, `aguardando fechamento de ${closedMonth.label}`);
   const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
+  const initialDelinquency = typeof delinquencyInitial === "number" && Number.isFinite(delinquencyInitial)
+    ? delinquencyInitial
+    : null;
+  const finalDelinquency = metricValue("inadimplencia_total");
+  const millions = (value: number | null) => value === null ? "—" : displayNumber(value / 1_000_000, "M", 2);
   const sales = closedValue("vendas_mes");
   const cancellations = closedValue("distratos_mes");
   const deedMetrics = [
@@ -596,13 +602,22 @@ function LegalSalesView({ metricValue, metricValueForMonth, metricHelper, metric
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
-        <KpiCard label="Eficiência da cobrança" value={displayNumber(metricValue("eficiencia_cobranca"), "%")} helper={metricHelper("eficiencia_cobranca")} tone="success" icon={<Gauge size={17} />} />
-        <KpiCard label="Inadimplência total" value={metricValue("inadimplencia_total") === null ? "—" : currency(metricValue("inadimplencia_total") || 0, true)} helper={metricHelper("inadimplencia_total")} icon={<HandCoins size={17} />} />
+        <KpiCard label="Eficiência da cobrança" value={displayNumber(metricValue("eficiencia_cobranca"), "%", 2)} helper={metricHelper("eficiencia_cobranca")} tone="success" icon={<Gauge size={17} />} />
+        <KpiCard
+          label="Inadimplência total"
+          className="management-kpi-delinquency"
+          value={<>
+            <span>Iniciou em <b>{millions(initialDelinquency)}</b></span>
+            <span>Fechou em <b>{millions(finalDelinquency)}</b></span>
+          </>}
+          helper={metricHelper("inadimplencia_total")}
+          icon={<HandCoins size={17} />}
+        />
         <KpiCard label="Unidades disponíveis" value={displayNumber(closedValue("unidades_disponiveis"))} helper={closedHelper("unidades_disponiveis")} icon={<Building2 size={17} />} />
         <KpiCard label="Vendas no mês" value={displayNumber(sales)} helper={cancellations === null ? closedHelper("vendas_mes") : `${displayNumber(cancellations)} distrato(s) · fechamento ${closedMonth.label}`} icon={<ShoppingCart size={17} />} />
       </section>
       <section className="management-two-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Cobrança</span><h2>Eficiência mês a mês</h2></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Eficiência (%)", color: "#405343", values: closedSeries("eficiencia_cobranca") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Cobrança</span><h2>Eficiência mês a mês</h2></div></div><TrendChart maximumFractionDigits={2} labels={chartMonths.map((month) => month.label)} series={[{ label: "Eficiência (%)", color: "#405343", values: closedSeries("eficiencia_cobranca") }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Comercial</span><h2>Vendas, estoque e distratos</h2><p>Histórico até o último mês fechado · {closedMonth.label}.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#9aab95", values: closedSeries("unidades_disponiveis") }, { label: "Vendas", color: "#405343", values: closedSeries("vendas_mes") }, { label: "Distratos", color: "#b96c62", values: closedSeries("distratos_mes") }]} /></article>
       </section>
       <section className="management-panel">
