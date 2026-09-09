@@ -14,7 +14,7 @@ import {
 const selections = Object.fromEntries(QLIK_DELINQUENCY_FILTERS.map((filter) => [filter.field, filter.value]));
 
 function snapshot(rows: string[][]): QlikTableSnapshot {
-  return { headers: [...QLIK_DELINQUENCY_HEADERS], rows, selections };
+  return { headers: [...QLIK_DELINQUENCY_HEADERS], rows, selections: { ...selections } };
 }
 
 test("normaliza números monetários e percentuais do Qlik", () => {
