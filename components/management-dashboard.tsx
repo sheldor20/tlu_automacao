@@ -621,7 +621,7 @@ function LegalSalesView({ delinquencyInitial, metricValue, metricValueForMonth, 
         <article className="management-panel"><div className="management-panel-head"><div><span>Comercial</span><h2>Vendas, estoque e distratos</h2><p>Histórico até o último mês fechado · {closedMonth.label}.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#9aab95", values: closedSeries("unidades_disponiveis") }, { label: "Vendas", color: "#405343", values: closedSeries("vendas_mes") }, { label: "Distratos", color: "#b96c62", values: closedSeries("distratos_mes") }]} /></article>
       </section>
       <section className="management-panel">
-        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Sem processo e Autorizadas no último dia útil disponível de cada mês, de janeiro até o fechamento de {closedMonth.label}.</p></div></div>
+        <div className="management-panel-head"><div><span>Pós-vendas e jurídico</span><h2>Tração das unidades quitadas</h2><p>Sem processo e Autorizadas com Último Recebimento até o último dia de cada mês, de janeiro até o fechamento de {closedMonth.label}.</p></div></div>
         <div className="management-stage-kpis">{deedMetrics.map(([label, key]) => <article key={key}><span>{label}</span><strong>{displayNumber(closedValue(key))}</strong><small>{closedHelper(key)}</small></article>)}</div>
         <TrendChart compact labels={chartMonths.map((month) => month.label)} series={[{ label: "Sem processo", color: "#b47c73", values: closedSeries("unidades_sem_processo") }, { label: "Autorizadas", color: "#667d68", values: closedSeries("unidades_autorizadas_escrituracao") }]} />
       </section>

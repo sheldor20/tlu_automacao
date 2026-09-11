@@ -231,16 +231,23 @@ Qlik e alimenta oito indicadores da visão **Jurídico, Vendas e Cobrança**:
 
 - estoque mensal de unidades disponíveis;
 - vendas e distratos mensais;
-- histórico acumulado de unidades quitadas e autorizadas, com a série de
-  unidades sem processo derivada por competência;
-- posições atuais de unidades sem processo, em escrituração sem registro e
-  registradas.
+- contagens acumuladas de quitadas, sem processo, autorizadas, em escrituração
+  sem registro e registradas, usando **Último Recebimento** até o último dia
+  de cada mês fechado (inclusive fins de semana).
 
-A carga localiza cada visualização pelo título e pelos nomes das medidas dentro
-da planilha, aplica os campos de ano e mês de janeiro até o mês vigente e valida
-as oito séries antes de gravar. Se um título ficar ausente ou ambíguo, um mês não
-existir ou qualquer contagem não for inteira e não negativa, nenhuma linha da
-execução é persistida e o último painel válido permanece disponível.
+A carga localiza as visualizações nas respectivas planilhas e recalcula de
+janeiro até o último mês fechado em São Paulo a cada execução. Para as cinco
+contagens, não se aplica limite inferior de data: recebimentos de anos anteriores
+continuam incluídos. O cálculo subtrai do total apenas recebimentos posteriores
+ao fechamento; unidades sem data permanecem no total, conforme a conciliação
+de agosto (3.344 − 4 = 3.340). Julho exclui recebimentos de agosto em diante; agosto exclui
+setembro em diante. O campo deve corresponder exatamente a **Último Recebimento**
+(acentos e maiúsculas são normalizados), sem fallback para data de posição,
+venda ou calendário. O gráfico Sem processo vs Autorizadas usa essas séries.
+
+As oito séries são validadas e substituídas em uma única transação. Falhas na
+leitura ou validação preservam a última carga válida. A atualização manual e o
+cron usam a mesma regra e reprocessam também os meses anteriores.
 
 Não há novas credenciais para configurar: o endpoint reutiliza
 `QLIK_USERNAME`, `QLIK_PASSWORD`, `CRON_SECRET`,
