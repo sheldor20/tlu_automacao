@@ -91,7 +91,7 @@ const LEGAL_SALES_METRICS_PER_BROWSER = 2;
 /**
  * Mantém cada leitura curta para evitar que o renderer do Chromium acumule
  * todo o trabalho mensal do aplicativo de vendas em um único page.evaluate.
- * Cada item é executado em uma sessão de navegador independente pela rota.
+ * Cada item usa uma página independente, reutilizando a sessão autenticada.
  */
 export const QLIK_LEGAL_SALES_SCRAPE_BATCHES: ReadonlyArray<QlikCloudMetricApp> = QLIK_LEGAL_SALES_APPS
   .flatMap((app) => Array.from(
