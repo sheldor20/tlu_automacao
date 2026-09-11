@@ -1342,9 +1342,18 @@ async function readQlikEngineMetrics(
   });
 }
 
+let chromiumPathPromise: Promise<string> | undefined;
+
 async function launchBrowser(): Promise<Browser> {
   chromium.setGraphicsMode = false;
-  const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath();
+  // Concurrent indicator jobs must not unpack the same executable twice.
+  if (!process.env.CHROME_EXECUTABLE_PATH && !chromiumPathPromise) {
+    chromiumPathPromise = chromium.executablePath().catch((error) => {
+      chromiumPathPromise = undefined;
+      throw error;
+    });
+  }
+  const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromiumPathPromise;
   if (!executablePath) throw new Error("Chromium: o executável não foi localizado no ambiente do servidor.");
   return puppeteer.launch({
     args: await puppeteer.defaultArgs({ args: [...chromium.args, "--lang=pt-BR"], headless: "shell" }),
@@ -1425,14 +1434,22 @@ export async function scrapeQlikCloudTable(options: QlikCloudTableOptions): Prom
   }
 }
 
-export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions): Promise<QlikMetricSnapshot[]> {
+export async function createQlikCloudMetricSession() {
+  const browser = await launchBrowser();
+  return {
+    scrape: (options: QlikCloudMetricOptions) => scrapeQlikCloudMetrics(options, browser),
+    close: () => browser.close(),
+  };
+}
+
+export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions, sessionBrowser?: Browser): Promise<QlikMetricSnapshot[]> {
   if (!Number.isInteger(options.year) || options.year < 2000 || options.year > 2100) {
     throw new Error(`Qlik: ano inválido para a sincronização: ${options.year}.`);
   }
   if (!Number.isInteger(options.throughMonth) || options.throughMonth < 1 || options.throughMonth > 12) {
     throw new Error(`Qlik: mês final inválido para a sincronização: ${options.throughMonth}.`);
   }
-  const browser = await launchBrowser();
+  const browser = sessionBrowser || await launchBrowser();
   const snapshots: QlikMetricSnapshot[] = [];
   try {
     for (const app of options.apps) {
@@ -1475,6 +1492,6 @@ export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions): P
     }
     return snapshots;
   } finally {
-    await browser.close();
+    if (!sessionBrowser) await browser.close();
   }
 }

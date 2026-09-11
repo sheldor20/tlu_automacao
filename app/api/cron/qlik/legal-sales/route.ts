@@ -85,8 +85,9 @@ export async function GET(request: Request) {
   let phase = "load-browser-runtime";
   const completedBatches: string[][] = [];
   const recoveredBatches: string[][] = [];
+  let session: Awaited<ReturnType<typeof import("@/lib/qlik-cloud")["createQlikCloudMetricSession"]>> | undefined;
   try {
-    const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
+    const { createQlikCloudMetricSession } = await import("@/lib/qlik-cloud");
     const rawSnapshots: QlikMetricSnapshot[] = [];
     for (const [batchIndex, app] of QLIK_LEGAL_SALES_SCRAPE_BATCHES.entries()) {
       const metricKeys = app.metrics.map((metric) => metric.metricKey);
@@ -94,7 +95,8 @@ export async function GET(request: Request) {
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-          rawSnapshots.push(...await scrapeQlikCloudMetrics({
+          session ??= await createQlikCloudMetricSession();
+          rawSnapshots.push(...await session.scrape({
             username,
             password,
             apps: [app],
@@ -111,10 +113,14 @@ export async function GET(request: Request) {
             metrics: metricKeys,
             error: error instanceof Error ? error.message : String(error),
           });
+          await session?.close().catch(() => undefined);
+          session = undefined;
           await new Promise((resolve) => setTimeout(resolve, 2_000));
         }
       }
     }
+    await session?.close().catch(() => undefined);
+    session = undefined;
     phase = "validate-eight-indicators";
     const snapshots = validateLegalSalesSnapshots(rawSnapshots);
     const synchronizedAt = new Date().toISOString();
@@ -227,5 +233,7 @@ export async function GET(request: Request) {
       phase,
       error: message,
     }, { status: 502 });
+  } finally {
+    await session?.close().catch(() => undefined);
   }
 }
