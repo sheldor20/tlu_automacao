@@ -69,7 +69,7 @@ test("divide a leitura em sessões curtas sem perder ou duplicar indicadores", (
   );
 });
 
-test("consulta as cinco posições de escritura no último dia útil disponível de cada mês", () => {
+test("consulta as cinco posições pelo Último Recebimento até o último dia de cada mês", () => {
   const metrics = QLIK_LEGAL_SALES_APPS.flatMap((app) => app.metrics);
   const quitadas = metrics.find((metric) => metric.metricKey === "unidades_quitadas");
   const semProcesso = metrics.find((metric) => metric.metricKey === "unidades_sem_processo");
@@ -77,8 +77,8 @@ test("consulta as cinco posições de escritura no último dia útil disponível
   const emEscrituracao = metrics.find((metric) => metric.metricKey === "unidades_escrituracao_sem_registro");
   const registradas = metrics.find((metric) => metric.metricKey === "unidades_registradas");
   for (const metric of [quitadas, semProcesso, autorizadas, emEscrituracao, registradas]) {
-    assert.equal(metric?.periodStrategy, "date-through-business-day");
-    assert.equal(metric?.dateField, "Data Posição");
+    assert.equal(metric?.periodStrategy, "date-exclude-after-month");
+    assert.equal(metric?.dateField, "Último Recebimento");
     assert.equal(metric?.exactDateField, true);
   }
 });

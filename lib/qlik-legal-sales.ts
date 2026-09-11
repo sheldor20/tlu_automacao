@@ -5,36 +5,13 @@ export const QLIK_LEGAL_SALES_SOURCE = "Qlik Cloud - Vendas e Escrituração";
 export const QLIK_LEGAL_SALES_AREA = "juridico-vendas-cobranca";
 
 const QLIK_TENANT = "https://terralotusurbanismo.us.qlikcloud.com";
-const POSITION_DATE_FIELDS = [
-  "Data Posição",
-  "Data Posicao",
-  "Data de Posição",
-  "Data de Posicao",
-  "Data da Posição",
-  "Data da Posicao",
-  "Data Referência",
-  "Data Referencia",
-  "Data de Referência",
-  "Data de Referencia",
-  "Data Competência",
-  "Data Competencia",
-  "Data Fechamento",
-  "Data Histórico",
-  "Data Historico",
-  "Data.Calendário.Data",
-  "Data.Calendario.Data",
-  "Calendário.Data",
-  "Calendario.Data",
-  "Data.autoCalendar.Date",
-  "Data",
-] as const;
-
+// Use only the last-receipt field: position/sale dates describe different events.
 const monthEndPosition = {
   mode: "monthly" as const,
-  periodStrategy: "date-through-business-day" as const,
-  dateField: POSITION_DATE_FIELDS[0],
-  dateFieldCandidates: POSITION_DATE_FIELDS.slice(1),
+  periodStrategy: "date-exclude-after-month" as const,
+  dateField: "Último Recebimento",
   exactDateField: true,
+  requireScalar: true,
 };
 
 export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
@@ -88,7 +65,7 @@ export const QLIK_LEGAL_SALES_APPS: ReadonlyArray<QlikCloudMetricApp> = [
         metricKey: "unidades_autorizadas_escrituracao",
         sheetId: "626f7856-4a17-40ee-bf06-2896e76c6083",
         targetLabel: "Vendas com aut de escritura",
-        aliases: ["Vendas com autorização de escritura", "Autorizadas para escrituração"],
+        aliases: ["Vendas Com Aut Escritura", "Vendas com autorização de escritura", "Autorizadas para escrituração"],
         ...monthEndPosition,
       },
       {
@@ -225,7 +202,7 @@ export function toLegalSalesIndicatorRows(snapshots: QlikMetricSnapshot[], synch
     value: snapshot.value,
     source: QLIK_LEGAL_SALES_SOURCE,
     notes: QLIK_DEED_POSITION_METRIC_KEYS.includes(snapshot.metricKey as typeof QLIK_DEED_POSITION_METRIC_KEYS[number])
-      ? "Posição acumulada até o último dia útil disponível do mês no Qlik Cloud."
+      ? "Total do Qlik menos unidades com Último Recebimento posterior ao último dia do mês; registros sem data preservados no total."
       : snapshot.mode === "monthly"
         ? "Valor mensal consultado no Qlik Cloud."
       : "Posição atual consultada no Qlik Cloud.",

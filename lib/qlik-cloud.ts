@@ -22,10 +22,11 @@ export type QlikCloudMetricDefinition = {
   targetLabel: string;
   aliases?: ReadonlyArray<string>;
   mode: "monthly" | "snapshot" | "breakdown";
-  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-through-business-day" | "date-last-day" | "date-last-business-day";
+  periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-exclude-after-month" | "date-through-business-day" | "date-last-day" | "date-last-business-day";
   dateField?: string;
   dateFieldCandidates?: ReadonlyArray<string>;
   exactDateField?: boolean;
+  requireScalar?: boolean;
   filters?: ReadonlyArray<QlikCloudMetricFilter>;
 };
 
@@ -667,7 +668,10 @@ async function readQlikEngineMetrics(
 
       const resolvedMetrics = new Map<string, ObjectCandidate>();
       for (const metric of metrics) {
-        const candidates = await candidateObjects(metric.sheetId);
+        const sheetCandidates = await candidateObjects(metric.sheetId);
+        const candidates = metric.requireScalar
+          ? sheetCandidates.filter((candidate) => candidate.dimensionCount === 0 && candidate.measureCount === 1)
+          : sheetCandidates;
         if (metric.objectId) {
           const pinned = candidates.find((candidate) => candidate.id === metric.objectId);
           if (!pinned) {
@@ -1142,7 +1146,7 @@ async function readQlikEngineMetrics(
       }
 
       const dateFieldMetrics = metrics.filter((metric) => (
-        metric.mode === "monthly" && ["date-field", "date-through-month", "date-through-business-day", "date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "")
+        metric.mode === "monthly" && ["date-field", "date-through-month", "date-exclude-after-month", "date-through-business-day", "date-last-day", "date-last-business-day"].includes(metric.periodStrategy || "")
       ));
       const dateFields = new Map(dateFieldMetrics.map((metric) => {
         if (!metric.dateField) throw new Error(`Qlik Engine: “${metric.targetLabel}” não definiu o campo de data.`);
@@ -1163,6 +1167,40 @@ async function readQlikEngineMetrics(
           await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
           const selections = await applyMetricFilters(metric);
           const fieldName = dateFields.get(metric.metricKey)!;
+          // Subtract only receipts after closing. Selecting <= closing would also
+          // remove undated units that are included in the Qlik total.
+          if (metric.periodStrategy === "date-exclude-after-month") {
+            const referenceMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+            const cutoff = Date.UTC(year, month, 1);
+            const closingDate = new Date(cutoff - 86_400_000).toISOString().slice(0, 10);
+            const total = await readMetric(metric, referenceMonth, selections);
+            const futureDates = (dateValues.get(fieldName) || []).filter((value) => {
+              const date = fieldValueDate(value);
+              return date !== null && date.getTime() >= cutoff;
+            });
+            let excluded = 0;
+            if (futureDates.length) {
+              await selectValues(fieldName, futureDates);
+              excluded = (await readMetric(metric, referenceMonth, selections)).value;
+            }
+            if (!Number.isInteger(total.value) || !Number.isInteger(excluded)
+              || excluded < 0 || excluded > total.value) {
+              throw new Error(`Qlik Engine: contagem inválida para “${metric.targetLabel}” em ${referenceMonth}.`);
+            }
+            snapshots.push({
+              ...total,
+              value: total.value - excluded,
+              selections: {
+                ...selections,
+                [fieldName]: `total menos recebimentos posteriores a ${closingDate}`,
+                reference_date: closingDate,
+                total_before_cutoff: String(total.value),
+                excluded_after_cutoff: String(excluded),
+                undated_policy: "preservados no total de origem",
+              },
+            });
+            continue;
+          }
           let matchingDates = (dateValues.get(fieldName) || []).filter((value) => {
             const date = fieldValueDate(value);
             if (!date) return false;
