@@ -319,3 +319,31 @@ sem substituir a última carga válida.
 - variáveis sensíveis apenas no servidor;
 - credenciais de integrações somente em variáveis protegidas da Vercel;
 - acesso efetivo por departamento no menu, nas tabelas e nos arquivos privados.
+
+## VGV projetado em Novos Negócios
+
+A visão `/indicadores/novos-negocios` apresenta o total a receber da carteira,
+a taxa geral atual de inadimplência e o valor ajustado por essa taxa. A curva
+mostra o saldo após os recebimentos previstos até o final de cada ano.
+
+A rotina `/api/cron/qlik/vgv` usa as credenciais Qlik já configuradas e roda às
+segundas-feiras às 12:00 UTC (09:00 em Brasília). O botão **Atualizar** do painel
+executa a mesma rotina com validação da sessão e do acesso a Novos Negócios.
+
+- Fonte da carteira: **Contas A Receber | Financeiro**, somente
+  `Grupo Empresa = Terra Lótus`.
+- O cronograma reutiliza a medida do KPI e agrega por `Data Vencimento`, sem
+  importar clientes, contratos ou parcelas individuais.
+- Fonte da taxa: segunda medida do KPI **Inadimplência** em **Multi Análises |
+  Inadimplência**, visão geral sem filtros adicionais. Não é a taxa de redução
+  mensal usada no indicador de eficiência da cobrança.
+- O ajuste usa `total a receber × (1 − taxa / 100)` com a precisão numérica
+  original do Qlik. A interface exibe a taxa com duas casas decimais.
+- Valores vencidos antes da data da leitura permanecem no saldo, sem presumir
+  a data de recuperação. A projeção não inclui novas vendas.
+- A soma dos vencimentos futuros mais o vencido precisa conciliar com o KPI
+  total. Falhas preservam o último snapshot válido; cartões e anos são gravados
+  na mesma transação. A data da carga e o aviso de desatualização ficam visíveis.
+
+A migration `20260914180241_qlik_vgv_projection.sql` cadastra os quatro
+indicadores e a conexão, preservando o controle de acesso existente por área.

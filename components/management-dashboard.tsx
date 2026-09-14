@@ -1,6 +1,7 @@
 "use client";
 
 import { GroupedBarChart, TrendChart } from "@/components/management-charts";
+import { VgvProjectionPanel } from "@/components/vgv-projection-panel";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
@@ -90,7 +91,7 @@ const managementAreas: Array<{
     label: "Novos Negócios",
     shortLabel: "Novos negócios",
     eyebrow: "Pipeline de áreas",
-    description: "Quantidade de áreas, VGV potencial e velocidade de passagem por cada fase do funil.",
+    description: "Projeção de recebimentos da carteira e acompanhamento do funil de novos negócios.",
     icon: TrendingUp,
   },
   {
@@ -219,9 +220,9 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         .from("management_indicator_values")
         .select("*")
         .eq("area", area)
-        .gte("reference_month", ["empresa", "financas-compras", "juridico-vendas-cobranca"].includes(area) ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
+        .gte("reference_month", area === "novos-negocios" ? "2000-01-01" : ["empresa", "financas-compras", "juridico-vendas-cobranca"].includes(area) ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`)
         .lt("reference_month", `${currentYear + 1}-01-01`)
-        .order("reference_month", { ascending: true }),
+        .order("reference_month", { ascending: area !== "novos-negocios" }),
       area === "novos-negocios" ? supabase.rpc("management_business_funnel_snapshot") : Promise.resolve({ data: [], error: null }),
       area === "obras-engenharia" ? supabase.rpc("management_construction_snapshot") : Promise.resolve({ data: [], error: null }),
       area === "rh-marketing-clientes" ? supabase.rpc("management_rental_snapshot") : Promise.resolve({ data: [], error: null }),
@@ -490,7 +491,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
           {area === "juridico-vendas-cobranca" ? <LegalSalesView delinquencyInitial={latestMetric("inadimplencia_total")?.metadata?.delinquency_initial} metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} metricHelperForMonth={metricHelperForMonth} seriesFor={seriesFor} months={months} /> : null}
           {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
           {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
-          {area === "novos-negocios" ? <NewBusinessView stages={businessStages} /> : null}
+          {area === "novos-negocios" ? <NewBusinessView stages={businessStages} values={areaValues} /> : null}
           {area === "obras-engenharia" ? <EngineeringView constructions={constructions} /> : null}
         </>
       )}
@@ -679,7 +680,7 @@ function FinancePurchasingView({ metricValueForMonth, months }: MetricViewProps)
   );
 }
 
-function NewBusinessView({ stages }: { stages: ManagementBusinessStageSnapshot[] }) {
+function NewBusinessView({ stages, values }: { stages: ManagementBusinessStageSnapshot[]; values: ManagementIndicatorValue[] }) {
   const orderedStages = BUSINESS_STAGES.map((definition) => ({
     ...definition,
     snapshot: stages.find((item) => item.stage === definition.key) || { stage: definition.key, area_count: 0, potential_vgv: 0, average_days: 0 },
@@ -689,6 +690,7 @@ function NewBusinessView({ stages }: { stages: ManagementBusinessStageSnapshot[]
   const maxVgv = Math.max(...orderedStages.map((item) => item.snapshot.potential_vgv), 1);
   return (
     <div className="management-view-stack">
+      <VgvProjectionPanel values={values} />
       <section className="management-kpi-grid management-kpi-grid-two">
         <KpiCard label="Áreas no pipeline" value={String(totalAreas)} helper="negócios ativos no funil" icon={<BriefcaseBusiness size={17} />} />
         <KpiCard label="VGV potencial" value={currency(totalVgv, true)} helper="soma de todo o pipeline" icon={<CircleDollarSign size={17} />} />

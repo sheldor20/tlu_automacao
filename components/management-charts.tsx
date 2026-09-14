@@ -51,6 +51,9 @@ export function TrendChart({
   fixedRange,
   compact = false,
   maximumFractionDigits = 1,
+  valueLabelInterval = 1,
+  highlightLatest = true,
+  wide = false,
 }: {
   labels: string[];
   series: ChartSeries[];
@@ -58,9 +61,12 @@ export function TrendChart({
   fixedRange?: { min: number; max: number };
   compact?: boolean;
   maximumFractionDigits?: number;
+  valueLabelInterval?: number;
+  highlightLatest?: boolean;
+  wide?: boolean;
 }) {
   const gradientId = useId().replace(/:/g, "");
-  const width = compact ? 760 : 680;
+  const width = wide ? 960 : compact ? 760 : 680;
   const height = compact ? 210 : 300;
   const padding = compact
     ? { left: 48, right: 20, top: 34, bottom: 36 }
@@ -89,7 +95,7 @@ export function TrendChart({
             <stop offset="1" stopColor={series[0]?.color || "#405343"} stopOpacity="0" />
           </linearGradient>
         </defs>
-        {latestIndex >= 0 ? (
+        {highlightLatest && latestIndex >= 0 ? (
           <rect
             x={clamp(x(latestIndex) - monthSpacing * .42, padding.left, width - padding.right - monthSpacing * .84)}
             y={padding.top - (compact ? 18 : 26)}
@@ -127,7 +133,8 @@ export function TrendChart({
             <g key={item.label}>
               {path ? <path d={path} fill="none" stroke={item.color} strokeWidth={compact ? 2 : 3} strokeLinecap="round" strokeLinejoin="round" /> : null}
               {validPoints.map((point) => {
-                const isCurrent = currentPoint?.index === point.index;
+                const isCurrent = highlightLatest && currentPoint?.index === point.index;
+                const showLabel = (point.index % valueLabelInterval === 0 && (point.index === 0 || (currentPoint?.index || 0) - point.index >= valueLabelInterval)) || currentPoint?.index === point.index;
                 const label = dataLabel(point.value, maximumFractionDigits);
                 const labelWidth = compact ? Math.max(28, label.length * 6.8 + 12) : Math.max(34, label.length * 8.4 + 16);
                 const labelX = isCurrent
@@ -139,7 +146,7 @@ export function TrendChart({
                 return (
                   <g key={`${item.label}-${point.index}`}>
                     {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - (compact ? 13 : 16)} width={labelWidth} height={currentLabelHeight} rx={currentLabelHeight / 2} className="chart-current-value-bg" /> : null}
-                    <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text>
+                    {showLabel ? <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text> : null}
                     <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? (compact ? 4.5 : 6) : (compact ? 3 : 4)} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth={compact ? 2 : 3}>
                       <title>{`${item.label}: ${point.value.toLocaleString("pt-BR", { maximumFractionDigits })}`}</title>
                     </circle>

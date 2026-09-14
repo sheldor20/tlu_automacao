@@ -27,6 +27,8 @@ export type QlikCloudMetricDefinition = {
   dateFieldCandidates?: ReadonlyArray<string>;
   exactDateField?: boolean;
   requireScalar?: boolean;
+  measureIndex?: number;
+  breakdownDateField?: string;
   filters?: ReadonlyArray<QlikCloudMetricFilter>;
 };
 
@@ -55,6 +57,7 @@ export type QlikMetricSnapshot = {
   mode: QlikCloudMetricDefinition["mode"];
   referenceMonth: string;
   value: number;
+  valueText?: string;
   appId: string;
   sheetId: string;
   objectId: string;
@@ -920,7 +923,8 @@ async function readQlikEngineMetrics(
         });
         const cells = (dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix?.[0] || [];
         const dimensionCount = hyperCube.qDimensionInfo?.length || 0;
-        const measureCells = cells.slice(dimensionCount).length ? cells.slice(dimensionCount) : cells;
+        const allMeasureCells = cells.slice(dimensionCount).length ? cells.slice(dimensionCount) : cells;
+        const measureCells = metric.measureIndex === undefined ? allMeasureCells : [allMeasureCells[metric.measureIndex]].filter(Boolean);
         let value: number | null = null;
         for (const cell of measureCells) {
           if (Number.isFinite(cell.qNum)) {
@@ -939,6 +943,7 @@ async function readQlikEngineMetrics(
           mode: metric.mode,
           referenceMonth,
           value,
+          valueText: measureCells[0]?.qText,
           appId,
           sheetId: metric.sheetId,
           objectId: object.id,
@@ -1135,6 +1140,54 @@ async function readQlikEngineMetrics(
       };
 
       const snapshots: QlikMetricSnapshot[] = [];
+      // A transient cube reuses the source KPI expression and groups by due date.
+      // It reads aggregates only, without customer or parcel identifiers.
+      for (const metric of metrics.filter((item) => item.breakdownDateField)) {
+        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        const selections = await applyMetricFilters(metric);
+        const fieldName = findExactField([metric.breakdownDateField!], "data de vencimento da carteira");
+        const object = resolvedMetrics.get(metric.metricKey)!;
+        const sourceHandle = handleFrom(await call(docHandle, "GetObject", { qId: object.id }));
+        if (typeof sourceHandle !== "number") throw new Error("Qlik: KPI da carteira indisponível.");
+        const properties = await call(sourceHandle, "GetEffectiveProperties");
+        const definition = (properties.qProp as { qHyperCubeDef?: { qMeasures?: unknown[]; qStateName?: string } })?.qHyperCubeDef;
+        const measure = definition?.qMeasures?.[metric.measureIndex || 0];
+        if (!measure || (definition?.qStateName && definition.qStateName !== "$")) {
+          throw new Error("Qlik: a medida da carteira não usa o estado de seleção esperado.");
+        }
+        const created = await call(docHandle, "CreateSessionObject", { qProp: {
+          qInfo: { qType: "terra-lotus-receivables-by-date" },
+          qHyperCubeDef: {
+            qStateName: "$", qMode: "S", qSuppressZero: true, qSuppressMissing: false,
+            qDimensions: [{ qDef: { qFieldDefs: [fieldName] }, qNullSuppression: false }],
+            qMeasures: [measure],
+          },
+        } });
+        const handle = handleFrom(created);
+        if (typeof handle !== "number") throw new Error("Qlik: não foi possível agrupar a carteira por vencimento.");
+        const layoutResult = await call(handle, "GetLayout");
+        const cube = (layoutResult.qLayout as { qHyperCube?: { qSize?: { qcx?: number; qcy?: number }; qError?: { qErrorCode?: number } } })?.qHyperCube;
+        if (cube?.qError?.qErrorCode || cube?.qSize?.qcx !== 2 || !cube.qSize.qcy) {
+          throw new Error("Qlik: carteira por vencimento vazia ou inválida.");
+        }
+        let rowsRead = 0;
+        for (let top = 0; top < cube.qSize.qcy; top += 1000) {
+          const data = await call(handle, "GetHyperCubeData", { qPath: "/qHyperCubeDef", qPages: [{ qTop: top, qLeft: 0, qHeight: Math.min(1000, cube.qSize.qcy - top), qWidth: 2 }] });
+          const rows = (data.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }>)?.[0]?.qMatrix || [];
+          rowsRead += rows.length;
+          for (const cells of rows) {
+            const date = fieldValueDate({ text: cells[0]?.qText || "", number: cells[0]?.qNum });
+            const value = cells[1]?.qNum;
+            if (!date || typeof value !== "number" || !Number.isFinite(value)) throw new Error("Qlik: vencimento ou valor inválido na carteira.");
+            snapshots.push({ metricKey: metric.metricKey, mode: metric.mode,
+              referenceMonth: `${year}-${String(throughMonth).padStart(2, "0")}-01`, value,
+              appId, sheetId: metric.sheetId, objectId: object.id, objectTitle: object.labels[0] || metric.targetLabel,
+              targetLabel: metric.targetLabel, selections, dimensionKey: date.toISOString().slice(0, 10), dimensionLabel: date.toISOString().slice(0, 10),
+            });
+          }
+        }
+        if (rowsRead !== cube.qSize.qcy) throw new Error("Qlik: leitura incompleta do cronograma da carteira.");
+      }
       const seriesMetrics = metrics.filter((metric) => metric.mode === "monthly" && metric.periodStrategy === "series");
       if (seriesMetrics.length) {
         await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
@@ -1281,7 +1334,7 @@ async function readQlikEngineMetrics(
         }
       }
 
-      const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot");
+      const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot" && !metric.breakdownDateField);
       if (snapshotMetrics.length) {
         const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
         for (const metric of snapshotMetrics) {

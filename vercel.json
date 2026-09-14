@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/qlik/vgv",
+      "schedule": "0 12 * * 1"
+    },
+    {
       "path": "/api/cron/nps",
       "schedule": "0 9 * * 1"
     },
