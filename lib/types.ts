@@ -217,8 +217,8 @@ export type ConstructionEvidence = {
   id: string;
   construction_id: string;
   micro_stage_id: string;
-  file_path: string;
-  file_name: string;
+  file_path: string | null;
+  file_name: string | null;
   note: string | null;
   captured_at: string;
   used_at: string | null;

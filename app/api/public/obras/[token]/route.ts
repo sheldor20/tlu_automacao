@@ -150,10 +150,13 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     map_paths: form.get("map_paths") || undefined,
   });
   const photo = form.get("photo");
-  if (!parsed.success || !(photo instanceof File) || photo.size === 0) {
-    return NextResponse.json({ error: "Informe percentual, estoque e uma foto válida." }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Informe percentual e estoque válidos." }, { status: 400 });
   }
-  if (photo.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(photo.type)) {
+  if (photo !== null && (!(photo instanceof File) || photo.size === 0)) {
+    return NextResponse.json({ error: "Selecione uma foto válida ou envie sem foto." }, { status: 400 });
+  }
+  if (photo && (photo.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(photo.type))) {
     return NextResponse.json({ error: "A foto deve ser JPG, PNG ou WEBP e ter até 10 MB." }, { status: 400 });
   }
 
@@ -181,9 +184,6 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     const documentResult = await access.service.from("construction_plan_documents").select("calibration_points,calibration_distance_m,status").eq("id", mapLayer.document_id).eq("construction_id", access.constructionId).maybeSingle();
     mapDocument = documentResult.data as MapDocumentRow | null;
     if (documentResult.error || !mapDocument || mapDocument.status !== "approved") return NextResponse.json({ error: "A base de medição não está aprovada." }, { status: 409 });
-    if (new Date(parsed.data.map_base_updated_at!).getTime() !== new Date(mapLayer.updated_at).getTime()) {
-      return NextResponse.json({ error: "O mapa recebeu outra atualização. Revise o traçado antes de enviar.", code: "STALE_MAP_LAYER", current_updated_at: mapLayer.updated_at }, { status: 409 });
-    }
   }
 
   const existingResult = await access.service
@@ -206,6 +206,10 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     return NextResponse.json({ ok: true, duplicate: true, micro_stage_updated_at: micro.updated_at, map_layer_updated_at: mapLayer?.updated_at });
   }
 
+  if (mapLayer && new Date(parsed.data.map_base_updated_at!).getTime() !== new Date(mapLayer.updated_at).getTime()) {
+    return NextResponse.json({ error: "O mapa recebeu outra atualização. Revise o traçado antes de enviar.", code: "STALE_MAP_LAYER", current_updated_at: mapLayer.updated_at }, { status: 409 });
+  }
+
   if (new Date(parsed.data.base_updated_at).getTime() !== new Date(micro.updated_at).getTime()) {
     return NextResponse.json({
       error: "Esta microetapa foi alterada depois que a página ficou offline. Revise os dados antes de enviar.",
@@ -214,18 +218,20 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     }, { status: 409 });
   }
 
-  const extension = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : "jpg";
-  const filePath = `${access.constructionId}/public/${parsed.data.micro_stage_id}/${parsed.data.client_submission_id}.${extension}`;
+  const extension = photo?.type === "image/png" ? "png" : photo?.type === "image/webp" ? "webp" : "jpg";
+  const filePath = photo ? `${access.constructionId}/public/${parsed.data.micro_stage_id}/${parsed.data.client_submission_id}.${extension}` : null;
   if (!existingEvidence) {
-    const upload = await access.service.storage.from("construction-evidence").upload(filePath, photo, { contentType: photo.type, upsert: true });
-    if (upload.error) return NextResponse.json({ error: "Não foi possível enviar a foto." }, { status: 502 });
+    if (filePath && photo) {
+      const upload = await access.service.storage.from("construction-evidence").upload(filePath, photo, { contentType: photo.type, upsert: true });
+      if (upload.error) return NextResponse.json({ error: "Não foi possível enviar a foto." }, { status: 502 });
+    }
 
     const evidence = await access.service.from("construction_evidence").insert({
       construction_id: access.constructionId,
       micro_stage_id: parsed.data.micro_stage_id,
       client_submission_id: parsed.data.client_submission_id,
       file_path: filePath,
-      file_name: photo.name.slice(0, 240),
+      file_name: photo?.name.slice(0, 240) || null,
       note: parsed.data.note || null,
       uploaded_by: null,
       submission_source: "public_link",
@@ -237,7 +243,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
         .eq("client_submission_id", parsed.data.client_submission_id)
         .maybeSingle();
       if (!duplicate.data) {
-        await access.service.storage.from("construction-evidence").remove([filePath]);
+        if (filePath) await access.service.storage.from("construction-evidence").remove([filePath]);
         return NextResponse.json({ error: "Não foi possível registrar a evidência." }, { status: 502 });
       }
       existingEvidence = duplicate.data;
@@ -270,7 +276,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     if (applied.error) {
       const stale = /stale_(map_layer|micro_stage)/i.test(applied.error.message);
       await access.service.from("construction_evidence").delete().eq("id", existingEvidence.id);
-      await access.service.storage.from("construction-evidence").remove([existingEvidence.file_path]);
+      if (existingEvidence.file_path) await access.service.storage.from("construction-evidence").remove([existingEvidence.file_path]);
       return NextResponse.json({ error: stale ? "A obra foi atualizada durante a sincronização. Revise o traçado." : "Não foi possível consolidar a medição no mapa.", code: stale ? "STALE_UPDATE" : "MAP_UPDATE_FAILED" }, { status: stale ? 409 : 502 });
     }
     const appliedRow = applied.data as MapApplyRow;

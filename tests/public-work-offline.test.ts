@@ -64,6 +64,37 @@ test("monta o mesmo formulário usado pelo envio online e pela fila", () => {
   assert.ok(body.get("photo") instanceof Blob);
 });
 
+test("envia vistoria sem foto preservando avanço, comentário, estoque e identificação", () => {
+  const withoutPhoto = { ...submission, photo: null, photo_name: "", photo_type: "" };
+  const restored = structuredClone(withoutPhoto);
+  const body = buildPublicWorkSubmissionFormData(restored);
+  assert.equal(body.has("photo"), false);
+  assert.equal(body.get("client_submission_id"), submission.id);
+  assert.equal(body.get("note"), submission.note);
+  assert.deepEqual(JSON.parse(String(body.get("supplies"))), submission.supplies);
+  const updated = applySubmissionToSnapshot(snapshot, restored);
+  assert.equal(updated.stages[0].micro_stages[0].progress_percent, 65);
+  assert.deepEqual(updated.stages[0].micro_stages[0].supplies, submission.supplies);
+});
+
+test("envia medição de mapa sem foto mantendo traçado e versão da camada", () => {
+  const mapSubmission: PendingPublicWorkSubmission = {
+    ...submission,
+    photo: null,
+    photo_name: "",
+    photo_type: "",
+    kind: "map",
+    map_layer_id: "layer-1",
+    map_base_updated_at: submission.base_updated_at,
+    map_paths: [[{ x: 0, y: 0 }, { x: 1, y: 0 }]],
+  };
+  const body = buildPublicWorkSubmissionFormData(mapSubmission);
+  assert.equal(body.has("photo"), false);
+  assert.equal(body.get("map_layer_id"), mapSubmission.map_layer_id);
+  assert.equal(body.get("map_base_updated_at"), submission.base_updated_at);
+  assert.deepEqual(JSON.parse(String(body.get("map_paths"))), mapSubmission.map_paths);
+});
+
 test("repete somente falhas temporárias", () => {
   assert.equal(isRetryablePublicWorkStatus(0), true);
   assert.equal(isRetryablePublicWorkStatus(502), true);

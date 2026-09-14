@@ -305,24 +305,26 @@ export function ConstructionProgressMap({
 
   async function saveProgress(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !selectedDocument || !selectedLayer || !previewMetrics || !progressPhoto || !progressPaths.length || !selectedLayer.micro_stage) return;
+    if (!supabase || !selectedDocument || !selectedLayer || !previewMetrics || !progressPaths.length || !selectedLayer.micro_stage) return;
     setSaving(true);
-    const path = storagePath(construction.id, progressPhoto.name, selectedLayer.micro_stage_id);
-    const upload = await supabase.storage.from("construction-evidence").upload(path, progressPhoto, { cacheControl: "3600", upsert: false });
-    if (upload.error) {
-      setSaving(false);
-      return setMessage({ text: friendlyError(upload.error), error: true });
+    const path = progressPhoto ? storagePath(construction.id, progressPhoto.name, selectedLayer.micro_stage_id) : null;
+    if (path && progressPhoto) {
+      const upload = await supabase.storage.from("construction-evidence").upload(path, progressPhoto, { cacheControl: "3600", upsert: false });
+      if (upload.error) {
+        setSaving(false);
+        return setMessage({ text: friendlyError(upload.error), error: true });
+      }
     }
     const evidence = await supabase.from("construction_evidence").insert({
       construction_id: construction.id,
       micro_stage_id: selectedLayer.micro_stage_id,
       file_path: path,
-      file_name: progressPhoto.name.slice(0, 240),
+      file_name: progressPhoto?.name.slice(0, 240) || null,
       note: progressNote.trim() || null,
       submission_source: "authenticated",
     }).select("id").single();
     if (evidence.error) {
-      await supabase.storage.from("construction-evidence").remove([path]);
+      if (path) await supabase.storage.from("construction-evidence").remove([path]);
       setSaving(false);
       return setMessage({ text: friendlyError(evidence.error), error: true });
     }
@@ -341,7 +343,7 @@ export function ConstructionProgressMap({
     });
     if (result.error) {
       await supabase.from("construction_evidence").delete().eq("id", evidence.data.id);
-      await supabase.storage.from("construction-evidence").remove([path]);
+      if (path) await supabase.storage.from("construction-evidence").remove([path]);
       setSaving(false);
       return setMessage({ text: friendlyError(result.error), error: true });
     }
@@ -384,7 +386,7 @@ export function ConstructionProgressMap({
         {selectedLayer ? <div className="construction-plan-actions">
           {selectedDocument.status === "draft" ? <><div><span>2. Desenhar total previsto</span><small>{selectedLayer.measurement_type === "area" ? "Contorne uma ou mais áreas." : "Trace um ou mais eixos sobre o projeto."}</small></div><Button variant="secondary" onClick={() => setMode(selectedLayer.measurement_type)} disabled={!metersPerCoordinate}><PencilLine size={15} /> Desenhar {selectedLayer.measurement_type === "area" ? "área" : "trecho"}</Button><Button variant="ghost" onClick={undoLastPath} disabled={!plannedDraft.length}><Undo2 size={15} /> Desfazer</Button><Button onClick={() => void savePlannedBase()} loading={saving} disabled={!plannedDraft.length || !metersPerCoordinate}><Save size={15} /> Salvar total</Button><button type="button" className="plan-delete-layer" disabled={Number(selectedLayer.executed_measure || 0) > 0 || saving} onClick={() => void deleteLayer(selectedLayer)}><Trash2 size={15} /> Excluir camada</button></> : <><div><span>Atualização de campo</span><small>O traçado é encaixado ao total planejado e não conta sobreposições duas vezes.</small></div><Button variant="secondary" onClick={() => setMode(selectedLayer.measurement_type)}><PencilLine size={15} /> Marcar executado</Button><Button variant="ghost" onClick={undoLastPath} disabled={!progressPaths.length}><Undo2 size={15} /> Desfazer</Button></>}
         </div> : null}
-        {selectedDocument.status === "approved" && selectedLayer && progressPaths.length ? <form className="plan-progress-submit" onSubmit={saveProgress}><div><strong>Confirmar medição</strong><span>{progressPaths.length} novo(s) traçado(s) · avanço calculado em {previewMetrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><Field label="Evidência fotográfica"><label className="file-drop"><ImagePlus size={18} /><span>{progressPhoto?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressPhoto(event.target.files?.[0] || null)} required /></label></Field><Field label="Comentário"><textarea value={progressNote} onChange={(event) => setProgressNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></Field><Button type="submit" loading={saving} disabled={!progressPhoto}><Save size={16} /> Registrar avanço</Button></form> : null}
+        {selectedDocument.status === "approved" && selectedLayer && progressPaths.length ? <form className="plan-progress-submit" onSubmit={saveProgress}><div><strong>Confirmar medição</strong><span>{progressPaths.length} novo(s) traçado(s) · avanço calculado em {previewMetrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><Field label="Foto (opcional)"><label className="file-drop"><ImagePlus size={18} /><span>{progressPhoto?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressPhoto(event.target.files?.[0] || null)} /></label></Field><Field label="Comentário"><textarea value={progressNote} onChange={(event) => setProgressNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></Field><Button type="submit" loading={saving}><Save size={16} /> Registrar avanço</Button></form> : null}
         {selectedLayer ? <ProgressBar value={Number(previewMetrics?.progressPercent ?? selectedLayer.progress_percent)} label={`Avanço medido · ${selectedLayer.name}`} /> : null}
       </div> : <div className="mini-empty">Não foi possível gerar o acesso temporário ao PDF.</div>}
     </div>}

@@ -63,7 +63,7 @@ export type PendingPublicWorkSubmission = {
   progress_percent: number;
   note: string;
   supplies: ConstructionSupply[];
-  photo: Blob;
+  photo: Blob | null;
   photo_name: string;
   photo_type: string;
   base_updated_at: string;
@@ -267,7 +267,7 @@ export function buildPublicWorkSubmissionFormData(submission: PendingPublicWorkS
     body.set("map_base_updated_at", submission.map_base_updated_at);
     body.set("map_paths", JSON.stringify(submission.map_paths));
   }
-  body.set("photo", submission.photo, submission.photo_name);
+  if (submission.photo) body.set("photo", submission.photo, submission.photo_name);
   return body;
 }
 

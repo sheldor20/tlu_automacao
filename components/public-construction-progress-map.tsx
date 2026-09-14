@@ -15,7 +15,7 @@ export type PublicMapProgressInput = {
   executedMeasure: number;
   progressPercent: number;
   note: string;
-  photo: File;
+  photo: File | null;
 };
 
 export function PublicConstructionProgressMap({
@@ -77,7 +77,7 @@ export function PublicConstructionProgressMap({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedLayer || !micro || !metrics || !photo || !paths.length) return;
+    if (!selectedLayer || !micro || !metrics || !paths.length) return;
     await onSubmit({ layer: selectedLayer, micro, paths, executedMeasure: metrics.executedMeasure, progressPercent: metrics.progressPercent, note, photo });
     setPaths([]);
     setPhoto(null);
@@ -94,8 +94,8 @@ export function PublicConstructionProgressMap({
     <div className="public-map-summary"><div><span style={{ background: selectedLayer.color }} /><strong>{selectedLayer.name}</strong><small>{micro?.name || "Microetapa vinculada"}</small></div><div><span>Executado<strong>{planMeasure(metrics?.executedMeasure ?? selectedLayer.executed_measure, selectedLayer.unit)}</strong></span><span>Avanço<strong>{Number(metrics?.progressPercent ?? selectedLayer.progress_percent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong></span></div></div>
     <ConstructionPlanCanvas documentUrl={selectedPlan.signed_url} pageNumber={selectedPlan.page_number} overlays={overlays} mode={drawing ? selectedLayer.measurement_type : "navigate"} drawingColor={selectedLayer.color} onFinishPath={(path) => setPaths((current) => [...current, path])} resetKey={resetKey} compact />
     <div className="public-map-actions"><div><strong>{drawing ? "Trace sobre a planta" : "Pronto para atualizar"}</strong><span>O sistema considera somente o que coincide com a base planejada.</span></div><button type="button" onClick={() => setDrawing(true)}><PencilLine size={16} /> Marcar executado</button><button type="button" disabled={!paths.length} onClick={() => { setPaths((current) => current.slice(0, -1)); setResetKey((value) => value + 1); }}><Undo2 size={16} /> Desfazer</button></div>
-    {paths.length ? <form className="public-map-confirm" onSubmit={submit}><div><CheckCircle2 size={19} /><span><strong>{paths.length} traçado(s) pronto(s)</strong>O avanço passará para {metrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% após a sincronização.</span></div><label><span>Foto obrigatória</span><div className="file-drop"><Upload size={19} /><b>{photo?.name || "Selecionar foto"}</b><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} required /></div></label><label><span>Comentário</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></label><button type="submit" className="button button-primary" disabled={saving || !photo}><Save size={16} /> {saving ? "Salvando…" : "Salvar medição"}</button></form> : null}
+    {paths.length ? <form className="public-map-confirm" onSubmit={submit}><div><CheckCircle2 size={19} /><span><strong>{paths.length} traçado(s) pronto(s)</strong>O avanço passará para {metrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% após a sincronização.</span></div><label><span>Foto (opcional)</span><div className="file-drop"><Upload size={19} /><b>{photo?.name || "Selecionar foto"}</b><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} /></div></label><label><span>Comentário</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></label><button type="submit" className="button button-primary" disabled={saving}><Save size={16} /> {saving ? "Salvando…" : "Salvar medição"}</button></form> : null}
     <ProgressBar value={metrics?.progressPercent ?? selectedLayer.progress_percent} label={`Avanço medido · ${selectedLayer.name}`} />
-    <div className="public-map-hint"><Camera size={15} /> O mapa, a foto e o comentário ficam salvos juntos no histórico da obra.</div>
+    <div className="public-map-hint"><Camera size={15} /> O mapa, o comentário e a foto, quando anexada, ficam salvos no histórico da obra.</div>
   </section>;
 }

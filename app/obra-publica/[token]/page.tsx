@@ -290,7 +290,7 @@ export default function PublicWorkPage() {
     setProgress(String(submission.progress_percent));
     setNote(submission.note);
     setSupplies(submission.supplies.map((item) => ({ ...item })));
-    setPhoto(new File([submission.photo], submission.photo_name, { type: submission.photo_type || submission.photo.type }));
+    setPhoto(submission.photo ? new File([submission.photo], submission.photo_name, { type: submission.photo_type || submission.photo.type }) : null);
     setQueueOpen(false);
     setNotice({ text: "Confira os dados atuais da microetapa e registre novamente.", tone: "warning" });
   }
@@ -307,11 +307,11 @@ export default function PublicWorkPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!editing || !photo || !work) return;
+    if (!editing || !work) return;
     setSaving(true);
     try {
-      const compressedPhoto = await compressPublicWorkPhoto(photo);
-      if (compressedPhoto.size > PUBLIC_WORK_MAX_PHOTO_BYTES) {
+      const compressedPhoto = photo ? await compressPublicWorkPhoto(photo) : null;
+      if (compressedPhoto && compressedPhoto.size > PUBLIC_WORK_MAX_PHOTO_BYTES) {
         setNotice({ text: "A foto continua maior que 10 MB após a otimização. Selecione uma imagem menor.", tone: "error" });
         return;
       }
@@ -324,8 +324,8 @@ export default function PublicWorkPage() {
         note: note.trim(),
         supplies: supplies.map((item) => ({ ...item })),
         photo: compressedPhoto,
-        photo_name: normalizedPublicWorkPhotoName(photo, compressedPhoto),
-        photo_type: compressedPhoto.type || photo.type,
+        photo_name: photo && compressedPhoto ? normalizedPublicWorkPhotoName(photo, compressedPhoto) : "",
+        photo_type: compressedPhoto?.type || photo?.type || "",
         base_updated_at: editing.updated_at,
         created_at: new Date().toISOString(),
         attempts: 0,
@@ -360,8 +360,8 @@ export default function PublicWorkPage() {
     if (!work) return;
     setSaving(true);
     try {
-      const compressedPhoto = await compressPublicWorkPhoto(input.photo);
-      if (compressedPhoto.size > PUBLIC_WORK_MAX_PHOTO_BYTES) {
+      const compressedPhoto = input.photo ? await compressPublicWorkPhoto(input.photo) : null;
+      if (compressedPhoto && compressedPhoto.size > PUBLIC_WORK_MAX_PHOTO_BYTES) {
         setNotice({ text: "A foto continua maior que 10 MB após a otimização. Selecione uma imagem menor.", tone: "error" });
         return;
       }
@@ -374,8 +374,8 @@ export default function PublicWorkPage() {
         note: input.note.trim(),
         supplies: (input.micro.supplies || []).map((item) => ({ ...item })),
         photo: compressedPhoto,
-        photo_name: normalizedPublicWorkPhotoName(input.photo, compressedPhoto),
-        photo_type: compressedPhoto.type || input.photo.type,
+        photo_name: input.photo && compressedPhoto ? normalizedPublicWorkPhotoName(input.photo, compressedPhoto) : "",
+        photo_type: compressedPhoto?.type || input.photo?.type || "",
         base_updated_at: input.micro.updated_at,
         created_at: new Date().toISOString(),
         attempts: 0,
@@ -478,10 +478,10 @@ export default function PublicWorkPage() {
       <div><span>{editingPendingId ? "Revisão de envio offline" : "Atualização de campo"}</span><h2>{editing.name}</h2><p>Este formulário não exibe nem altera dados financeiros.</p></div>
       <label><span>Avanço</span><div className="range-field"><input type="range" min="0" max="100" value={progress} onChange={(event) => setProgress(event.target.value)} /><strong>{progress}%</strong></div></label>
       {supplies.length ? <div className="public-stock-form"><strong>Estoque atual</strong>{supplies.map((item, index) => <label key={`${item.name}-${index}`}><span>{item.name}<small>Total {Number(item.total_quantity).toLocaleString("pt-BR")}</small></span><input type="number" min="0" max={item.total_quantity} step="0.01" value={remainingSupplyQuantity(item)} onChange={(event) => setSupplies((current) => current.map((supply, itemIndex) => itemIndex === index ? supplyWithRemainingQuantity(supply, Number(event.target.value)) : supply))} /></label>)}</div> : null}
-      <label><span>Foto obrigatória</span><div className="file-drop"><Upload size={20} /><b>{photo?.name || "Selecionar foto"}</b><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} /></div></label>
+      <label><span>Foto (opcional)</span><div className="file-drop"><Upload size={20} /><b>{photo?.name || "Selecionar foto"}</b><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} /></div></label>
       <label><span>Comentário</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1500} placeholder="Descreva o que foi executado" /></label>
       <div className="public-local-save-note"><CloudUpload size={17} /><span><strong>Salvamento seguro</strong>Ao registrar, a atualização fica primeiro neste aparelho e depois é sincronizada.</span></div>
-      <div className="form-actions"><button type="button" className="button button-secondary" onClick={() => { setEditing(null); setEditingPendingId(null); }}>Cancelar</button><button type="submit" className="button button-primary" disabled={saving || !photo}>{saving ? "Salvando…" : isOnline ? "Salvar e sincronizar" : "Salvar no aparelho"}</button></div>
+      <div className="form-actions"><button type="button" className="button button-secondary" onClick={() => { setEditing(null); setEditingPendingId(null); }}>Cancelar</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Salvando…" : isOnline ? "Salvar e sincronizar" : "Salvar no aparelho"}</button></div>
     </form></div> : null}
   </main>;
 }
