@@ -43,14 +43,12 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
         <TrendChart wide labels={labels} maximumFractionDigits={2} valueLabelInterval={Math.max(1, Math.ceil(labels.length / 7))} highlightLatest={false} emptyLabel="Os valores aparecerão após a sincronização validada do Qlik."
           series={[
             { label: "VGV a receber", color: "#405343", values: annual.length ? [total, ...annual.map((row) => row.value)] : [] },
-            { label: "Após inadimplência", color: "#b3875b", values: annual.length ? [adjusted, ...annual.map((row) => typeof row.metadata.adjusted_balance === "number" ? row.metadata.adjusted_balance : null)] : [] },
           ]} />
         {annual.length ? <details className="vgv-annual-details"><summary>Ver valores por ano</summary>
           <div className="vgv-table-scroll"><table><caption>Recebimentos previstos e saldo remanescente por ano</caption><thead><tr><th scope="col">Ano</th><th scope="col">Recebimento previsto</th><th scope="col">Saldo ao fim do ano</th><th scope="col">Após inadimplência</th></tr></thead>
             <tbody>{annual.map((row) => <tr key={row.dimension_key}><th scope="row">{row.dimension_key}</th><td>{typeof row.metadata.receipts === "number" ? currency(row.metadata.receipts) : "—"}</td><td>{currency(row.value)}</td><td>{typeof row.metadata.adjusted_balance === "number" ? currency(row.metadata.adjusted_balance) : "—"}</td></tr>)}</tbody>
           </table></div>
         </details> : null}
-        <p className="vgv-method">Projeção da carteira atual por Data Vencimento, sem novas vendas. A taxa geral de inadimplência do Qlik é mantida nos anos futuros como premissa de ajuste. {typeof latest?.metadata.overdue === "number" ? `${currency(latest.metadata.overdue)} já vencidos permanecem no saldo, sem data presumida de recuperação.` : ""}</p>
       </article>
     </section>
   );
