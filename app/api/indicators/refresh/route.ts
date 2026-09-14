@@ -112,6 +112,8 @@ function responseError(payload: unknown, status: number) {
 
 async function cronHandlerFor(job: IndicatorRefreshJob) {
   switch (job.key) {
+    case "qlik-vgv":
+      return (await import("@/app/api/cron/qlik/vgv/route")).GET;
     case "qlik-finance":
       return (await import("@/app/api/cron/qlik/finance/route")).GET;
     case "qlik-legal-sales":

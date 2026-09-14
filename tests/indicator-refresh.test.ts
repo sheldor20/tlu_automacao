@@ -29,8 +29,8 @@ test("mapeia cada painel somente para as fontes que alimentam seus indicadores",
   );
 });
 
-test("painéis operacionais sem cron apenas releem a base", () => {
-  assert.deepEqual(INDICATOR_REFRESH_JOBS["novos-negocios"], []);
+test("Novos Negócios atualiza a carteira do Qlik e Obras relê a base", () => {
+  assert.deepEqual(INDICATOR_REFRESH_JOBS["novos-negocios"].map((job) => job.path), ["/api/cron/qlik/vgv"]);
   assert.deepEqual(INDICATOR_REFRESH_JOBS["obras-engenharia"], []);
 });
 

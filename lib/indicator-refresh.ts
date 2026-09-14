@@ -10,7 +10,7 @@ export const MANAGEMENT_INDICATOR_AREAS = [
 export type ManagementIndicatorArea = typeof MANAGEMENT_INDICATOR_AREAS[number];
 
 export type IndicatorRefreshJob = {
-  key: "qlik-finance" | "qlik-legal-sales" | "qlik-delinquency" | "nps" | "instagram-followers";
+  key: "qlik-finance" | "qlik-legal-sales" | "qlik-delinquency" | "qlik-vgv" | "nps" | "instagram-followers";
   label: string;
   path: string;
 };
@@ -50,7 +50,7 @@ export const INDICATOR_REFRESH_JOBS: Record<ManagementIndicatorArea, readonly In
   "juridico-vendas-cobranca": [legalSalesJob, delinquencyJob],
   "rh-marketing-clientes": [npsJob, instagramJob],
   "financas-compras": [financeJob],
-  "novos-negocios": [],
+  "novos-negocios": [{ key: "qlik-vgv", label: "Qlik VGV projetado", path: "/api/cron/qlik/vgv" }],
   "obras-engenharia": [],
 };
 
