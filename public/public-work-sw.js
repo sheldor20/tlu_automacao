@@ -1,6 +1,6 @@
 /* global self, indexedDB */
 
-const CACHE_VERSION = "public-work-v2";
+const CACHE_VERSION = "public-work-v3";
 const DOCUMENT_CACHE = `${CACHE_VERSION}-documents`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const DATABASE_NAME = "terra-lotus-public-work";
@@ -89,7 +89,7 @@ function submissionBody(submission) {
     body.set("map_base_updated_at", submission.map_base_updated_at);
     body.set("map_paths", JSON.stringify(submission.map_paths));
   }
-  body.set("photo", submission.photo, submission.photo_name);
+  if (submission.photo) body.set("photo", submission.photo, submission.photo_name);
   return body;
 }
 

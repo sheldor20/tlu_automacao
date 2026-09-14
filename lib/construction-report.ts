@@ -203,7 +203,7 @@ export async function generateConstructionReport({
       doc.setTextColor(...muted);
       doc.setFontSize(8);
       doc.text(`${dateBr(update.created_at)}  |  Avanco registrado: ${Number(update.progress_percent).toFixed(0)}%`, 21, y + 15);
-      const noteLines = doc.splitTextToSize(update.note || "Atualizacao de avanco com evidencia registrada.", 165);
+      const noteLines = doc.splitTextToSize(update.note || "Atualizacao de avanco registrada.", 165);
       doc.text(noteLines.slice(0, 2), 21, y + 22);
       y += 34;
     }

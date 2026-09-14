@@ -8,7 +8,7 @@ Projetos e Aluguéis.
 - **Novos Negócios:** funil, VGV potencial, conversão, tempo por fase, mapa,
   arquivamento e transferência automática para Obras.
 - **Obras:** portfólio, orçamento mensal, macro e microetapas, estoque e consumo
-  calculado de insumos, modelos prontos, evidências obrigatórias, mapa de avanço
+  calculado de insumos, modelos prontos, fotos opcionais nas vistorias, mapa de avanço
   sobre plantas PDF e relatório.
 - **Projetos:** quadro de tarefas, diretório de usuários do Supabase, prazos,
   alertas, comentários, arquivos, envolvidos e e-mail de status.
@@ -96,7 +96,7 @@ O fluxo funcional é:
 1. adicionar os PDFs no botão **Plantas técnicas** de Novos Negócios;
 2. abrir a aba **Mapa físico** da obra e calibrar dois pontos com uma distância conhecida;
 3. criar uma camada, vinculá-la a uma microetapa e desenhar o total previsto;
-4. aprovar a base e registrar trechos executados com foto;
+4. aprovar a base e registrar trechos executados, com foto opcional;
 5. usar o mesmo mapa no link público de campo, inclusive offline após a primeira abertura.
 
 Não existem novas variáveis de ambiente. PDFs ficam privados e o link público
@@ -347,3 +347,14 @@ executa a mesma rotina com validação da sessão e do acesso a Novos Negócios.
 
 A migration `20260914180241_qlik_vgv_projection.sql` cadastra os quatro
 indicadores e a conexão, preservando o controle de acesso existente por área.
+
+## Fotos opcionais nas vistorias de obras
+
+A migration `20260914195733_optional_construction_inspection_photos.sql` deve
+ser aplicada antes do deploy. Ela permite registros sem imagem, mantendo o
+histórico, os comentários e a identificação de cada envio para evitar duplicatas.
+Vistorias com o mesmo percentual de avanço também aparecem no histórico.
+
+A foto é opcional na atualização da microetapa e na medição pelo mapa, tanto
+no acesso interno quanto no link público, inclusive na fila offline. Se uma
+foto for anexada, as validações de formato e tamanho continuam valendo.

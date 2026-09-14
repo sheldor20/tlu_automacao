@@ -138,9 +138,9 @@ export default function WorkDetailPage() {
       ...macro,
       micro_stages: microRows.filter((micro) => micro.macro_stage_id === macro.id),
     }));
-    const evidenceRows = (evidenceResult.data || []) as ConstructionEvidence[];
+    const evidenceRows = ((evidenceResult.data || []) as ConstructionEvidence[]).filter((item) => item.file_path);
     const signedEvidence = await Promise.all(evidenceRows.map(async (item) => {
-      const { data } = await supabase.storage.from("construction-evidence").createSignedUrl(item.file_path, 3600);
+      const { data } = item.file_path ? await supabase.storage.from("construction-evidence").createSignedUrl(item.file_path, 3600) : { data: null };
       return { ...item, signed_url: data?.signedUrl };
     }));
     const urlByEvidence = new Map(signedEvidence.map((item) => [item.id, item.signed_url]));
@@ -245,7 +245,7 @@ export default function WorkDetailPage() {
         });
         await supabase.rpc("set_construction_stage_weights", { p_construction_id: construction.id, p_weights: normalized });
       }
-      if (paths?.length) await supabase.storage.from("construction-evidence").remove(paths);
+      if (paths?.some(Boolean)) await supabase.storage.from("construction-evidence").remove(paths.filter(Boolean));
     }
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
@@ -313,7 +313,7 @@ export default function WorkDetailPage() {
     setSaving(true);
     const { data: paths, error } = await supabase.rpc("delete_construction_micro_stage", { p_micro_stage_id: micro.id });
     if (!error) {
-      if (paths?.length) await supabase.storage.from("construction-evidence").remove(paths);
+      if (paths?.some(Boolean)) await supabase.storage.from("construction-evidence").remove(paths.filter(Boolean));
     }
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
@@ -360,23 +360,25 @@ export default function WorkDetailPage() {
 
   async function updateProgress(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !construction || !progressMicro || !progressForm.file) return;
+    if (!supabase || !construction || !progressMicro) return;
     setSaving(true);
-    const path = storagePath(construction.id, progressForm.file.name, progressMicro.id);
-    const upload = await supabase.storage.from("construction-evidence").upload(path, progressForm.file, { cacheControl: "3600", upsert: false });
-    if (upload.error) {
-      setSaving(false);
-      return setToast({ message: friendlyError(upload.error), type: "error" });
+    const path = progressForm.file ? storagePath(construction.id, progressForm.file.name, progressMicro.id) : null;
+    if (path && progressForm.file) {
+      const upload = await supabase.storage.from("construction-evidence").upload(path, progressForm.file, { cacheControl: "3600", upsert: false });
+      if (upload.error) {
+        setSaving(false);
+        return setToast({ message: friendlyError(upload.error), type: "error" });
+      }
     }
     const evidence = await supabase.from("construction_evidence").insert({
       construction_id: construction.id,
       micro_stage_id: progressMicro.id,
       file_path: path,
-      file_name: progressForm.file.name,
+      file_name: progressForm.file?.name || null,
       note: progressForm.note.trim() || null,
     }).select("id").single();
     if (evidence.error) {
-      await supabase.storage.from("construction-evidence").remove([path]);
+      if (path) await supabase.storage.from("construction-evidence").remove([path]);
       setSaving(false);
       return setToast({ message: friendlyError(evidence.error), type: "error" });
     }
@@ -388,12 +390,12 @@ export default function WorkDetailPage() {
     setSaving(false);
     if (update.error) {
       await supabase.from("construction_evidence").delete().eq("id", evidence.data.id);
-      await supabase.storage.from("construction-evidence").remove([path]);
+      if (path) await supabase.storage.from("construction-evidence").remove([path]);
       return setToast({ message: friendlyError(update.error), type: "error" });
     }
     setProgressMicro(null);
     setProgressSupplies([]);
-    setToast({ message: progressSupplies.length ? "Avanço e estoque dos insumos atualizados." : "Evidência registrada e avanço atualizado.", type: "success" });
+    setToast({ message: progressSupplies.length ? "Avanço e estoque dos insumos atualizados." : "Avanço registrado.", type: "success" });
     await loadData();
   }
 
@@ -636,7 +638,7 @@ export default function WorkDetailPage() {
         </section>
         <section className="content-card">
           <div className="content-card-head"><div><h2>Evidências da obra</h2><p>Fotos registradas nas atualizações de avanço</p></div><ImageIcon size={18} /></div>
-          {evidences.length ? <div className="evidence-gallery">{evidences.map((evidence) => <a key={evidence.id} href={evidence.signed_url} target="_blank" rel="noreferrer">{evidence.signed_url ? <Image src={evidence.signed_url} alt={evidence.file_name} width={220} height={150} unoptimized /> : <div className="update-placeholder"><Camera size={18} /></div>}<strong>{evidence.file_name}</strong><span>{dateBr(evidence.captured_at)}</span></a>)}</div> : <div className="mini-empty">Nenhuma evidência registrada.</div>}
+          {evidences.length ? <div className="evidence-gallery">{evidences.map((evidence) => <a key={evidence.id} href={evidence.signed_url} target="_blank" rel="noreferrer">{evidence.signed_url ? <Image src={evidence.signed_url} alt={evidence.file_name || "Foto da obra"} width={220} height={150} unoptimized /> : <div className="update-placeholder"><Camera size={18} /></div>}<strong>{evidence.file_name}</strong><span>{dateBr(evidence.captured_at)}</span></a>)}</div> : <div className="mini-empty">Nenhuma evidência registrada.</div>}
         </section>
       </div> : null}
 
@@ -648,7 +650,7 @@ export default function WorkDetailPage() {
         </section>
         <section className="content-card">
           <div className="content-card-head"><div><h2>Últimas atualizações</h2><p>Evidências, percentuais e histórico recente</p></div><ImageIcon size={18} /></div>
-          {updates.length ? <div className="update-feed update-feed-full">{updates.map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}{update.note ? ` · ${update.note}` : ""}</span><small>{dateBr(update.created_at)}</small></div><button type="button" className="update-edit" onClick={() => openEditUpdate(update)}><Pencil size={15} /> Editar</button></article>)}</div> : <EmptyState icon={<History size={22} />} title="Sem atualizações" description="As atualizações aparecerão após o primeiro registro de avanço com evidência." />}
+          {updates.length ? <div className="update-feed update-feed-full">{updates.map((update) => <article key={update.id}>{update.evidence_url ? <a href={update.evidence_url} target="_blank" rel="noreferrer"><Image src={update.evidence_url} alt={`Evidência de ${update.micro_stage_name}`} width={54} height={54} unoptimized /></a> : <div className="update-placeholder"><Camera size={18} /></div>}<div><strong>{update.micro_stage_name} · {Number(update.progress_percent).toFixed(0)}%</strong><span>{update.macro_stage_name}{update.note ? ` · ${update.note}` : ""}</span><small>{dateBr(update.created_at)}</small></div><button type="button" className="update-edit" onClick={() => openEditUpdate(update)}><Pencil size={15} /> Editar</button></article>)}</div> : <EmptyState icon={<History size={22} />} title="Sem atualizações" description="As atualizações aparecerão após o primeiro registro de avanço." />}
         </section>
       </div> : null}
 
@@ -658,8 +660,8 @@ export default function WorkDetailPage() {
       <Dialog open={Boolean(microMacroId)} onClose={() => setMicroMacroId(null)} title="Nova micro etapa" description="Detalhe a execução. Datas e insumos são opcionais." wide><form className="form-grid" onSubmit={addMicro}><Field label="Nome"><input value={microForm.name} onChange={(event) => setMicroForm({ ...microForm, name: event.target.value })} required maxLength={140} /></Field><Field label="Descrição"><textarea value={microForm.description} onChange={(event) => setMicroForm({ ...microForm, description: event.target.value })} /></Field><Field label="Data de início" hint="Opcional"><input type="date" value={microForm.start_date} onChange={(event) => setMicroForm({ ...microForm, start_date: event.target.value })} /></Field><Field label="Data de fim" hint="Opcional"><input type="date" min={microForm.start_date || undefined} value={microForm.end_date} onChange={(event) => setMicroForm({ ...microForm, end_date: event.target.value })} /></Field><SupplyEditor value={microForm.supplies} onChange={(supplies) => setMicroForm({ ...microForm, supplies })} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMicroMacroId(null)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar</Button></div></form></Dialog>
       <Dialog open={Boolean(editingMicro)} onClose={() => setEditingMicro(null)} title="Editar microetapa" description="Altere dados, período e insumos vinculados sem perder as atualizações." wide><form className="form-grid" onSubmit={saveMicro}><Field label="Nome"><input value={microForm.name} onChange={(event) => setMicroForm({ ...microForm, name: event.target.value })} required maxLength={140} /></Field><Field label="Descrição"><textarea value={microForm.description} onChange={(event) => setMicroForm({ ...microForm, description: event.target.value })} /></Field><Field label="Data de início" hint="Opcional"><input type="date" value={microForm.start_date} onChange={(event) => setMicroForm({ ...microForm, start_date: event.target.value })} /></Field><Field label="Data de fim" hint="Opcional"><input type="date" min={microForm.start_date || undefined} value={microForm.end_date} onChange={(event) => setMicroForm({ ...microForm, end_date: event.target.value })} /></Field><SupplyEditor value={microForm.supplies} onChange={(supplies) => setMicroForm({ ...microForm, supplies })} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar microetapa</Button></div></form></Dialog>
       <Dialog open={Boolean(supplyMicro)} onClose={() => setSupplyMicro(null)} title={`Insumos · ${supplyMicro?.name || "micro etapa"}`} description="Atualize o total adquirido e o estoque atual. O consumo será recalculado automaticamente." wide><form className="form-grid" onSubmit={saveSupplies}><SupplyEditor value={supplyForm} onChange={setSupplyForm} /><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setSupplyMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar insumos</Button></div></form></Dialog>
-      <Dialog open={Boolean(progressMicro)} onClose={() => setProgressMicro(null)} title={`Atualizar ${progressMicro?.name || "etapa"}`} description="Registre o avanço, a evidência e a posição atual do estoque."><form className="form-grid" onSubmit={updateProgress}><Field label="Novo avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={progressForm.progress} onChange={(event) => setProgressForm({ ...progressForm, progress: event.target.value })} /><strong>{progressForm.progress}%</strong></div></Field><Field label="Evidência fotográfica" hint="PNG, JPG ou WEBP. Evite imagens com dados pessoais."><label className="file-drop"><Upload size={20} /><span>{progressForm.file?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressForm({ ...progressForm, file: event.target.files?.[0] || null })} required /></label></Field>{progressSupplies.length ? <div className="progress-stock-editor form-span-2"><div><strong>Estoque após esta atualização</strong><span>Informe quanto restou de cada insumo. O sistema calcula o consumo automaticamente.</span></div>{progressSupplies.map((item, index) => <label key={`${item.name}-${index}`}><span>{item.name}<small>Total: {Number(item.total_quantity || 0).toLocaleString("pt-BR")}</small></span><input type="number" min="0" max={item.total_quantity} step="0.01" value={remainingSupplyQuantity(item)} onChange={(event) => setProgressSupplies((current) => current.map((supply, supplyIndex) => supplyIndex === index ? supplyWithRemainingQuantity(supply, Number(event.target.value)) : supply))} required /><small>{Number(item.used_quantity || 0).toLocaleString("pt-BR")} consumidos</small></label>)}</div> : null}<Field label="Comentário da atualização" className="form-span-2"><textarea value={progressForm.note} onChange={(event) => setProgressForm({ ...progressForm, note: event.target.value })} placeholder="O que foi executado desde a última atualização?" maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProgressMicro(null)}>Cancelar</Button><Button type="submit" loading={saving} disabled={!progressForm.file}><Camera size={16} /> Registrar avanço e estoque</Button></div></form></Dialog>
-      <Dialog open={Boolean(editingUpdate)} onClose={() => setEditingUpdate(null)} title="Editar atualização" description="A foto é preservada. Se esta for a atualização mais recente da microetapa, o avanço atual também será corrigido."><form className="form-grid" onSubmit={saveEditedUpdate}><Field label="Avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={updateEditForm.progress} onChange={(event) => setUpdateEditForm({ ...updateEditForm, progress: event.target.value })} /><strong>{updateEditForm.progress}%</strong></div></Field><Field label="Comentário"><textarea value={updateEditForm.note} onChange={(event) => setUpdateEditForm({ ...updateEditForm, note: event.target.value })} maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingUpdate(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar correção</Button></div></form></Dialog>
+      <Dialog open={Boolean(progressMicro)} onClose={() => setProgressMicro(null)} title={`Atualizar ${progressMicro?.name || "etapa"}`} description="Registre o avanço e a posição atual do estoque. A foto é opcional."><form className="form-grid" onSubmit={updateProgress}><Field label="Novo avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={progressForm.progress} onChange={(event) => setProgressForm({ ...progressForm, progress: event.target.value })} /><strong>{progressForm.progress}%</strong></div></Field><Field label="Foto (opcional)" hint="PNG, JPG ou WEBP. Evite imagens com dados pessoais."><label className="file-drop"><Upload size={20} /><span>{progressForm.file?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressForm({ ...progressForm, file: event.target.files?.[0] || null })} /></label></Field>{progressSupplies.length ? <div className="progress-stock-editor form-span-2"><div><strong>Estoque após esta atualização</strong><span>Informe quanto restou de cada insumo. O sistema calcula o consumo automaticamente.</span></div>{progressSupplies.map((item, index) => <label key={`${item.name}-${index}`}><span>{item.name}<small>Total: {Number(item.total_quantity || 0).toLocaleString("pt-BR")}</small></span><input type="number" min="0" max={item.total_quantity} step="0.01" value={remainingSupplyQuantity(item)} onChange={(event) => setProgressSupplies((current) => current.map((supply, supplyIndex) => supplyIndex === index ? supplyWithRemainingQuantity(supply, Number(event.target.value)) : supply))} required /><small>{Number(item.used_quantity || 0).toLocaleString("pt-BR")} consumidos</small></label>)}</div> : null}<Field label="Comentário da atualização" className="form-span-2"><textarea value={progressForm.note} onChange={(event) => setProgressForm({ ...progressForm, note: event.target.value })} placeholder="O que foi executado desde a última atualização?" maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProgressMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}><Camera size={16} /> Registrar avanço e estoque</Button></div></form></Dialog>
+      <Dialog open={Boolean(editingUpdate)} onClose={() => setEditingUpdate(null)} title="Editar atualização" description="A foto, quando anexada, é preservada. Se esta for a atualização mais recente da microetapa, o avanço atual também será corrigido."><form className="form-grid" onSubmit={saveEditedUpdate}><Field label="Avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={updateEditForm.progress} onChange={(event) => setUpdateEditForm({ ...updateEditForm, progress: event.target.value })} /><strong>{updateEditForm.progress}%</strong></div></Field><Field label="Comentário"><textarea value={updateEditForm.note} onChange={(event) => setUpdateEditForm({ ...updateEditForm, note: event.target.value })} maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingUpdate(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar correção</Button></div></form></Dialog>
       <Dialog open={inspectionDialog} onClose={() => setInspectionDialog(false)} title="Registrar vistoria" description={`O registro reinicia o ciclo de ${construction.inspection_interval_days} dia(s) desta obra.`}><form className="form-grid" onSubmit={saveInspection}><Field label="Data da vistoria"><input type="date" max={todayIso()} value={inspectionForm.inspected_at} onChange={(event) => setInspectionForm({ ...inspectionForm, inspected_at: event.target.value })} required /></Field><Field label="Observações" hint="Opcional"><textarea value={inspectionForm.note} onChange={(event) => setInspectionForm({ ...inspectionForm, note: event.target.value })} maxLength={1500} placeholder="Situação encontrada e providências combinadas" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setInspectionDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}><ClipboardCheck size={16} /> Registrar</Button></div></form></Dialog>
       <Dialog open={budgetDialog} onClose={() => setBudgetDialog(false)} title="Atualizar orçamento mensal" description="Se o mês já existir, os valores serão atualizados."><form className="form-grid" onSubmit={saveBudget}><Field label="Mês de referência"><input type="month" value={budgetForm.reference_month} onChange={(event) => setBudgetForm({ ...budgetForm, reference_month: event.target.value })} required /></Field><Field label="Previsto no mês"><input type="number" min="0" step="0.01" value={budgetForm.planned_amount} onChange={(event) => setBudgetForm({ ...budgetForm, planned_amount: event.target.value })} required /></Field><Field label="Realizado no mês"><input type="number" min="0" step="0.01" value={budgetForm.realized_amount} onChange={(event) => setBudgetForm({ ...budgetForm, realized_amount: event.target.value })} required /></Field><Field label="Observações"><textarea value={budgetForm.notes} onChange={(event) => setBudgetForm({ ...budgetForm, notes: event.target.value })} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setBudgetDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar competência</Button></div></form></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
