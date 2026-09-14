@@ -32,7 +32,7 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
     <section className="vgv-projection management-view-stack" aria-label="VGV projetado futuro">
       <div className="management-kpi-grid vgv-kpi-grid">
         <KpiCard label="VGV total a receber" value={total === null ? "—" : currency(total)} helper="Grupo Empresa · Terra Lotus" icon={<CircleDollarSign size={18} />} />
-        <KpiCard label="Inadimplência atual" value={percent} helper="Visão geral · Multi Análises no Qlik" tone="warning" icon={<Percent size={18} />} />
+        <KpiCard label="Inadimplência atual" value={percent} tone="warning" icon={<Percent size={18} />} />
         <KpiCard label="VGV projetado após inadimplência" value={adjusted === null ? "—" : currency(adjusted)} helper={rate === null ? "Aguardando os dados da carteira" : `VGV a receber × (1 − ${percent})`} tone="success" icon={<TrendingDown size={18} />} />
       </div>
       <article className="management-panel vgv-projection-chart">
