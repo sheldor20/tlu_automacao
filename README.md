@@ -34,6 +34,25 @@ npm run dev
 
 O banco e o passo a passo de configuração estão em [supabase/README.md](supabase/README.md).
 
+## Criação de projetos com acesso liberado no Adm
+
+Antes do deploy, aplique
+`supabase/migrations/20260915140858_fix_project_creation_rls.sql` no Supabase.
+Ela corrige a criação por usuários com **Gestão completa** em Projetos ou
+Governança, mantendo as políticas de acesso por área e envolvimento.
+
+O criador entra na lista de envolvidos. Se escolher outro responsável, ambos
+ficam vinculados ao projeto; o vínculo do criador pode ser removido normalmente.
+Projeto, envolvidos e tarefas do modelo são gravados na mesma transação.
+O botão de criação consulta a permissão da área atual e só aparece após a
+confirmação do banco.
+
+`npm test` inclui testes de integração em PostgreSQL local em memória (PGlite),
+com as migrations, funções, triggers e políticas RLS do repositório. A suíte
+reproduz o erro anterior, aplica a correção e valida criação, modelos,
+cancelamento integral em caso de falha e bloqueios de acesso. Não exige Docker
+nem credenciais de produção.
+
 ## Pauta e RA
 
 O fechamento de uma RA usa `NEXT_PUBLIC_SUPABASE_URL`,
