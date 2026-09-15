@@ -58,7 +58,8 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [fullAccess, setFullAccess] = useState(true);
+  const [fullAccess, setFullAccess] = useState(false);
+  const [canCreateProject, setCanCreateProject] = useState(false);
   const [canMoveCategory, setCanMoveCategory] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const [taskProjectFilter, setTaskProjectFilter] = useState("all");
@@ -75,13 +76,14 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     if (!supabase) return;
     if (!silent) setLoading(true);
     const { data: authData } = await supabase.auth.getUser();
-    const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult, targetPermissionResult] = await Promise.all([
+    const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult, createPermissionResult, targetPermissionResult] = await Promise.all([
       supabase.from("projects").select("*").eq("category", category).order("updated_at", { ascending: false }),
       supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("position"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
       supabase.rpc("project_permission_scope"),
+      supabase.rpc("can_create_project", { p_category: category }),
       supabase.rpc("can_create_project", { p_category: targetCategory }),
     ]);
     if (projectResult.error) setToast({ message: friendlyError(projectResult.error), type: "error" });
@@ -93,8 +95,10 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     setTasks(loadedTasks.filter((task) => !task.projects?.archived_at).map((task) => ({ ...task, project_name: task.projects?.name || "Atividade avulsa" })));
     setUsers((userResult.data || []) as UserProfile[]);
     setTemplates(((templateResult.data || []) as ProjectTemplate[]).map((template) => ({ ...template, task_count: (templateTaskResult.data || []).filter((task) => task.template_id === template.id).length })));
-    setFullAccess(permissionResult.data !== "assigned_tasks");
-    setCanMoveCategory(Boolean(targetPermissionResult.data));
+    if (permissionResult.error || createPermissionResult.error) setToast({ message: friendlyError(permissionResult.error || createPermissionResult.error), type: "error" });
+    setFullAccess(!permissionResult.error && permissionResult.data === "full");
+    setCanCreateProject(!createPermissionResult.error && createPermissionResult.data === true);
+    setCanMoveCategory(!targetPermissionResult.error && targetPermissionResult.data === true);
     setCurrentUserId(authData.user?.id || "");
     setLoading(false);
   }, [category, supabase, targetCategory]);
@@ -216,6 +220,10 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
   async function createProject(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
+    if (!canCreateProject) {
+      setToast({ message: "Seu acesso não permite criar projetos nesta área.", type: "error" });
+      return;
+    }
     if (!users.some((user) => user.user_id === form.owner_user_id)) {
       setToast({ message: "Selecione um usuário ativo como responsável.", type: "error" });
       return;
@@ -309,7 +317,7 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
         eyebrow={`Departamento · ${portfolioLabel}`}
         title={governance ? "Governança e iniciativas estratégicas" : "Projetos e entregas"}
         description={governance ? "Acompanhe os projetos estratégicos com a mesma estrutura operacional, em uma carteira independente." : "Acompanhe os projetos de obras e do dia a dia em uma carteira operacional."}
-        action={fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : undefined}
+        action={canCreateProject ? <Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo projeto</Button> : undefined}
       />
 
       <nav className="projects-view-switcher" aria-label="Alternar visão da página">
@@ -395,7 +403,7 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
             icon={filter === "current" ? <FolderKanban size={23} /> : <Archive size={23} />}
             title={filter === "current" ? "Crie o primeiro projeto" : "Nenhum projeto arquivado"}
             description={filter === "current" ? "Organize objetivo, responsáveis, tarefas, comentários e arquivos em uma visão única." : "Projetos arquivados aparecerão aqui e poderão ser restaurados."}
-            action={filter === "current" && fullAccess ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar projeto</Button> : undefined}
+            action={filter === "current" && canCreateProject ? <Button onClick={() => setDialogOpen(true)}><Plus size={17} /> Criar projeto</Button> : undefined}
           />
         ) : (
           <div className="project-list-view">
