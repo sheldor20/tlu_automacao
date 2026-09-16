@@ -23,6 +23,7 @@ import {
   Search,
   TrendingUp,
   Workflow,
+  Wallet,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -207,7 +208,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         if (blockedIndicatorArea && assigned.includes("indicadores") && indicatorAreas.length) {
           router.replace(`/indicadores/${indicatorAreas[0]}`);
         } else if (blockedDepartment || blockedAdmin) {
-          router.replace(visibleLinks[0]?.href || (administrator ? adminLink.href : "/login"));
+          router.replace(visibleLinks[0]?.href || (administrator ? adminLink.href : "/pagamentos"));
         }
         setLoading(false);
       }
@@ -253,13 +254,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (accessError || (allowedDepartments.length === 0 && !isAdmin)) {
+  if (accessError) {
     return (
       <div className="config-screen">
         <div className="config-card">
           <div className="brand-mark">TL</div>
-          <h1>{accessError ? "Permissões indisponíveis" : "Acesso pendente"}</h1>
-          <p>{accessError || "Seu usuário ainda não recebeu acesso a nenhum departamento. Solicite a liberação ao administrador."}</p>
+          <h1>Permissões indisponíveis</h1>
+          <p>{accessError}</p>
           <button className="button button-secondary" onClick={signOut}>Sair do sistema</button>
         </div>
       </div>
@@ -321,6 +322,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
           <span className="nav-caption nav-caption-spaced">Departamentos</span>
+          <Link href="/pagamentos" className={pathname.startsWith("/pagamentos") ? "nav-link active" : "nav-link"} title="Solicitações de pagamento" onClick={() => setMobileMenu(false)}>
+            <Wallet size={19} /><span>Pagamentos</span>
+          </Link>
           {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
             if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
             if (slug === "novos-negocios") {
