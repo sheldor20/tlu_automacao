@@ -17,3 +17,14 @@ export function isQlikAppWebSocketUrl(socketUrl: string, appId: string) {
     return false;
   }
 }
+
+// Keep extraction selections and variables separate from the native sheet,
+// whose opening actions may otherwise overwrite them or enter modal mode.
+export function isolatedQlikAppWebSocketUrl(socketUrl: string, appId: string, identity: string) {
+  if (!isQlikAppWebSocketUrl(socketUrl, appId) || !identity.trim()) {
+    throw new Error("Qlik: conexão ou identidade inválida para a sessão de leitura.");
+  }
+  const url = new URL(socketUrl);
+  url.pathname = `/app/${encodeURIComponent(appId)}/identity/${encodeURIComponent(identity)}`;
+  return url.toString();
+}
