@@ -1333,6 +1333,11 @@ h1, h2, h3, p { margin-top: 0; }
 .ra-item-actions { flex: 0 0 auto; display: flex; gap: 5px; }
 .ra-item-actions button { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; display: inline-flex; align-items: center; gap: 4px; background: white; color: var(--moss-700); font-size: 10px; font-weight: 750; }
 .ra-item-actions button.danger { border-color: #f2dada; color: var(--danger); }
+.ra-decision-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 12px; }
+.ra-decision-row > p { flex: 1 1 220px; min-width: 0; padding-top: 5px; align-items: flex-start; }
+.ra-decision-row > p > svg { flex-shrink: 0; margin-top: 2px; }
+.ra-decision-row > p > span,.ra-decision-confirmation > p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ra-decision-row button:disabled { opacity: .55; cursor: wait; }
 .ra-item-controls { margin-top: 7px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ra-item-controls input { min-width: 240px; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
 .ra-item-controls .button { min-height: 38px; padding: 0 10px; font-size: 11px; }

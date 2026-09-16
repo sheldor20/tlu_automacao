@@ -39,6 +39,9 @@ export default function RaPage() {
   const [itemDialog, setItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<RaAgendaItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<RaAgendaItem | null>(null);
+  const [editingDecision, setEditingDecision] = useState<RaDecision | null>(null);
+  const [deletingDecision, setDeletingDecision] = useState<RaDecision | null>(null);
+  const [decisionEditContent, setDecisionEditContent] = useState("");
   const [taskItem, setTaskItem] = useState<RaAgendaItem | null>(null);
   const [meetingAction, setMeetingAction] = useState<{ kind: "archive" | "delete"; meeting: RaMeeting } | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState("");
@@ -92,6 +95,7 @@ export default function RaPage() {
   const selected = meetings.find((meeting) => meeting.id === selectedId) || null;
   const canManageSelected = Boolean(selected && canManage && (selected.leader_user_id === currentUserId || users.find((user) => user.user_id === currentUserId)?.is_admin));
   const canOperateSelected = Boolean(canManageSelected && !selected?.archived_at);
+  const canEditDecisions = canOperateSelected && selected?.status !== "encerrada";
   const selectedParticipants = participants.filter((participant) => participant.meeting_id === selectedId);
   const selectedProjectIds = meetingProjects.filter((item) => item.meeting_id === selectedId).map((item) => item.project_id);
   const selectedSections = sections.filter((section) => section.meeting_id === selectedId).sort((a, b) => a.position - b.position);
@@ -199,11 +203,13 @@ export default function RaPage() {
   async function deleteItem() {
     if (!supabase || !deletingItem || !canOperateSelected) return;
     setSaving(true);
-    const { error } = await supabase.from("ra_agenda_items").delete().eq("id", deletingItem.id);
+    const { error } = await supabase.from("ra_agenda_items").delete().eq("id", deletingItem.id).select("id").single();
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
+    const hadTask = Boolean(deletingItem.task_id);
     setDeletingItem(null);
-    setToast({ message: "Assunto excluído da pauta.", type: "success" });
+    setToast({ message: hadTask ? "Assunto e tarefa vinculada excluídos." : "Assunto excluído da pauta.", type: "success" });
+    window.dispatchEvent(new Event("today-alert-count-changed"));
     await loadData();
   }
 
@@ -243,6 +249,50 @@ export default function RaPage() {
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setDecisionDrafts((current) => ({ ...current, [item.id]: "" }));
     setToast({ message: "Definição adicionada ao catálogo.", type: "success" }); await loadData();
+  }
+
+  function openDecisionEditor(decision: RaDecision) {
+    setEditingDecision(decision);
+    setDecisionEditContent(decision.decision_text);
+  }
+
+  async function updateDecision(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !editingDecision || !canEditDecisions || saving || editingDecision.meeting_id !== selectedId) return;
+    const decisionText = decisionEditContent.trim();
+    if (decisionText.length < 2 || decisionText.length > 4000) {
+      return setToast({ message: "A definição deve ter entre 2 e 4.000 caracteres.", type: "error" });
+    }
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from("ra_decisions").update({ decision_text: decisionText }).eq("id", editingDecision.id).eq("meeting_id", selectedId).select("id").maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("A definição não está mais disponível para edição. Atualize a pauta e tente novamente.");
+      setEditingDecision(null);
+      setToast({ message: "Definição atualizada.", type: "success" });
+      await loadData();
+    } catch (error) {
+      setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteDecision() {
+    if (!supabase || !deletingDecision || !canEditDecisions || saving || deletingDecision.meeting_id !== selectedId) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from("ra_decisions").delete().eq("id", deletingDecision.id).eq("meeting_id", selectedId).select("id").maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("A definição não está mais disponível para exclusão. Atualize a pauta e tente novamente.");
+      setDeletingDecision(null);
+      setToast({ message: "Definição excluída.", type: "success" });
+      await loadData();
+    } catch (error) {
+      setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function startMeeting() {
@@ -329,7 +379,13 @@ export default function RaPage() {
                               </div> : null}
                             </div>
                             <small>{kindLabel[item.kind]}{item.due_date ? ` · prazo ${dateBr(item.due_date)}` : ""}{item.project_id ? ` · ${projectName(item.project_id)}` : ""}</small>
-                            {itemDecisions.map((decision) => <p key={decision.id}><Check size={13} /> {decision.decision_text}</p>)}
+                            {itemDecisions.map((decision) => <div key={decision.id} className="ra-decision-row">
+                              <p><Check size={13} aria-hidden="true" /><span>{decision.decision_text}</span></p>
+                              {canEditDecisions ? <div className="ra-item-actions">
+                                <button type="button" disabled={saving} aria-label={`Editar definição: ${decision.decision_text}`} onClick={() => openDecisionEditor(decision)}><Pencil size={14} /> Editar</button>
+                                <button type="button" className="danger" disabled={saving} aria-label={`Excluir definição: ${decision.decision_text}`} onClick={() => setDeletingDecision(decision)}><Trash2 size={14} /> Excluir</button>
+                              </div> : null}
+                            </div>)}
                             {item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space</p> : null}
                             {canOperateSelected ? <div className="ra-item-controls">
                               {!item.task_id ? <Button variant="secondary" onClick={() => void convertToTask(item)}><Save size={14} /> Transformar em tarefa</Button> : null}
@@ -363,8 +419,17 @@ export default function RaPage() {
         <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingItem(null)}>Cancelar</Button><Button type="submit" loading={saving}><Save size={15} /> Salvar alterações</Button></div>
       </form>
     </Dialog>
-    <Dialog open={Boolean(deletingItem)} onClose={() => setDeletingItem(null)} title="Excluir assunto?" description="O assunto e suas definições serão removidos da pauta. Uma tarefa já criada continuará no TLU Space.">
+    <Dialog open={Boolean(deletingItem)} onClose={() => setDeletingItem(null)} title="Excluir assunto?" description={deletingItem?.task_id ? "O assunto, suas definições e a tarefa vinculada serão excluídos. A tarefa também será removida de Hoje e do quadro de tarefas, incluindo suas subtarefas." : "O assunto e suas definições serão removidos da pauta."}>
       <div className="confirmation-content"><strong>{deletingItem?.content}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDeletingItem(null)}>Cancelar</Button><Button type="button" variant="danger" loading={saving} onClick={() => void deleteItem()}><Trash2 size={16} /> Excluir assunto</Button></div></div>
+    </Dialog>
+    <Dialog open={Boolean(editingDecision)} onClose={() => { if (!saving) setEditingDecision(null); }} title="Editar definição" description="Atualize a definição registrada neste assunto. A alteração também será exibida no catálogo de definições.">
+      <form className="form-grid" onSubmit={updateDecision}>
+        <Field label="Definição"><textarea autoFocus value={decisionEditContent} onChange={(event) => setDecisionEditContent(event.target.value)} disabled={saving} required minLength={2} maxLength={4000} rows={5} /></Field>
+        <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setEditingDecision(null)}>Cancelar</Button><Button type="submit" loading={saving} disabled={saving || decisionEditContent.trim().length < 2}><Save size={15} /> Salvar alterações</Button></div>
+      </form>
+    </Dialog>
+    <Dialog open={Boolean(deletingDecision)} onClose={() => { if (!saving) setDeletingDecision(null); }} title="Excluir definição?" description="Esta definição será removida da pauta e do catálogo. O assunto e as outras definições serão mantidos.">
+      <div className="confirmation-content ra-decision-confirmation"><p>{deletingDecision?.decision_text}</p><div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setDeletingDecision(null)}>Cancelar</Button><Button type="button" variant="danger" loading={saving} onClick={() => void deleteDecision()}><Trash2 size={16} /> Excluir definição</Button></div></div>
     </Dialog>
     <Dialog open={Boolean(taskItem)} onClose={() => setTaskItem(null)} title="Transformar tópico em tarefa" description="Defina o responsável, o prazo e, se necessário, o projeto."><form className="form-grid" onSubmit={submitTaskConversion}><Field label="Responsável"><select value={taskForm.owner_user_id} onChange={(event) => setTaskForm({ ...taskForm, owner_user_id: event.target.value })} required><option value="">Selecione</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo"><input type="date" min={todayIso()} value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Projeto" hint="Opcional; vazio cria tarefa avulsa" className="form-span-2"><select value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskItem(null)}>Cancelar</Button><Button type="submit" loading={saving}>Criar tarefa</Button></div></form></Dialog>
     <Dialog open={Boolean(meetingAction)} onClose={() => setMeetingAction(null)} title={meetingAction?.kind === "delete" ? "Excluir RA?" : "Arquivar RA?"} description={meetingAction?.kind === "delete" ? "A exclusão é definitiva e remove a pauta, a ATA, as definições e o histórico de envios. Tarefas já criadas permanecem no sistema." : "A RA ficará somente para consulta, preservando a pauta, a ATA e as definições. Ela poderá ser restaurada depois."}>
