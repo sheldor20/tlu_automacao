@@ -70,4 +70,27 @@ test("carteira e recebimentos Qlik: vínculo estável, permissões, IR e cargas 
   await role("authenticated",denied,async()=>{assert.equal((await db.query("select * from public.rental_qlik_receipt_totals(2026)")).rows.length,0);});
   await role("anon",null,async()=>{await assert.rejects(()=>db.query("select * from public.rental_qlik_receipt_totals(2026)"),/permission denied/);});
  });
+ await t.test("campos confirmados pertencem ao Qlik; só contratos revisados podem ficar pendentes",async()=>{
+  await migrate(db,"20260916194000_qlik_inventory_verified_fields.sql");
+  await role("authenticated",user,async()=>{
+   await assert.rejects(()=>db.query("update public.rentals set property_type='Outro' where id=$1",[id]),/permission denied/);
+   await assert.rejects(()=>db.query("update public.rentals set rentable=true where id=$1",[id]),/permission denied/);
+   await db.query("update public.rentals set monthly_rent=3100 where id=$1",[id]);
+  });
+  const pending=(await db.query<{id:string}>("insert into public.rentals(name,property_address,lessor_type,lessor_name,monthly_rent) values('Contrato sem código confirmado','Rua de teste','pf','Locador',1500) returning id")).rows[0].id;
+  const source=[{source_id:"0007",name:"Casa renomeada",property_type:"Imóvel Residencial",rentable:true}];
+  await role("service_role",null,async()=>{
+   await assert.rejects(()=>inventory(source,"2025-01-04T00:00:00Z"),/legacy_mapping_required/);
+  });
+  await db.query("update public.data_connections set settings=settings||jsonb_build_object('pending_legacy_ids',jsonb_build_array($1::text)) where slug='qlik-rental-inventory'",[pending]);
+  await role("service_role",null,async()=>{
+   await inventory(source,"2025-01-04T00:00:00Z");
+   await inventory(source,"2025-01-05T00:00:00Z");
+  });
+  const preserved=(await db.query<{qlik_property_id:string|null;monthly_rent:string}>("select qlik_property_id,monthly_rent from public.rentals where id=$1",[pending])).rows[0];
+  assert.equal(preserved.qlik_property_id,null);assert.equal(Number(preserved.monthly_rent),1500);
+  const synced=(await db.query<{property_type:string;rentable:boolean;monthly_rent:string}>("select property_type,rentable,monthly_rent from public.rentals where id=$1",[id])).rows[0];
+  assert.equal(synced.property_type,"Imóvel Residencial");assert.equal(synced.rentable,true);assert.equal(Number(synced.monthly_rent),3100);
+  assert.equal(Number((await manual()).rows[0].net_received),2000.20);
+ });
 });

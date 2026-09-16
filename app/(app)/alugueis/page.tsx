@@ -59,6 +59,8 @@ export default function RentalsPage() {
     rented: rentals.filter((rental) => rental.status === "alugado").length,
     available: rentals.filter((rental) => rental.status === "desocupado").length,
     renovation: rentals.filter((rental) => rental.status === "aguardando_reforma").length,
+    pending: rentals.filter((rental) => !rental.qlik_property_id).length,
+    synchronized: rentals.filter((rental) => rental.qlik_property_id && rental.qlik_present).length,
   }), [rentals]);
   const visibleRentals = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR");
@@ -99,7 +101,8 @@ export default function RentalsPage() {
 
       <div className="template-preview" style={{ marginBottom: 22 }} role="status">
         <strong>{connection?.active ? "Carteira integrada ao Qlik" : "Importação do Qlik aguardando validação"}</strong>
-        <p>{connection?.active ? "Atualização diária às 6h de Brasília. Nomes são mantidos pelo Qlik." : "Os imóveis existentes estão preservados. A atualização diária será ativada após confirmar a tabela e os vínculos com o Qlik."}{connection?.last_success_at ? ` Última carga: ${dateBr(connection.last_success_at.slice(0, 10))}.` : ""}{connection?.last_error_at ? " A última tentativa falhou; os dados anteriores foram mantidos." : ""}</p>
+        <p>{connection?.active ? "Atualização diária às 6h de Brasília. Nomes, tipos e permissão para locação são mantidos pelo Qlik." : "Os imóveis existentes estão preservados. A atualização diária será ativada após confirmar a tabela e os vínculos com o Qlik."}{connection?.last_success_at ? ` Última carga: ${dateBr(connection.last_success_at.slice(0, 10))}.` : ""}{connection?.last_error_at ? " A última tentativa falhou; os dados anteriores foram mantidos." : ""}</p>
+        {connection?.last_success_at && metrics.pending > 0 ? <p>{metrics.synchronized} imóveis sincronizados. {metrics.pending} contratos anteriores preservados aguardam confirmação do código do imóvel. Seus recebimentos do Qlik aparecem no imóvel de origem, sem atribuição automática ao contrato pendente.</p> : null}
       </div>
 
       <section className="kpi-grid">
@@ -135,7 +138,7 @@ export default function RentalsPage() {
                   const endInDays = rental.lease_end_date ? Math.ceil((new Date(`${rental.lease_end_date}T12:00:00`).getTime() - new Date(`${todayIso()}T12:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY;
                   const exception = rental.status === "desocupado" || (rental.status === "alugado" && endInDays >= 0 && endInDays <= 60);
                   return <tr key={rental.id} className={exception ? "exception-row" : ""}>
-                    <td><strong>{rental.name}</strong><small>{rental.property_address}</small>{rental.qlik_property_id ? <small>Cód. Imóvel: {rental.qlik_property_id}</small> : null}{rental.qlik_present === false ? <small>Ausente na última carga do Qlik</small> : null}</td>
+                    <td><strong>{rental.name}</strong><small>{rental.property_address}</small>{rental.qlik_property_id ? <small>Cód. Imóvel: {rental.qlik_property_id}</small> : <small>Contrato anterior · vínculo pendente</small>}{rental.qlik_present === false ? <small>Ausente na última carga do Qlik</small> : null}</td>
                     <td>{rental.property_type || "Não informado"}</td>
                     <td>{rental.rentable === null ? "Não informado" : rental.rentable ? "Sim" : "Não"}</td>
                     <td>

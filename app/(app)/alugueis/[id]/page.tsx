@@ -19,8 +19,6 @@ const statusLabel: Record<RentalStatus, string> = {
 
 function rentalToForm(rental: Rental) {
   return {
-    property_type: rental.property_type || "",
-    rentable: rental.rentable === null ? "" : String(rental.rentable),
     property_address: rental.property_address,
     status: rental.status,
     monthly_rent: String(rental.monthly_rent),
@@ -67,8 +65,6 @@ export default function RentalDetailPage() {
     if (!supabase || !form || !rental) return;
     setSaving(true);
     const { error } = await supabase.from("rentals").update({
-      property_type: form.property_type.trim() || null,
-      rentable: form.rentable === "" ? null : form.rentable === "true",
       property_address: form.property_address.trim(),
       status: form.status,
       monthly_rent: Number(form.monthly_rent || 0),
@@ -97,7 +93,7 @@ export default function RentalDetailPage() {
           <div className="work-detail-tags"><StatusPill tone={form.status === "alugado" ? "success" : form.status === "aguardando_reforma" ? "warning" : "neutral"}>{statusLabel[form.status]}</StatusPill><StatusPill tone="neutral">{form.lessor_type.toUpperCase()}</StatusPill></div>
           <h1>{rental.name}</h1>
           <p><Home size={14} /> {form.property_address}</p>
-          <p>Cód. Imóvel: {rental.qlik_property_id || "Aguardando importação"}</p>
+          <p>Cód. Imóvel: {rental.qlik_property_id || "Contrato anterior · vínculo pendente"}</p>
           <p>{rental.qlik_synced_at ? `Qlik atualizado em ${dateBr(rental.qlik_synced_at.slice(0, 10))}` : "Aguardando vínculo com a origem Qlik"}{rental.qlik_present === false ? " · Ausente na última carga" : ""}</p>
         </div>
       </header>
@@ -108,11 +104,11 @@ export default function RentalDetailPage() {
       </section>
 
       <section className="content-card rental-edit-card">
-        <div className="content-card-head"><div><h2>Dados do imóvel</h2><p>O nome do imóvel é mantido pela origem Qlik. O valor mensal da locação continua como base do contrato.</p></div></div>
+        <div className="content-card-head"><div><h2>Dados do imóvel</h2><p>Nome, tipo e permissão para locação são atualizados pelo Qlik. O valor mensal da locação continua como base do contrato.</p></div></div>
         <div className="content-card-body">
           <form className="form-grid" onSubmit={saveRental}>
-            <Field label="Tipo de imóvel"><input value={form.property_type} onChange={(event) => setForm({ ...form, property_type: event.target.value })} maxLength={120} list="rental-property-types" placeholder="Selecione ou informe" /><datalist id="rental-property-types"><option value="Casa" /><option value="Apartamento" /><option value="Sala comercial" /><option value="Loja" /><option value="Galpão" /><option value="Terreno" /><option value="Área rural" /></datalist></Field>
-            <Field label="Pode ser locado?" hint="Independente da ocupação atual."><select value={form.rentable} onChange={(event) => setForm({ ...form, rentable: event.target.value })}><option value="">Não informado</option><option value="true">Sim, pode ser locado</option><option value="false">Não pode ser locado</option></select></Field>
+            <Field label="Tipo de imóvel" hint="Informado pelo Qlik."><input value={rental.property_type || "Aguardando vínculo"} readOnly /></Field>
+            <Field label="Pode ser locado?" hint="Informado pelo Qlik, independente da ocupação atual."><input value={rental.rentable === null ? "Aguardando vínculo" : rental.rentable ? "Sim" : "Não"} readOnly /></Field>
             <Field label="Ocupação"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as RentalStatus })}><option value="alugado">Alugado</option><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option></select></Field>
             <Field label="Endereço do imóvel" className="form-span-2"><input value={form.property_address} onChange={(event) => setForm({ ...form, property_address: event.target.value })} maxLength={260} required /></Field>
             <Field label="Valor mensal da locação"><input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={(event) => setForm({ ...form, monthly_rent: event.target.value })} required /></Field>
