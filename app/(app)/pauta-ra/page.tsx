@@ -203,11 +203,13 @@ export default function RaPage() {
   async function deleteItem() {
     if (!supabase || !deletingItem || !canOperateSelected) return;
     setSaving(true);
-    const { error } = await supabase.from("ra_agenda_items").delete().eq("id", deletingItem.id);
+    const { error } = await supabase.from("ra_agenda_items").delete().eq("id", deletingItem.id).select("id").single();
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
+    const hadTask = Boolean(deletingItem.task_id);
     setDeletingItem(null);
-    setToast({ message: "Assunto excluído da pauta.", type: "success" });
+    setToast({ message: hadTask ? "Assunto e tarefa vinculada excluídos." : "Assunto excluído da pauta.", type: "success" });
+    window.dispatchEvent(new Event("today-alert-count-changed"));
     await loadData();
   }
 
@@ -417,7 +419,7 @@ export default function RaPage() {
         <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingItem(null)}>Cancelar</Button><Button type="submit" loading={saving}><Save size={15} /> Salvar alterações</Button></div>
       </form>
     </Dialog>
-    <Dialog open={Boolean(deletingItem)} onClose={() => setDeletingItem(null)} title="Excluir assunto?" description="O assunto e suas definições serão removidos da pauta. Uma tarefa já criada continuará no TLU Space.">
+    <Dialog open={Boolean(deletingItem)} onClose={() => setDeletingItem(null)} title="Excluir assunto?" description={deletingItem?.task_id ? "O assunto, suas definições e a tarefa vinculada serão excluídos. A tarefa também será removida de Hoje e do quadro de tarefas, incluindo suas subtarefas." : "O assunto e suas definições serão removidos da pauta."}>
       <div className="confirmation-content"><strong>{deletingItem?.content}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDeletingItem(null)}>Cancelar</Button><Button type="button" variant="danger" loading={saving} onClick={() => void deleteItem()}><Trash2 size={16} /> Excluir assunto</Button></div></div>
     </Dialog>
     <Dialog open={Boolean(editingDecision)} onClose={() => { if (!saving) setEditingDecision(null); }} title="Editar definição" description="Atualize a definição registrada neste assunto. A alteração também será exibida no catálogo de definições.">
