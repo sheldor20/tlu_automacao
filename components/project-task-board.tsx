@@ -12,11 +12,12 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { TaskActivityDialog } from "@/components/task-activity";
 import { StatusPill } from "@/components/ui";
 import { TASK_COLUMNS } from "@/lib/constants";
 import { dateBr, initials, todayIso } from "@/lib/format";
 import type { ProjectSubtask, ProjectTask, TaskStatus, UserProfile } from "@/lib/types";
-import { Calendar, Check, ChevronDown, ChevronUp, Circle, FolderKanban, GripVertical, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Calendar, Check, ChevronDown, ChevronUp, Circle, FolderKanban, GripVertical, MessageSquare, Pencil, Plus, Trash2, Users } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
 
@@ -36,6 +37,7 @@ type ProjectTaskBoardProps = {
 
 type TaskCardProps = Pick<ProjectTaskBoardProps, "onStatusChange" | "onEditTask" | "onToggleSubtask" | "onDeleteTask"> & {
   task: ProjectTask;
+  onOpenActivity: (task: ProjectTask) => void;
   disabled?: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -77,7 +79,7 @@ function TaskCardContent({ task, dragHandle, expanded = false }: { task: Project
   );
 }
 
-function TaskCard({ task, disabled, onStatusChange, onEditTask, onToggleSubtask, canEdit, canDelete, onDeleteTask }: TaskCardProps) {
+function TaskCard({ task, disabled, onStatusChange, onEditTask, onToggleSubtask, canEdit, canDelete, onDeleteTask, onOpenActivity }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, disabled, data: { status: task.status } });
   const style: CSSProperties = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scaleX}, ${transform.scaleY})` } : {};
@@ -93,6 +95,7 @@ function TaskCard({ task, disabled, onStatusChange, onEditTask, onToggleSubtask,
           return <label key={subtask.id} className={completed ? "completed" : ""}><button type="button" onClick={() => void onToggleSubtask?.(task, subtask, !completed)} disabled={disabled || !onToggleSubtask} aria-label={`${completed ? "Reabrir" : "Concluir"} ${subtask.title}`}>{completed ? <Check size={13} /> : <Circle size={13} />}</button><span><strong>{subtask.title}</strong>{assigneeNames ? <small>{assigneeNames}</small> : null}</span></label>;
         })}</div> : <div className="task-no-subtasks">Sem subtarefas cadastradas.</div>}
       </> : null}
+      <button type="button" className="task-activity-button" onClick={() => onOpenActivity(task)}><MessageSquare size={15} /> Arquivos e comentários</button>
       <div className="task-card-footer-actions">
         <button type="button" className="task-detail-toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{expanded ? "Recolher" : "Detalhes"}</button>
         {canEdit && onEditTask ? <button type="button" className="task-edit-button" onClick={() => onEditTask(task)} disabled={disabled}><Pencil size={13} /> Editar</button> : null}
@@ -102,13 +105,13 @@ function TaskCard({ task, disabled, onStatusChange, onEditTask, onToggleSubtask,
   );
 }
 
-function TaskColumn({ status, label, tasks, movingTaskId, onStatusChange, onAddTask, onEditTask, onToggleSubtask, canAddTask, canEdit, canDelete, onDeleteTask }: Omit<ProjectTaskBoardProps, "users"> & { status: TaskStatus; label: string }) {
+function TaskColumn({ status, label, tasks, movingTaskId, onStatusChange, onAddTask, onEditTask, onToggleSubtask, canAddTask, canEdit, canDelete, onDeleteTask, onOpenActivity }: Omit<ProjectTaskBoardProps, "users"> & { status: TaskStatus; label: string; onOpenActivity: (task: ProjectTask) => void }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
   return (
     <section ref={setNodeRef} className={`kanban-column column-${status} ${isOver ? "kanban-column-drop-target" : ""}`}>
       <header><div><span className="column-dot" /><h3>{label}</h3></div><strong>{tasks.length}</strong></header>
       <div className="kanban-tasks">
-        {tasks.map((task) => <TaskCard task={task} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canEdit={Boolean(canEdit)} canDelete={Boolean(canDelete)} onDeleteTask={onDeleteTask} key={task.id} />)}
+        {tasks.map((task) => <TaskCard task={task} onOpenActivity={onOpenActivity} disabled={Boolean(movingTaskId)} onStatusChange={onStatusChange} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canEdit={Boolean(canEdit)} canDelete={Boolean(canDelete)} onDeleteTask={onDeleteTask} key={task.id} />)}
         {tasks.length === 0 ? <div className="column-empty">Solte uma atividade aqui.</div> : null}
       </div>
       {canAddTask ? <button className="kanban-add" onClick={() => onAddTask(status)}><Plus size={15} /> Adicionar atividade</button> : null}
@@ -118,6 +121,7 @@ function TaskColumn({ status, label, tasks, movingTaskId, onStatusChange, onAddT
 
 export function ProjectTaskBoard(props: ProjectTaskBoardProps) {
   const { tasks, movingTaskId, onStatusChange, onAddTask, onEditTask, onToggleSubtask, canAddTask = true, canEdit = true, canDelete = false, onDeleteTask } = props;
+  const [activityTask, setActivityTask] = useState<ProjectTask | null>(null);
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }), useSensor(KeyboardSensor));
 
@@ -130,9 +134,12 @@ export function ProjectTaskBoard(props: ProjectTaskBoardProps) {
   }
 
   return (
+    <>
     <DndContext sensors={sensors} onDragStart={(event) => setActiveTask(tasks.find((item) => item.id === event.active.id) || null)} onDragCancel={() => setActiveTask(null)} onDragEnd={handleDragEnd}>
-      <div className="kanban-board">{TASK_COLUMNS.map((column) => <TaskColumn status={column.key} label={column.label} tasks={tasks.filter((task) => task.status === column.key)} movingTaskId={movingTaskId} onStatusChange={onStatusChange} onAddTask={onAddTask} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canAddTask={canAddTask} canEdit={canEdit} canDelete={canDelete} onDeleteTask={onDeleteTask} key={column.key} />)}</div>
+      <div className="kanban-board">{TASK_COLUMNS.map((column) => <TaskColumn onOpenActivity={setActivityTask} status={column.key} label={column.label} tasks={tasks.filter((task) => task.status === column.key)} movingTaskId={movingTaskId} onStatusChange={onStatusChange} onAddTask={onAddTask} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canAddTask={canAddTask} canEdit={canEdit} canDelete={canDelete} onDeleteTask={onDeleteTask} key={column.key} />)}</div>
       <DragOverlay dropAnimation={{ duration: 180, easing: "ease-out" }}>{activeTask ? <article className="task-card task-drag-overlay"><TaskCardContent task={activeTask} /></article> : null}</DragOverlay>
     </DndContext>
+    {activityTask ? <TaskActivityDialog key={activityTask.id} task={activityTask} onClose={() => setActivityTask(null)} /> : null}
+    </>
   );
 }

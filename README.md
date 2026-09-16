@@ -397,3 +397,20 @@ Vistorias com o mesmo percentual de avanço também aparecem no histórico.
 A foto é opcional na atualização da microetapa e na medição pelo mapa, tanto
 no acesso interno quanto no link público, inclusive na fila offline. Se uma
 foto for anexada, as validações de formato e tamanho continuam valendo.
+
+## Arquivos e comentários nas tarefas
+
+No quadro de tarefas, **Arquivos e comentários** permite anexar múltiplos
+arquivos (até 20 MB cada), baixar anexos e registrar comentários. O histórico
+da tarefa mantém autor e data/hora de cada registro. Em tarefas vinculadas,
+os mesmos eventos aparecem em **Atualizações → Atividades das tarefas** no
+projeto. As tarefas avulsas usam o mesmo fluxo.
+
+A migration `20260916183159_task_files_comments_activity.sql` cria a tabela
+`project_task_activity` e o bucket privado `task-files`. Deve ser aplicada antes
+do deploy. As regras exigem acesso à tarefa e respeitam `allow_files` e
+`allow_updates`. O banco determina autor, horário, tamanho e tipo do arquivo;
+os registros não são editáveis pela API. Downloads usam links temporários.
+
+Os testes em `tests/task-activity.test.ts` cobrem formato e tamanho, registros
+vazios, autoria, acesso indevido, bloqueios por perfil e preservação do histórico.
