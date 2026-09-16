@@ -303,7 +303,21 @@ indicador, percorre de janeiro ao mês vigente e grava:
 
 Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
 resultado gerencial continua mensal e é calculado por receita menos despesa. A
-posição de saldo e caixa preserva no metadado a última data encontrada no mês.
+posição de caixa preserva no metadado a última data encontrada no mês.
+
+O saldo de aluguéis vem da tabela **Composição Saldo Inicial | Contas** do
+DFC (objeto `883da608-a05c-442b-9304-c5bb1d8eaa5e`). A leitura seleciona
+exatamente as nove contas da Caixa definidas em
+`data_connections.settings.rental_bank_accounts` (configuração protegida,
+fora do repositório público),
+no estado `<estado alternativo 01>`, e ajusta `vPosicaoInicialDFC` e
+`vPosicaoFinalDFC` para o último dia de cada mês (hoje para o mês em aberto).
+Isso reproduz o período exibido no DFC e preserva sua medida nativa de saldo
+inicial, sem substituí-la pelo saldo projetado ou pela data de vencimento.
+Todas as linhas são somadas e reconciliadas com o total do Qlik; os valores
+por conta ficam nos metadados. Ajustes manuais antigos desse indicador são
+ignorados. Sessões de extração isoladas impedem que ações da tela alterem os
+filtros durante a leitura.
 
 Não há novas variáveis de ambiente: são reutilizadas `QLIK_USERNAME`,
 `QLIK_PASSWORD`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` e

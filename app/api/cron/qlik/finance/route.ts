@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
   applyFinanceMetricOverrides,
+  financeAppsForSettings,
+  rentalBankAccountsFromSettings,
   QLIK_FINANCE_APPS,
   QLIK_FINANCE_CONNECTION_SLUG,
   QLIK_FINANCE_SOURCE,
@@ -80,6 +82,8 @@ export async function GET(request: Request) {
   let phase = "load-browser-runtime";
   let recoveredBrowserSession = false;
   try {
+    const apps = financeAppsForSettings(connection.settings);
+    const rentalAccounts = rentalBankAccountsFromSettings(connection.settings);
     const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
     let rawSnapshots: Awaited<ReturnType<typeof scrapeQlikCloudMetrics>> = [];
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -88,7 +92,7 @@ export async function GET(request: Request) {
         rawSnapshots = await scrapeQlikCloudMetrics({
           username,
           password,
-          apps: QLIK_FINANCE_APPS,
+          apps,
           year,
           throughMonth: month,
         });
@@ -109,7 +113,7 @@ export async function GET(request: Request) {
         ? connection.settings.metric_overrides
         : null,
     );
-    const snapshots = validateFinanceSnapshots(snapshotsWithOverrides);
+    const snapshots = validateFinanceSnapshots(snapshotsWithOverrides, new Date(), rentalAccounts);
     const synchronizedAt = new Date().toISOString();
     const rows = toFinanceIndicatorRows(snapshots, synchronizedAt);
     const companyRows = rows.filter((row) => row.area === "empresa");

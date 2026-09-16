@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractQlikAppId, isQlikAppWebSocketUrl } from "../lib/qlik-engine.ts";
+import { extractQlikAppId, isQlikAppWebSocketUrl, isolatedQlikAppWebSocketUrl } from "../lib/qlik-engine.ts";
 
 test("extrai o identificador do aplicativo da URL do Qlik", () => {
   assert.equal(
@@ -26,4 +26,12 @@ test("reconhece a conexão nativa do aplicativo mesmo com identidade de sessão"
 test("ignora conexões de outro aplicativo ou que não sejam seguras", () => {
   assert.equal(isQlikAppWebSocketUrl("wss://tenant.us.qlikcloud.com/app/outro", "esperado"), false);
   assert.equal(isQlikAppWebSocketUrl("ws://tenant.us.qlikcloud.com/app/esperado", "esperado"), false);
+});
+
+test("isola os filtros da leitura sem perder os parâmetros da conexão autenticada", () => {
+  assert.equal(
+    isolatedQlikAppWebSocketUrl("wss://tenant.us.qlikcloud.com/app/finance/identity/native?qlik-csrf-token=example", "finance", "extraction"),
+    "wss://tenant.us.qlikcloud.com/app/finance/identity/extraction?qlik-csrf-token=example",
+  );
+  assert.throws(() => isolatedQlikAppWebSocketUrl("wss://tenant.us.qlikcloud.com/app/other", "finance", "extraction"));
 });
