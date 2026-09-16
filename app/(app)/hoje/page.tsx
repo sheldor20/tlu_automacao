@@ -4,14 +4,13 @@ import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/com
 import { dateBr, todayIso } from "@/lib/format";
 import { PROJECT_TASK_RELATIONS } from "@/lib/project-tasks";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Construction, DepartmentSlug, ProjectTask, Rental, RentalStatus, TaskStatus, TodayVisibleUser, UserNotification } from "@/lib/types";
-import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw } from "lucide-react";
+import type { DepartmentSlug, ProjectTask, TaskStatus, TodayVisibleUser } from "@/lib/types";
+import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type TaskRow = ProjectTask & { projects?: { name: string; category: "operational" | "governance" } | null };
 type TodayTask = ProjectTask & { project_name: string };
-type TodayNotification = UserNotification & { href: string };
 type UnifiedAlert = {
   id: string;
   title: string;
@@ -19,9 +18,9 @@ type UnifiedAlert = {
   category: "notification" | "task" | "inspection" | "rental";
   tone: "danger" | "warning" | "info";
   href: string;
-  actionLabel: string;
-  order: number;
-  notification?: UserNotification;
+  occurrence_key: string;
+  sort_order: number;
+  resolved_at: string | null;
 };
 
 function daysUntil(value: string | null | undefined) {
@@ -44,27 +43,12 @@ function taskHref(task: Pick<ProjectTask, "category" | "project_id">) {
   return task.project_id ? `${base}/${task.project_id}?tab=tarefas` : `${base}#quadro-tarefas`;
 }
 
-function nextAdjustmentDays(rental: Rental) {
-  if (!rental.lease_start_date || rental.status !== "alugado") return Number.POSITIVE_INFINITY;
-  const start = new Date(`${rental.lease_start_date.slice(0, 10)}T12:00:00`);
-  const today = new Date(`${todayIso()}T12:00:00`);
-  const next = new Date(today.getFullYear(), start.getMonth(), start.getDate(), 12);
-  if (next < today) next.setFullYear(next.getFullYear() + 1);
-  return Math.ceil((next.getTime() - today.getTime()) / 86_400_000);
-}
-
-const rentalStatusLabel: Record<RentalStatus, string> = {
-  alugado: "Alugado",
-  desocupado: "Desocupado",
-  aguardando_reforma: "Aguardando reforma",
-};
-
 export default function TodayPage() {
   const supabase = getSupabase();
   const [tasks, setTasks] = useState<TodayTask[]>([]);
-  const [works, setWorks] = useState<Construction[]>([]);
-  const [rentals, setRentals] = useState<Rental[]>([]);
-  const [notifications, setNotifications] = useState<TodayNotification[]>([]);
+  const [alerts, setAlerts] = useState<UnifiedAlert[]>([]);
+  const [showResolved, setShowResolved] = useState(false);
+  const [savingAlertId, setSavingAlertId] = useState<string | null>(null);
   const [visibleUsers, setVisibleUsers] = useState<TodayVisibleUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const selectedUserRef = useRef("");
@@ -81,9 +65,7 @@ export default function TodayPage() {
     setLoading(true);
     setAuthorizedDepartments([]);
     setTasks([]);
-    setWorks([]);
-    setRentals([]);
-    setNotifications([]);
+    setAlerts([]);
     const { data: authData } = await supabase.auth.getUser();
     if (version !== loadVersion.current) return;
     if (!authData.user) {
@@ -102,6 +84,7 @@ export default function TodayPage() {
     const availableUsers = (users || []) as TodayVisibleUser[];
     const preferredUserId = requestedUserId || selectedUserRef.current;
     const targetUserId = availableUsers.some((user) => user.user_id === preferredUserId) ? preferredUserId : ownUserId;
+    if (selectedUserRef.current !== targetUserId) setShowResolved(false);
     selectedUserRef.current = targetUserId;
     setSelectedUserId(targetUserId);
     const { data: access, error: accessError } = await supabase.rpc("today_department_access", { p_user_id: targetUserId });
@@ -116,21 +99,12 @@ export default function TodayPage() {
     const hasProjectAccess = hasAccess("projetos") || hasAccess("governanca");
     const categories = [hasAccess("projetos") ? "operational" : null, hasAccess("governanca") ? "governance" : null].filter((category): category is string => category !== null);
     const emptyResult = Promise.resolve({ data: [], error: null });
-    const [taskResult, workResult, rentalResult, notificationResult] = await Promise.all([
+    const [taskResult, alertResult] = await Promise.all([
       hasProjectAccess ? supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,category)`).in("category", categories).neq("status", "concluida").order("due_date") : emptyResult,
-      hasAccess("obras") ? supabase.from("construction_progress_summary").select("*").eq("responsible_user_id", targetUserId).is("archived_at", null).eq("status", "em_andamento") : emptyResult,
-      hasAccess("alugueis") ? supabase.from("rentals").select("*").order("lease_end_date") : emptyResult,
-      hasProjectAccess ? supabase.from("user_notifications").select("*").eq("recipient_user_id", targetUserId).is("read_at", null).order("created_at", { ascending: false }).limit(30) : emptyResult,
+      supabase.rpc("today_alerts", { p_user_id: targetUserId }),
     ]);
     if (version !== loadVersion.current) return;
-    const unreadNotifications = (notificationResult.data || []) as UserNotification[];
-    // Resolve against all readable tasks, including completed ones. Never send
-    // a stale notification to an unrelated or unauthorized department.
-    const notificationTaskResult = unreadNotifications.length
-      ? await supabase.from("project_tasks").select("id,category,project_id").in("id", unreadNotifications.map((notification) => notification.entity_id)).in("category", categories)
-      : { data: [], error: null };
-    if (version !== loadVersion.current) return;
-    const failure = [taskResult.error, workResult.error, rentalResult.error, notificationResult.error, notificationTaskResult.error].find(Boolean);
+    const failure = taskResult.error || alertResult.error;
     if (failure) setToast({ message: friendlyError(failure), type: "error" });
     setCurrentUserId(ownUserId);
     setAuthorizedDepartments(departments);
@@ -139,12 +113,7 @@ export default function TodayPage() {
       .filter((task) => task.assignees?.some((assignee) => assignee.user_id === targetUserId)
         || task.subtasks?.some((subtask) => subtask.assignees?.some((assignee) => assignee.user_id === targetUserId)))
       .map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Atividade avulsa" })));
-    setWorks((workResult.data || []) as Construction[]);
-    setRentals((rentalResult.data || []) as Rental[]);
-    setNotifications(unreadNotifications.flatMap((notification) => {
-      const task = notificationTaskResult.data?.find((task) => task.id === notification.entity_id);
-      return task ? [{ ...notification, href: taskHref(task) }] : [];
-    }));
+    setAlerts((alertResult.data || []) as UnifiedAlert[]);
     setLoading(false);
   }, [supabase]);
 
@@ -171,63 +140,9 @@ export default function TodayPage() {
   const progressTasks = useMemo(() => tasks.filter((task) => task.status === "em_andamento"), [tasks]);
   const overdueTasks = useMemo(() => tasks.filter((task) => daysUntil(task.due_date) < 0), [tasks]);
   const dueSoonTasks = useMemo(() => tasks.filter((task) => daysUntil(task.due_date) >= 0 && daysUntil(task.due_date) <= 7), [tasks]);
-  const inspectionAlerts = useMemo(() => works.filter((work) => daysUntil(work.next_inspection_at) <= 3), [works]);
-  const rentalAlerts = useMemo(() => rentals.flatMap((rental) => {
-    const alerts: Array<{ id: string; rental: Rental; message: string; danger: boolean }> = [];
-    const contractDays = daysUntil(rental.lease_end_date);
-    const adjustmentDays = nextAdjustmentDays(rental);
-    if (rental.status === "aguardando_reforma") alerts.push({ id: `${rental.id}-reforma`, rental, message: "Imóvel aguardando reforma", danger: true });
-    if (rental.status === "alugado" && contractDays < 0) alerts.push({ id: `${rental.id}-contrato`, rental, message: `Contrato vencido há ${Math.abs(contractDays)} dia(s)`, danger: true });
-    else if (rental.status === "alugado" && contractDays <= 60) alerts.push({ id: `${rental.id}-renovacao`, rental, message: `Renovação/contrato vence em ${contractDays} dia(s)`, danger: contractDays <= 15 });
-    if (adjustmentDays <= 45) alerts.push({ id: `${rental.id}-reajuste`, rental, message: `Reajuste anual em ${adjustmentDays} dia(s)`, danger: adjustmentDays <= 7 });
-    return alerts;
-  }), [rentals]);
-  const unifiedAlerts = useMemo<UnifiedAlert[]>(() => [
-    ...overdueTasks.map((task) => ({
-      id: `overdue-${task.id}`,
-      title: task.title,
-      description: `${task.project_name} · atraso de ${Math.abs(daysUntil(task.due_date))} dia(s)`,
-      category: "task" as const,
-      tone: "danger" as const,
-      href: taskHref(task),
-      actionLabel: "Resolver",
-      order: daysUntil(task.due_date),
-    })),
-    ...inspectionAlerts.map((work) => {
-      const days = daysUntil(work.next_inspection_at);
-      return {
-        id: `inspection-${work.id}`,
-        title: work.name,
-        description: `${days < 0 ? `Vistoria atrasada há ${Math.abs(days)} dia(s)` : days === 0 ? "Vistoria vence hoje" : `Vistoria vence em ${days} dia(s)`} · ciclo de ${work.inspection_interval_days} dia(s)`,
-        category: "inspection" as const,
-        tone: days <= 0 ? "danger" as const : "warning" as const,
-        href: `/obras/${work.id}?tab=atualizacoes`,
-        actionLabel: "Abrir",
-        order: days <= 0 ? 100 + days : 300 + days,
-      };
-    }),
-    ...rentalAlerts.map((alert) => ({
-      id: alert.id,
-      title: alert.rental.name,
-      description: `${alert.message} · ${rentalStatusLabel[alert.rental.status]}`,
-      category: "rental" as const,
-      tone: alert.danger ? "danger" as const : "warning" as const,
-      href: `/alugueis/${alert.rental.id}`,
-      actionLabel: "Revisar",
-      order: alert.danger ? 200 : 400,
-    })),
-    ...notifications.map((notification) => ({
-      id: `notification-${notification.id}`,
-      title: notification.title,
-      description: `${notification.message} · ${dateBr(notification.created_at)}`,
-      category: "notification" as const,
-      tone: "info" as const,
-      href: notification.href,
-      actionLabel: "Abrir",
-      order: 500,
-      notification,
-    })),
-  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts]);
+  const pendingAlerts = useMemo(() => alerts.filter((alert) => !alert.resolved_at), [alerts]);
+  const resolvedAlerts = useMemo(() => alerts.filter((alert) => alert.resolved_at), [alerts]);
+  const unifiedAlerts = showResolved ? resolvedAlerts : pendingAlerts;
 
   async function updateTask(task: TodayTask, status: TaskStatus) {
     if (!supabase) return;
@@ -240,12 +155,30 @@ export default function TodayPage() {
     window.dispatchEvent(new Event("today-alert-count-changed"));
   }
 
-  async function markNotificationRead(notification: UserNotification) {
-    if (!supabase || notification.recipient_user_id !== currentUserId) return;
-    const { error } = await supabase.from("user_notifications").update({ read_at: new Date().toISOString() }).eq("id", notification.id);
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setNotifications((current) => current.filter((item) => item.id !== notification.id));
-    window.dispatchEvent(new Event("today-alert-count-changed"));
+  async function setAlertResolved(alert: UnifiedAlert, resolved: boolean) {
+    if (!supabase || selectedUserId !== currentUserId || savingAlertId) return;
+    const userId = selectedUserId;
+    const version = loadVersion.current;
+    setSavingAlertId(alert.id);
+    try {
+      const { data, error } = await supabase.rpc(resolved ? "resolve_today_alert" : "reopen_today_alert", {
+        p_alert_id: alert.id,
+        p_occurrence_key: alert.occurrence_key,
+      });
+      if (error) throw error;
+      if (selectedUserRef.current === userId && loadVersion.current === version) {
+        setAlerts((current) => current.map((item) => item.id === alert.id && item.occurrence_key === alert.occurrence_key
+          ? { ...item, resolved_at: resolved ? data as string : null } : item));
+        setToast({ message: resolved ? "Alerta resolvido." : "Alerta reaberto.", type: "success" });
+      } else if (selectedUserRef.current === userId) {
+        await loadData(userId);
+      }
+      window.dispatchEvent(new Event("today-alert-count-changed"));
+    } catch (error) {
+      setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      setSavingAlertId(null);
+    }
   }
 
   return (
@@ -271,17 +204,17 @@ export default function TodayPage() {
         </section> : null}
 
         {authorizedDepartments.some((department) => ["projetos", "governanca", "obras", "alugueis"].includes(department)) ? <section className="content-card today-primary-card">
-          <div className="content-card-head"><div><h2>Alertas</h2><p>Tarefas, vistorias e imóveis que precisam de atenção</p></div><StatusPill tone={unifiedAlerts.length ? "danger" : "success"}>{unifiedAlerts.length} pendente(s)</StatusPill></div>
-          {unifiedAlerts.length ? <div className="today-compact-list today-alert-list">{unifiedAlerts.map((alert) => <article key={alert.id}>
-            <span className={`exception-mark exception-${alert.tone}`}>
-              {alert.category === "notification" ? <Bell size={15} /> : alert.category === "task" ? <AlertTriangle size={15} /> : alert.category === "inspection" ? <ClipboardCheck size={15} /> : <Home size={15} />}
+          <div className="content-card-head"><div><h2>{showResolved ? "Alertas resolvidos" : "Alertas"}</h2><p>{showResolved ? "Alertas tratados; você pode reabri-los se precisar." : "Resolver retira o alerta dos pendentes e mantém o item vinculado como está."}</p></div><div className="page-action-group"><StatusPill tone={pendingAlerts.length ? "danger" : "success"}>{pendingAlerts.length} pendente(s)</StatusPill>{resolvedAlerts.length || showResolved ? <Button variant="ghost" onClick={() => setShowResolved((current) => !current)}>{showResolved ? "Ver pendentes" : `Resolvidos (${resolvedAlerts.length})`}</Button> : null}</div></div>
+          {unifiedAlerts.length ? <div className="today-compact-list today-alert-list">{unifiedAlerts.map((alert) => <article key={`${alert.id}-${alert.occurrence_key}`}>
+            <span className={`exception-mark exception-${alert.resolved_at ? "success" : alert.tone}`}>
+              {alert.resolved_at ? <Check size={15} /> : alert.category === "notification" ? <Bell size={15} /> : alert.category === "task" ? <AlertTriangle size={15} /> : alert.category === "inspection" ? <ClipboardCheck size={15} /> : <Home size={15} />}
             </span>
-            <div><strong>{alert.title}</strong><span>{alert.description}</span></div>
+            <div><strong>{alert.title}</strong><span>{alert.description}</span>{alert.resolved_at ? <small>Resolvido em {dateBr(alert.resolved_at)}</small> : null}</div>
             <div className="today-compact-actions">
-              {alert.notification?.recipient_user_id === currentUserId ? <Button variant="ghost" onClick={() => void markNotificationRead(alert.notification!)}>Marcar como lido</Button> : null}
-              <Link href={alert.href}>{alert.actionLabel} <ArrowRight size={14} /></Link>
+              {selectedUserId === currentUserId ? <Button variant="secondary" disabled={savingAlertId !== null} aria-label={`${alert.resolved_at ? "Reabrir" : "Resolver"} alerta: ${alert.title}`} onClick={() => void setAlertResolved(alert, !alert.resolved_at)}>{alert.resolved_at ? <Undo2 size={14} /> : <Check size={14} />}{savingAlertId === alert.id ? "Salvando…" : alert.resolved_at ? "Reabrir" : "Resolver"}</Button> : null}
+              <Link href={alert.href}>Abrir <ArrowRight size={14} /></Link>
             </div>
-          </article>)}</div> : <div className="mini-empty">Nenhum alerta exige atenção agora.</div>}
+          </article>)}</div> : <div className="mini-empty">{showResolved ? "Nenhum alerta resolvido nesta visão." : "Nenhum alerta exige atenção agora."}</div>}
         </section> : null}
 
         {!authorizedDepartments.some((department) => ["projetos", "governanca", "obras", "alugueis"].includes(department)) ? <EmptyState icon={<Building2 size={22} />} title="Sem áreas operacionais" description="Solicite acesso a Projetos, Governança, Obras ou Aluguéis para visualizar atividades e alertas." /> : null}

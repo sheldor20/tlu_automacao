@@ -41,6 +41,26 @@ O teste `tests/today-alert-permissions-database.test.ts` reproduz a exposição 
 notificações antes da migration e valida permissões, revogação, liderança,
 usuários inativos, leitura de notificações e o contador com as políticas reais.
 
+## Resolver alertas no Hoje
+
+Aplique `20260916203610_resolve_today_alerts.sql` depois da migration de
+permissões e antes de publicar a interface. O botão **Resolver** retira o alerta
+dos pendentes e atualiza o contador do menu, sem concluir a tarefa, a vistoria
+ou alterar o imóvel. A resolução é individual e persiste entre sessões.
+
+Em **Resolvidos**, o próprio usuário pode usar **Reabrir**. Ao consultar outra
+pessoa, administradores e líderes veem o estado dos alertas, mas não podem
+resolver por ela. As permissões de departamento e de cada item continuam valendo.
+
+Novos prazos, ciclos de vistoria, reajustes, atribuições ou uma tarefa reaberta
+geram novas ocorrências. Uma nova entrada do imóvel em reforma também volta a
+alertar; atualizações cadastrais e sincronizações sem mudança de situação não
+desfazem a resolução. A lista de resolvidos mostra as ocorrências ainda vigentes.
+
+`today_alerts` e `current_user_today_alert_count` consultam a mesma origem no
+banco. O teste `tests/today-alert-resolution-database.test.ts` cobre persistência,
+reabertura, idempotência, novas ocorrências e tentativas de acesso indevido.
+
 ## Desenvolvimento
 
 ```bash
