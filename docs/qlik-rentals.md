@@ -10,6 +10,24 @@ sem seleções e exportada pela interface: 114 códigos distintos. O objeto é
 O estado operacional e o resultado de cada carga ficam em `data_connections`
 e `data_connection_runs`; o agendamento só opera com a conexão ativa.
 
+As duas conexões estão ativas e tiveram execução de produção concluída em
+16/09/2026. A segunda carga da carteira atualizou os mesmos 114 registros, sem
+criar duplicatas. Código, nome, tipo e permissão dos 114 imóveis foram comparados
+à exportação do Qlik, sem diferenças. Os 31 contratos originais mantiveram IDs,
+endereços, valores mensais, locadores e observações. Sete continuam sinalizados
+como pendentes de vínculo, sem correspondências presumidas.
+
+A carga financeira leu 59.685 agrupamentos diários e importou 868 competências
+de 28 imóveis. O total da amostra `1|006` foi conciliado em R$ 56.434,96, inclusive
+os valores mensais de 2026, entre o Qlik, banco e tela publicada. Os gráficos
+da carteira e do imóvel, o formulário mensal com IR e os campos somente leitura
+foram conferidos na produção. As duas rotinas constam no agendador da Vercel.
+
+A conferência identificou colunas intercaladas na tabela Qlik. Os cabeçalhos
+agora respeitam `qColumnOrder`, evitando confundir “Tem Parceria?” com
+“É p/ Locação?”. A substituição atômica dos recebimentos também usa uma condição
+explícita para operar com a proteção `safeupdate` do banco, que permanece ativa.
+
 O cadastro manual foi removido e o nome só pode ser alterado pelo servidor.
 Contratos e lançamentos existentes são preservados. Nome, tipo e permissão para
 locação são mantidos pelo Qlik e protegidos contra alterações pelo cliente.
@@ -50,7 +68,7 @@ são removidos. O nome não é chave dos recebimentos.
    `Cód Unidade Negócio` e `Período`, usando a medida nativa do objeto
    `b92ac856-4098-44d8-bc83-a21a48e68db5`, índice zero. Esse objeto e essas
    variáveis vêm da integração financeira já existente. O código `1|006` foi
-   verificado no painel: 35 parcelas e total exibido de 56,43 mil.
+   verificado no painel: 35 parcelas e total de R$ 56.434,96.
    São usados `vQtdDias=99999999` (“Tudo”) e `vDesembolsoFinanceiro=Normal`.
    Conferir alguns imóveis e competências contra os valores visíveis no Qlik.
 4. Após validar o mapeamento da carteira, definir `mapping_verified=true` e
