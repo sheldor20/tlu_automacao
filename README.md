@@ -24,6 +24,23 @@ Projetos e Aluguéis.
 - **Administração:** criação de usuários, acesso por departamento e seleção das
   visões de Indicadores, aplicados ao menu e às políticas RLS do Supabase.
 
+## Permissões nos alertas do Hoje
+
+Antes de publicar a correção, aplique a migration
+`20260916202418_today_alert_department_permissions.sql`. Ela adiciona a consulta
+das áreas permitidas na visão selecionada e restringe as notificações às tarefas
+acessíveis e ainda atribuídas ao destinatário. O contador do menu usa essa mesma
+regra de leitura por meio da função existente `current_user_today_alert_count`.
+
+Ao consultar outra pessoa, o Hoje usa apenas os departamentos aos quais **ambos**
+têm acesso. As permissões são recarregadas em Atualizar e ao voltar para a aba;
+falhas de leitura não preservam alertas antigos. Administradores mantêm acesso a
+todas as áreas na própria visão, conforme a regra da Administração.
+
+O teste `tests/today-alert-permissions-database.test.ts` reproduz a exposição de
+notificações antes da migration e valida permissões, revogação, liderança,
+usuários inativos, leitura de notificações e o contador com as políticas reais.
+
 ## Desenvolvimento
 
 ```bash

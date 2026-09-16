@@ -1,17 +1,17 @@
 "use client";
 
 import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
-import { DEPARTMENTS } from "@/lib/constants";
 import { dateBr, todayIso } from "@/lib/format";
 import { PROJECT_TASK_RELATIONS } from "@/lib/project-tasks";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { Construction, DepartmentSlug, ProjectTask, Rental, RentalStatus, TaskStatus, TodayVisibleUser, UserNotification } from "@/lib/types";
 import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type TaskRow = ProjectTask & { projects?: { name: string; category: "operational" | "governance" } | null };
 type TodayTask = ProjectTask & { project_name: string };
+type TodayNotification = UserNotification & { href: string };
 type UnifiedAlert = {
   id: string;
   title: string;
@@ -39,7 +39,7 @@ function taskWindow(task: TodayTask) {
   return { label: dateBr(task.due_date), tone: "neutral" as const, order: 3 };
 }
 
-function taskHref(task: ProjectTask) {
+function taskHref(task: Pick<ProjectTask, "category" | "project_id">) {
   const base = task.category === "governance" ? "/governanca" : "/projetos";
   return task.project_id ? `${base}/${task.project_id}?tab=tarefas` : `${base}#quadro-tarefas`;
 }
@@ -64,9 +64,11 @@ export default function TodayPage() {
   const [tasks, setTasks] = useState<TodayTask[]>([]);
   const [works, setWorks] = useState<Construction[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
-  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [notifications, setNotifications] = useState<TodayNotification[]>([]);
   const [visibleUsers, setVisibleUsers] = useState<TodayVisibleUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const selectedUserRef = useRef("");
+  const loadVersion = useRef(0);
   const [currentUserId, setCurrentUserId] = useState("");
   const [authorizedDepartments, setAuthorizedDepartments] = useState<DepartmentSlug[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,61 +77,91 @@ export default function TodayPage() {
 
   const loadData = useCallback(async (requestedUserId?: string) => {
     if (!supabase) return;
+    const version = ++loadVersion.current;
     setLoading(true);
+    setAuthorizedDepartments([]);
+    setTasks([]);
+    setWorks([]);
+    setRentals([]);
+    setNotifications([]);
     const { data: authData } = await supabase.auth.getUser();
+    if (version !== loadVersion.current) return;
     if (!authData.user) {
       setToast({ message: "Sua sessão expirou. Entre novamente.", type: "error" });
       setLoading(false);
       return;
     }
     const ownUserId = authData.user.id;
-    const [profileResult, accessResult, visibleUserResult] = await Promise.all([
-      supabase.from("profiles").select("full_name,email,is_admin").eq("user_id", ownUserId).single(),
-      supabase.from("profile_departments").select("department_slug").eq("user_id", ownUserId),
-      supabase.rpc("visible_today_users"),
-    ]);
-    if (profileResult.error || accessResult.error || visibleUserResult.error) {
-      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(profileResult.error || accessResult.error || visibleUserResult.error)}`, type: "error" });
+    const { data: users, error: usersError } = await supabase.rpc("visible_today_users");
+    if (version !== loadVersion.current) return;
+    if (usersError) {
+      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(usersError)}`, type: "error" });
       setLoading(false);
       return;
     }
-    const departments = profileResult.data?.is_admin
-      ? DEPARTMENTS.map((department) => department.slug)
-      : (accessResult.data || []).map((item) => item.department_slug as DepartmentSlug);
-    const availableUsers = (visibleUserResult.data || []) as TodayVisibleUser[];
-    const targetUserId = requestedUserId && availableUsers.some((user) => user.user_id === requestedUserId)
-      ? requestedUserId
-      : selectedUserId && availableUsers.some((user) => user.user_id === selectedUserId)
-        ? selectedUserId
-        : ownUserId;
+    const availableUsers = (users || []) as TodayVisibleUser[];
+    const preferredUserId = requestedUserId || selectedUserRef.current;
+    const targetUserId = availableUsers.some((user) => user.user_id === preferredUserId) ? preferredUserId : ownUserId;
+    selectedUserRef.current = targetUserId;
+    setSelectedUserId(targetUserId);
+    const { data: access, error: accessError } = await supabase.rpc("today_department_access", { p_user_id: targetUserId });
+    if (version !== loadVersion.current) return;
+    if (accessError) {
+      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(accessError)}`, type: "error" });
+      setLoading(false);
+      return;
+    }
+    const departments = (access || []) as DepartmentSlug[];
     const hasAccess = (department: DepartmentSlug) => departments.includes(department);
     const hasProjectAccess = hasAccess("projetos") || hasAccess("governanca");
+    const categories = [hasAccess("projetos") ? "operational" : null, hasAccess("governanca") ? "governance" : null].filter((category): category is string => category !== null);
     const emptyResult = Promise.resolve({ data: [], error: null });
     const [taskResult, workResult, rentalResult, notificationResult] = await Promise.all([
-      hasProjectAccess ? supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,category)`).neq("status", "concluida").order("due_date") : emptyResult,
+      hasProjectAccess ? supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,category)`).in("category", categories).neq("status", "concluida").order("due_date") : emptyResult,
       hasAccess("obras") ? supabase.from("construction_progress_summary").select("*").eq("responsible_user_id", targetUserId).is("archived_at", null).eq("status", "em_andamento") : emptyResult,
       hasAccess("alugueis") ? supabase.from("rentals").select("*").order("lease_end_date") : emptyResult,
       hasProjectAccess ? supabase.from("user_notifications").select("*").eq("recipient_user_id", targetUserId).is("read_at", null).order("created_at", { ascending: false }).limit(30) : emptyResult,
     ]);
-    const failure = [taskResult.error, workResult.error, rentalResult.error, notificationResult.error].find(Boolean);
+    if (version !== loadVersion.current) return;
+    const unreadNotifications = (notificationResult.data || []) as UserNotification[];
+    // Resolve against all readable tasks, including completed ones. Never send
+    // a stale notification to an unrelated or unauthorized department.
+    const notificationTaskResult = unreadNotifications.length
+      ? await supabase.from("project_tasks").select("id,category,project_id").in("id", unreadNotifications.map((notification) => notification.entity_id)).in("category", categories)
+      : { data: [], error: null };
+    if (version !== loadVersion.current) return;
+    const failure = [taskResult.error, workResult.error, rentalResult.error, notificationResult.error, notificationTaskResult.error].find(Boolean);
     if (failure) setToast({ message: friendlyError(failure), type: "error" });
     setCurrentUserId(ownUserId);
     setAuthorizedDepartments(departments);
     setVisibleUsers(availableUsers);
-    setSelectedUserId(targetUserId);
     setTasks(((taskResult.data || []) as TaskRow[])
       .filter((task) => task.assignees?.some((assignee) => assignee.user_id === targetUserId)
         || task.subtasks?.some((subtask) => subtask.assignees?.some((assignee) => assignee.user_id === targetUserId)))
       .map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Atividade avulsa" })));
     setWorks((workResult.data || []) as Construction[]);
     setRentals((rentalResult.data || []) as Rental[]);
-    setNotifications((notificationResult.data || []) as UserNotification[]);
+    setNotifications(unreadNotifications.flatMap((notification) => {
+      const task = notificationTaskResult.data?.find((task) => task.id === notification.entity_id);
+      return task ? [{ ...notification, href: taskHref(task) }] : [];
+    }));
     setLoading(false);
-  }, [selectedUserId, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
-    return () => window.clearTimeout(timer);
+    const refresh = () => void loadData();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      loadVersion.current += 1;
+    };
   }, [loadData]);
 
   const selectedUser = visibleUsers.find((user) => user.user_id === selectedUserId);
@@ -190,12 +222,12 @@ export default function TodayPage() {
       description: `${notification.message} · ${dateBr(notification.created_at)}`,
       category: "notification" as const,
       tone: "info" as const,
-      href: tasks.find((task) => task.id === notification.entity_id) ? taskHref(tasks.find((task) => task.id === notification.entity_id)!) : "/projetos#quadro-tarefas",
+      href: notification.href,
       actionLabel: "Abrir",
       order: 500,
       notification,
     })),
-  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts, tasks]);
+  ].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [inspectionAlerts, notifications, overdueTasks, rentalAlerts]);
 
   async function updateTask(task: TodayTask, status: TaskStatus) {
     if (!supabase) return;

@@ -84,7 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const loadTodayAlertCount = useCallback(async () => {
     if (!supabase) return;
     const { data, error } = await supabase.rpc("current_user_today_alert_count");
-    if (!error) setTodayAlertCount(Math.max(0, Number(data) || 0));
+    setTodayAlertCount(error ? 0 : Math.max(0, Number(data) || 0));
   }, [supabase]);
 
   useEffect(() => {
