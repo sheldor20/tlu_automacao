@@ -10,8 +10,8 @@ export const PERFORMANCE_SHEETS = {
   receivable: "32a488c2-14d8-4bde-ba4f-35211d75376b",
 };
 
-export function performanceMetricApps(settings: Record<string, unknown>): QlikCloudMetricApp[] {
-  if (settings.mapping_verified !== true) throw new Error("A conexão de performance aguarda validação das medidas e datas nas planilhas do Qlik.");
+export function performanceMetricApps(settings: Record<string, unknown>, inspectOnly = false): QlikCloudMetricApp[] {
+  if (!inspectOnly && settings.mapping_verified !== true) throw new Error("A conexão de performance aguarda validação das medidas e datas nas planilhas do Qlik.");
   if (typeof settings.company_field !== "string" || !settings.company_field.trim()) throw new Error("Configure o campo Empresa do Qlik.");
   const sources = settings.sources as Record<string, { object_id?: unknown; date_field?: unknown; measure_index?: unknown }> | undefined;
   const metrics: QlikCloudMetricDefinition[] = PERFORMANCE_FIELDS.map((kind) => {
@@ -24,6 +24,10 @@ export function performanceMetricApps(settings: Record<string, unknown>): QlikCl
     return {
       metricKey: kind, sheetId: PERFORMANCE_SHEETS[kind], objectId: source.object_id,
       targetLabel: kind, mode: "snapshot", measureIndex: index,
+      variables: [
+        { name: "vQtdDias", value: 99999999, label: "Tudo" },
+        { name: "vDesembolsoFinanceiro", value: "Normal", label: "Com Desembolso" },
+      ],
       companyDateBreakdown: { companyField: settings.company_field as string, dateField: source.date_field },
     };
   });
@@ -36,7 +40,7 @@ export function validatedPerformanceSnapshot(snapshots: QlikMetricSnapshot[]) {
   const companies = new Map<string, { company_key: string; name: string }>();
   const flows = new Map<string, PerformanceSyncFlow>();
   const totals = new Map<PerformanceField, number>();
-  const sources: Record<string, { object_id: string; sheet_id: string; total: number }> = {};
+  const sources: Record<string, { object_id: string; sheet_id: string; total: number; expression?: string; selections: Record<string, string> }> = {};
   for (const item of snapshots) {
     if (item.metricKey === "performance_company") {
       const name = item.companyName?.trim();
@@ -52,7 +56,7 @@ export function validatedPerformanceSnapshot(snapshots: QlikMetricSnapshot[]) {
     if (totalKind) {
       if (totals.has(kind)) throw new Error("Total duplicado na carga de performance.");
       totals.set(kind, item.value);
-      sources[kind] = { object_id: item.objectId, sheet_id: item.sheetId, total: roundMoney(item.value) };
+      sources[kind] = { object_id: item.objectId, sheet_id: item.sheetId, total: roundMoney(item.value), expression: item.sourceExpression, selections: item.selections };
       continue;
     }
     if (!item.companyName?.trim()) throw new Error("Existe valor financeiro sem empresa. A carga não será publicada.");

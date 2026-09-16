@@ -12,7 +12,8 @@ async function collect(options: { truncated?: boolean; date?: string; missingCom
   const kinds = Object.keys(PERFORMANCE_SHEETS);
   const fields = ["Empresa", "Data do fluxo"];
   const cubes = new Map<number, number>();
-  let nextHandle = 200, reads = 0, clears = 0, destroyed = 0;
+  let nextHandle = 200, reads = 0, clears = 0, destroyed = 0, variableWrites = 0;
+  const variables = new Map<number, string | number>();
   const total = options.empty ? 0 : 1001;
   class Engine {
     onopen?: () => void;
@@ -25,12 +26,18 @@ async function collect(options: { truncated?: boolean; date?: string; missingCom
       if (method === "OpenDoc") result = { qReturn: { qHandle: 1 } };
       else if (method === "GetObject") result = { qReturn: { qHandle: 100 + kinds.indexOf(params.qId) } };
       else if (method === "ClearAll") { clears++; result = {}; }
+      else if (method === "GetVariableByName") result = { qReturn: { qHandle: params.qName === "vQtdDias" ? 4 : 5 } };
+      else if (method === "SetNumValue" || method === "SetStringValue") { variables.set(handle, params.qVal); variableWrites++; result = {}; }
       else if (method === "GetEffectiveProperties") result = { qProp: { qHyperCubeDef: { qMeasures: [{ qLibraryId: kinds[handle - 100] }] } } };
+      else if (method === "GetMeasure") result = { qReturn: { qHandle: 6 } };
+      else if (method === "GetProperties") result = { qProp: { qMeasure: { qDef: "Sum([Valor Atualizado Parcela])" } } };
       else if (method === "CreateSessionObject") {
         if (params.qProp.qFieldListDef) result = { qReturn: { qHandle: 2 } };
         else if (params.qProp.qListObjectDef) { assert.equal(params.qProp.qListObjectDef.qDef.qFieldDefs[0], "Empresa"); result = { qReturn: { qHandle: 3 } }; }
         else {
           const definition = params.qProp.qHyperCubeDef;
+          assert.equal(variables.get(4), 99999999, "full projection must be applied before reading the cube");
+          assert.equal(variables.get(5), "Normal", "cash disbursement basis must match the verified Qlik view");
           assert.ok(kinds.includes(definition.qMeasures[0].qLibraryId));
           assert.equal(definition.qStateName, "$");
           const dimensions = definition.qDimensions.map((value: { qDef: { qFieldDefs: string[] } }) => value.qDef.qFieldDefs[0]);
@@ -39,7 +46,8 @@ async function collect(options: { truncated?: boolean; date?: string; missingCom
         }
       } else if (method === "DestroySessionObject") { destroyed++; result = {}; }
       else if (method === "GetLayout") {
-        if (handle === 2) result = { qLayout: { qFieldList: { qItems: fields.map(qName => ({ qName })) } } };
+        if (handle === 4 || handle === 5) result = { qLayout: { qNum: variables.get(handle), qText: variables.get(handle) } };
+        else if (handle === 2) result = { qLayout: { qFieldList: { qItems: fields.map(qName => ({ qName })) } } };
         else if (handle === 3) result = { qLayout: { qListObject: { qSize: { qcy: 2 }, qDataPages: [{ qMatrix: [[{ qText: "Empresa A" }], [{ qText: "Empresa sem fluxo" }]] }] } } };
         else if (cubes.has(handle)) result = { qLayout: { qInfo: { qId: `cube-${handle}` }, qHyperCube: { qSize: { qcx: cubes.get(handle)! + 1, qcy: total }, qGrandTotalRow: options.totalMissing ? [] : [{ qNum: total }], qMeasureInfo: [{}] } } };
         else result = { qLayout: { qHyperCube: { qMeasureInfo: [{}], qDimensionInfo: [], qSize: { qcx: 1, qcy: 1 } } } };
@@ -61,17 +69,19 @@ async function collect(options: { truncated?: boolean; date?: string; missingCom
   const sources = Object.fromEntries(kinds.map(kind => [kind, { object_id: kind, date_field: "Data do fluxo" }]));
   const apps = performanceMetricApps({ mapping_verified: true, company_field: "Empresa", sources });
   const rows = await run({ evaluate: (fn: (args: unknown) => unknown, args: unknown) => fn(args) }, "wss://fixture.test", PERFORMANCE_APP, apps[0].metrics, 2026, 9, [], []);
-  return { rows, reads, clears, destroyed };
+  return { rows, reads, clears, destroyed, variableWrites };
 }
 
 test("coletor pagina os fluxos e mantém empresas sem movimentos no filtro", async () => {
-  const { rows, reads, clears, destroyed } = await collect();
+  const { rows, reads, clears, destroyed, variableWrites } = await collect();
   const snapshot = validatedPerformanceSnapshot(rows);
   assert.equal(snapshot.flows.length, 4004);
   assert.equal(snapshot.companies.length, 2);
   assert.equal(reads, 8);
   assert.equal(clears, 4);
   assert.equal(destroyed, 8);
+  assert.equal(variableWrites, 8);
+  assert.equal(snapshot.metadata.sources.received.expression, "Sum([Valor Atualizado Parcela])");
   assert.equal(snapshot.metadata.sources.received.total, 1001);
 });
 
