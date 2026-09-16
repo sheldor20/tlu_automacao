@@ -10,6 +10,7 @@ import {
   PAYMENT_STATUSES,
   requiresPaymentReceipt,
   paymentMoney,
+  terminationTotal,
 } from "../lib/payment-requests.ts";
 
 const input = () => ({
@@ -115,7 +116,7 @@ test("material amount must equal rounded line totals", () => {
     false,
   );
 });
-test("termination matches all five components from the source template", () => {
+test("termination subtracts legal expenses and customer IPTU is not deducted", () => {
   const details = {
     type: "termination" as const,
     cancellation_date: "2026-09-10",
@@ -132,24 +133,40 @@ test("termination matches all five components from the source template", () => {
     document_type: "Distrato",
   };
   assert.equal(
-    paymentCreateSchema.safeParse({ ...input(), details, amount: 200 }).success,
+    paymentCreateSchema.safeParse({ ...input(), details, amount: 20 }).success,
     true,
   );
   assert.equal(paymentCreateSchema.parse({
-    ...input(), details: { ...details, contract: undefined }, amount: 200,
+    ...input(), details: { ...details, contract: undefined }, amount: 20,
   }).details.type, "termination");
   assert.equal(
-    paymentCreateSchema.safeParse({ ...input(), details, amount: 199 }).success,
+    paymentCreateSchema.safeParse({ ...input(), details, amount: 200 }).success,
     false,
   );
   assert.equal(
     paymentCreateSchema.safeParse({
       ...input(),
       details: { ...details, cancellation_date: "" },
-      amount: 200,
+      amount: 20,
     }).success,
     false,
   );
+  for (const iptu_responsibility of ["not_applicable", "", undefined])
+    assert.equal(paymentCreateSchema.safeParse({
+      ...input(), details: { ...details, iptu_responsibility }, amount: 20,
+    }).success, false);
+  assert.equal(paymentCreateSchema.safeParse({
+    ...input(), details: { ...details, iptu_responsibility: "company" }, amount: 0,
+  }).success, false);
+  assert.equal(paymentCreateSchema.safeParse({
+    ...input(), details: { ...details, legal_fees: 200 }, amount: -150,
+  }).success, false);
+});
+test("termination preview and saved total deduct IPTU only when the company is responsible", () => {
+  const amounts = { restitution: 1000, iptu: 80, legal_fees: 100, court_costs: 50, damages: 25 };
+  assert.equal(terminationTotal({ ...amounts, iptu_responsibility: "company" }), 745);
+  assert.equal(terminationTotal({ ...amounts, iptu_responsibility: "customer" }), 825);
+  assert.equal(terminationTotal({ restitution: 100.1, iptu: 0.02, legal_fees: 30.03, court_costs: 40.04, damages: 10.01, iptu_responsibility: "company" }), 20);
 });
 test("materials allow unknown prices, beneficiary and payment method without inventing zero", () => {
   const details = {

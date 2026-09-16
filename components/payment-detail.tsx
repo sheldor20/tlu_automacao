@@ -209,7 +209,7 @@ export function PaymentDetail({
           <section className="payment-section">
             <div className="payment-money-row">
               <div>
-                <span>Valor solicitado</span>
+                <span>{r.type === "termination" ? "Valor a pagar" : "Valor solicitado"}</span>
                 <strong>{paymentMoney(r.amount)}</strong>
               </div>
               <div>
@@ -301,9 +301,8 @@ export function PaymentDetail({
                             ? dateBr(String(value))
                             : key === "iptu_responsibility"
                               ? {
-                                  company: "Empresa",
+                                  company: "Empresa / Terra Lotus",
                                   customer: "Cliente",
-                                  not_applicable: "Não se aplica",
                                 }[String(value)] || "—"
                               : String(value || "Não informado")}
                     </dd>
