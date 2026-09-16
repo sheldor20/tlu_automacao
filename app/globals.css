@@ -1969,7 +1969,7 @@ fieldset.payment-section { padding-top: 18px; }
 .payment-table small { display: block; margin: 5px 0; font-size: 11px; color: #697267; }
 .payment-table a strong { display: block; color: #263329; }
 .payment-status { display: inline-flex; border-radius: 20px; padding: 7px 11px; font-size: 11px; font-weight: 650; white-space: nowrap; background: #edf0f2; color: #53616b; }
-.payment-status-approved, .payment-status-paid { background: #e9f3e2; color: #3d622b; }
+.payment-status-approved, .payment-status-paid, .payment-status-finalized { background: #e9f3e2; color: #3d622b; }
 .payment-status-awaiting_information { background: #fff0d5; color: #895712; }
 .payment-status-scheduled, .payment-status-reviewing { background: #e5eef8; color: #37577a; }
 .payment-status-rejected, .payment-status-cancelled { background: #f9e8e7; color: #93514a; }

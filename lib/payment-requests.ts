@@ -13,6 +13,7 @@ export const PAYMENT_STATUSES = {
   approved: "Aprovada",
   scheduled: "Agendada",
   paid: "Paga",
+  finalized: "Finalizado",
   rejected: "Recusada",
   cancelled: "Cancelada",
 } as const;
@@ -24,12 +25,14 @@ export const PAYMENT_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
   awaiting_information: ["reviewing", "rejected", "cancelled"],
   approved: ["scheduled", "paid", "awaiting_information", "cancelled"],
   scheduled: ["paid", "awaiting_information", "cancelled"],
-  paid: [],
+  paid: ["finalized"],
+  finalized: [],
   rejected: [],
   cancelled: [],
 };
 export const CLOSED_PAYMENT_STATUSES: PaymentStatus[] = [
   "paid",
+  "finalized",
   "rejected",
   "cancelled",
 ];
@@ -239,6 +242,7 @@ export type PaymentRequest = Omit<PaymentInput, "website" | "submission_id"> & {
   requester_user_id: string | null;
   scheduled_date: string | null;
   paid_at: string | null;
+  finalized_at: string | null;
   version: number;
   created_at: string;
   updated_at: string;
