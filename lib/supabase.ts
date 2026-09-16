@@ -109,7 +109,10 @@ export function friendlyError(error: unknown) {
     return "Informe o início da locação antes de marcar o imóvel como alugado.";
   }
   if (message.includes("commission_not_above_rent")) {
-    return "A comissão mensal não pode ser maior que o valor da locação.";
+    return "A taxa de administração não pode ser maior que o valor da locação.";
+  }
+  if (message.includes("rentals_reserve_fund_check")) {
+    return "O fundo de reserva deve ser um valor em reais maior ou igual a zero.";
   }
   if (message.includes("valid_rental_date")) {
     return "O término da locação deve ser posterior ao início.";

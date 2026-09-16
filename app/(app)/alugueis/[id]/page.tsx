@@ -27,7 +27,8 @@ function rentalToForm(rental: Rental) {
     lease_end_date: rental.lease_end_date || "",
     annual_adjustment_percent: String(rental.annual_adjustment_percent),
     broker_name: rental.broker_name || "",
-    broker_commission: String(rental.broker_commission),
+    administration_fee: String(rental.broker_commission),
+    reserve_fund: String(rental.reserve_fund ?? 0),
     notes: rental.notes || "",
   };
 }
@@ -64,8 +65,8 @@ export default function RentalDetailPage() {
   async function saveRental(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !form || !rental) return;
-    if (Number(form.broker_commission || 0) > Number(form.monthly_rent || 0)) {
-      setToast({ message: "A comissão mensal não pode ser maior que o valor da locação.", type: "error" });
+    if (Number(form.administration_fee || 0) > Number(form.monthly_rent || 0)) {
+      setToast({ message: "A taxa de administração não pode ser maior que o valor da locação.", type: "error" });
       return;
     }
     setSaving(true);
@@ -80,7 +81,8 @@ export default function RentalDetailPage() {
       lease_end_date: form.lease_end_date || null,
       annual_adjustment_percent: Number(form.annual_adjustment_percent || 0),
       broker_name: form.broker_name.trim() || null,
-      broker_commission: Number(form.broker_commission || 0),
+      broker_commission: Number(form.administration_fee || 0),
+      reserve_fund: Number(form.reserve_fund || 0),
       notes: form.notes.trim() || null,
     }).eq("id", rental.id);
     setSaving(false);
@@ -92,7 +94,7 @@ export default function RentalDetailPage() {
   if (loading) return <div className="detail-loading">Carregando imóvel…</div>;
   if (!rental || !form) return <div className="detail-loading">Imóvel não encontrado.</div>;
 
-  const baseNet = Math.max(Number(form.monthly_rent || 0) - Number(form.broker_commission || 0), 0);
+  const baseNet = Math.max(Number(form.monthly_rent || 0) - Number(form.administration_fee || 0), 0);
 
   return (
     <>
@@ -108,7 +110,7 @@ export default function RentalDetailPage() {
 
       <section className="kpi-grid rental-detail-kpis">
         <KpiCard label="Locação mensal" value={currency(Number(form.monthly_rent || 0))} helper={`reajuste de ${Number(form.annual_adjustment_percent || 0).toFixed(2)}% a.a.`} icon={<CircleDollarSign size={17} />} />
-        <KpiCard label="Comissão mensal" value={currency(Number(form.broker_commission || 0))} helper={form.broker_name || "sem corretor informado"} icon={<WalletCards size={17} />} />
+        <KpiCard label="Taxa de administração" value={currency(Number(form.administration_fee || 0))} helper="valor mensal" icon={<WalletCards size={17} />} />
         <KpiCard label="Resultado líquido base" value={currency(baseNet)} helper="antes dos próximos reajustes" tone="success" icon={<CircleDollarSign size={17} />} />
         <KpiCard label="Vigência" value={dateBr(form.lease_end_date)} helper={`início ${dateBr(form.lease_start_date)}`} icon={<CalendarRange size={17} />} />
       </section>
@@ -127,7 +129,8 @@ export default function RentalDetailPage() {
             <Field label="Início da locação"><input type="date" value={form.lease_start_date} onChange={(event) => setForm({ ...form, lease_start_date: event.target.value })} required={form.status === "alugado"} /></Field>
             <Field label="Término da locação"><input type="date" min={form.lease_start_date || undefined} value={form.lease_end_date} onChange={(event) => setForm({ ...form, lease_end_date: event.target.value })} /></Field>
             <Field label="Corretor de imóveis"><input value={form.broker_name} onChange={(event) => setForm({ ...form, broker_name: event.target.value })} maxLength={160} placeholder="Opcional" /></Field>
-            <Field label="Comissão mensal do corretor"><input type="number" min="0" step="0.01" value={form.broker_commission} onChange={(event) => setForm({ ...form, broker_commission: event.target.value })} /></Field>
+            <Field label="Taxa de administração (R$)"><input type="number" min="0" step="0.01" inputMode="decimal" value={form.administration_fee} onChange={(event) => setForm({ ...form, administration_fee: event.target.value })} /></Field>
+            <Field label="Fundo de reserva (R$)"><input type="number" min="0" step="0.01" inputMode="decimal" value={form.reserve_fund} onChange={(event) => setForm({ ...form, reserve_fund: event.target.value })} /></Field>
             <Field label="Observações" className="form-span-2"><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={3000} /></Field>
             <div className="form-actions"><Button type="submit" loading={saving}><Save size={16} /> Salvar alterações</Button></div>
           </form>

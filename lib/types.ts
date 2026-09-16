@@ -199,7 +199,9 @@ export type Rental = {
   lease_end_date: string | null;
   annual_adjustment_percent: number;
   broker_name: string | null;
+  /** Monthly administration fee; the legacy column name preserves API compatibility. */
   broker_commission: number;
+  reserve_fund: number;
   notes: string | null;
   created_at: string;
   updated_at: string;

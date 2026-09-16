@@ -35,7 +35,8 @@ const emptyForm = {
   lease_end_date: "",
   annual_adjustment_percent: "0",
   broker_name: "",
-  broker_commission: "0",
+  administration_fee: "0",
+  reserve_fund: "0",
   notes: "",
 };
 
@@ -98,6 +99,7 @@ export default function RentalsPage() {
       lessor_name: "A definir",
       annual_adjustment_percent: 0,
       broker_commission: 0,
+      reserve_fund: 0,
     });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
@@ -190,7 +192,7 @@ export default function RentalsPage() {
                       </div>
                     </td>
                     <td><strong>{currency(rental.monthly_rent)}</strong><small>reajuste {Number(rental.annual_adjustment_percent || 0).toFixed(2)}% a.a.</small></td>
-                    <td><strong>{currency(Math.max(Number(rental.monthly_rent) - Number(rental.broker_commission), 0))}</strong><small>- {currency(rental.broker_commission)} comissão</small></td>
+                    <td><strong>{currency(Math.max(Number(rental.monthly_rent) - Number(rental.broker_commission), 0))}</strong><small>- {currency(rental.broker_commission)} taxa de administração</small></td>
                     <td><strong>{rental.lessor_name}</strong><small>{rental.lessor_type.toUpperCase()}</small></td>
                     <td><strong>{dateBr(rental.lease_start_date)}</strong><small>{endInDays >= 0 && endInDays <= 60 ? `vence em ${endInDays} dia(s)` : `até ${dateBr(rental.lease_end_date)}`}</small></td>
                     <td><div className="table-actions"><Link className="table-action" href={`/alugueis/${rental.id}`} aria-label={`Acessar ${rental.name}`} title="Abrir imóvel"><ArrowUpRight size={16} /></Link><button type="button" className="table-action danger" onClick={() => setDeletingRental(rental)} aria-label={`Excluir ${rental.name}`} title="Excluir imóvel"><Trash2 size={16} /></button></div></td>
