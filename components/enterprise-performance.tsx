@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarRange, Database, LoaderCircle, RefreshCw } from "lucide-react";
 import { getSupabase, friendlyError } from "@/lib/supabase";
 import {
-  annualPerformance, capitalPerformance, datedIrr, datedNpv, datedPerformance,
+  annualPerformance, capitalPerformance, currentPerformanceDate, datedIrr, datedNpv, datedPerformance,
   performanceAmounts, schedulePerformance, totalPerformance,
   type AnnualPerformance, type PerformanceMode, type PerformanceSnapshot,
 } from "@/lib/enterprise-performance";
@@ -27,6 +27,7 @@ const sources = [
 ];
 
 export function EnterprisePerformance() {
+  const [asOf, setAsOf] = useState(() => currentPerformanceDate());
   const [company, setCompany] = useState("");
   const [catalog, setCatalog] = useState<PerformanceSnapshot["companies"]>([]);
   const [result, setResult] = useState<{ company: string; snapshot: PerformanceSnapshot | null }>({ company: "", snapshot: null });
@@ -37,6 +38,17 @@ export function EnterprisePerformance() {
   const [revision, setRevision] = useState(0);
   const refreshController = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    const updateDate = () => setAsOf(currentPerformanceDate());
+    const timer = window.setInterval(updateDate, 30_000);
+    window.addEventListener("focus", updateDate);
+    document.addEventListener("visibilitychange", updateDate);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", updateDate);
+      document.removeEventListener("visibilitychange", updateDate);
+    };
+  }, []);
   useEffect(() => () => refreshController.current?.abort(), []);
   useEffect(() => {
     const controller = new AbortController();
@@ -94,27 +106,26 @@ export function EnterprisePerformance() {
         <button className="vh-refresh" type="button" disabled={refreshing || busy} onClick={() => void refresh()}><RefreshCw size={15} className={refreshing ? "spin" : ""} aria-hidden="true" />{refreshing ? "Atualizando…" : "Atualizar Qlik"}</button>
       </div>
       <div className="vh-status" role="status" aria-live="polite">
-        {busy ? <><LoaderCircle className="spin" size={15} aria-hidden="true" />Carregando empresas e fluxos…</> : snapshot?.synchronized_at ? <><Database size={14} aria-hidden="true" />{company || `Consolidado de ${snapshot.companies.length} empresas`} · data-base {dateLabel(snapshot.as_of)} · sincronizado em {new Date(snapshot.synchronized_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</> : "Qlik Cloud · primeira carga pendente"}
+        {busy ? <><LoaderCircle className="spin" size={15} aria-hidden="true" />Carregando empresas e fluxos…</> : snapshot?.synchronized_at ? <><Database size={14} aria-hidden="true" />{company || `Consolidado de ${snapshot.companies.length} empresas`} · data-base {dateLabel(asOf)} (hoje) · sincronizado em {new Date(snapshot.synchronized_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</> : "Qlik Cloud · primeira carga pendente"}
       </div>
       {error ? <div className="vh-demo" role="alert"><span>{error}</span><button className="vh-close" type="button" onClick={() => setRevision((value) => value + 1)}>Tentar novamente</button></div> : null}
       {notice ? <div className="vh-demo" role="status">{notice}</div> : null}
       {!busy && !error && !snapshot?.synchronized_at ? <div className="vh-empty"><Database size={28} aria-hidden="true" /><h2>Aguardando a primeira carga do Qlik</h2><p>As empresas e os valores aparecerão após a validação e sincronização das fontes de recebimentos, pagamentos e contas a receber.</p><p className="vh-secondary">Os indicadores abaixo serão calculados com os movimentos reais de cada empresa.</p></div> : null}
       {!busy && snapshot?.synchronized_at && !snapshot.rows.length ? <div className="vh-empty"><h2>Sem movimentos para esta empresa</h2><p>A empresa está no cadastro do Qlik, mas não possui valores nas fontes financeiras desta carga.</p></div> : null}
-      <PerformanceView key={company} snapshot={snapshot} />
+      <PerformanceView key={company} snapshot={snapshot} asOf={asOf} />
     </div>
   </div>;
 }
 
-export function PerformanceView({ snapshot }: { snapshot: PerformanceSnapshot | null }) {
+export function PerformanceView({ snapshot, asOf }: { snapshot: PerformanceSnapshot | null; asOf: string }) {
   const [mode, setMode] = useState<PerformanceMode>("total");
   const [rateInput, setRateInput] = useState("15");
-  const [overdueDate, setOverdueDate] = useState("");
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const rateValue = Number(rateInput.replace(",", "."));
   const validRate = rateInput.trim() !== "" && Number.isFinite(rateValue) && rateValue >= 0 && rateValue <= 100;
   const rate = validRate ? rateValue / 100 : null;
   const model = useMemo(() => {
-    const scheduled = schedulePerformance(snapshot?.rows || [], snapshot?.as_of || "", overdueDate);
+    const scheduled = schedulePerformance(snapshot?.rows || [], asOf);
     const totals = totalPerformance(scheduled.rows);
     const flows = datedPerformance(scheduled.rows);
     const available = Boolean(snapshot?.synchronized_at && scheduled.rows.length);
@@ -128,7 +139,7 @@ export function PerformanceView({ snapshot }: { snapshot: PerformanceSnapshot | 
       capital: dated ? capitalPerformance(flows) : null,
       discounted: dated && rate !== null ? capitalPerformance(flows, rate) : null,
     };
-  }, [snapshot, overdueDate, mode, rate]);
+  }, [snapshot, asOf, mode, rate]);
   const { available, overall, scheduled, irr, capital, discounted } = model;
   const activeMode = modes.find((item) => item.key === mode)!;
   const annualTotal = performanceAmounts(model.totals, mode);
@@ -141,9 +152,8 @@ export function PerformanceView({ snapshot }: { snapshot: PerformanceSnapshot | 
   return <>
     {available && scheduled.blockedReason ? <div className="vh-demo" role="note"><span>{scheduled.blockedReason} Os totais permanecem disponíveis; os indicadores por data aguardam essa definição.</span></div> : null}
     {available && scheduled.overdue > 0 ? <div className="vh-demo vh-assumption">
-      <span>Em aberto até a data-base: {money.format(scheduled.overdue)} · soma dos valores absolutos.</span>
-      <label>Data esperada de caixa <input className="vh-date" type="date" value={overdueDate} min={snapshot?.as_of ? new Date(Date.parse(snapshot.as_of) + 86400000).toISOString().slice(0, 10) : undefined} onChange={(event) => setOverdueDate(event.target.value)} /></label>
-      <span>Premissa local para todos os vencidos; não altera o Qlik.</span>
+      <span>Vencidos projetados para hoje ({dateLabel(asOf)}): {money.format(scheduled.overdue)} · soma dos valores absolutos.</span>
+      <span>Premissa de cálculo para valores em aberto; as datas futuras são mantidas. Não altera o Qlik.</span>
     </div> : null}
     <section className="vh-return-section" aria-labelledby="performance-return-title">
       <div className="vh-return-header">
@@ -160,8 +170,8 @@ export function PerformanceView({ snapshot }: { snapshot: PerformanceSnapshot | 
         <div><span className="vh-metric-label">Prazo de recuperação · payback simples</span><strong>{recovery(capital)}</strong><span className="vh-secondary">Primeira data de recuperação definitiva no horizonte</span><span className="vh-secondary">Descontado à taxa mínima: {recovery(discounted)}</span></div>
         <div><span className="vh-metric-label">Necessidade máxima de caixa</span><strong>{capital ? money.format(capital.peak) : "—"}</strong><span className="vh-secondary">{capital?.peakDate ? `Maior déficit acumulado em ${dateLabel(capital.peakDate)}` : "Maior déficit acumulado no fluxo cadastrado"}</span><span className="vh-secondary">Caixa inicial zero · depende da abrangência das contas</span></div>
       </div>
-      {capital?.points.length ? <CapitalChart capital={capital} asOf={snapshot!.as_of!} /> : <div className="vh-chart-empty">{available ? "Trajetória de caixa disponível após validar as datas." : "A trajetória de caixa aparecerá com os dados do Qlik."}</div>}
-      <div className="vh-capital-foot"><span>Saldo acumulado por data de caixa</span><span>Linha contínua: realizado · tracejada: previsto</span></div>
+      {capital?.points.length ? <CapitalChart capital={capital} asOf={asOf} /> : <div className="vh-chart-empty">{available ? "Trajetória de caixa disponível após validar as datas." : "A trajetória de caixa aparecerá com os dados do Qlik."}</div>}
+      <div className="vh-capital-foot"><span>Saldo acumulado por data de caixa</span><span>Linha contínua: até hoje · tracejada: datas futuras</span></div>
       <p className="vh-model-note" id="performance-rate-hint">Taxa inicial de 15% como premissa editável, sem referência de mercado. Alterá-la recalcula o VPL e o payback descontado.</p>
     </section>
     <section aria-labelledby="performance-general-title">
@@ -194,9 +204,9 @@ export function PerformanceView({ snapshot }: { snapshot: PerformanceSnapshot | 
     <details className="vh-criteria"><summary>Premissas, cálculos e fontes</summary><dl>
       <dt>Empresas</dt><dd>Catálogo do campo Empresa no Qlik. A visão geral soma os fluxos por data e recalcula os indicadores; a TIR não é a média das taxas das empresas.</dd>
       <dt>Realizado e previsto</dt><dd>Realizado usa recebimentos e pagamentos baixados. Previsto usa apenas os saldos em aberto, sem repetir parcelas liquidadas. As abas anuais não alteram o retorno do ciclo completo.</dd>
-      <dt>Datas</dt><dd>As datas vêm dos movimentos da origem. Valores sem data continuam nos totais e na linha “Sem data”, mas impedem os indicadores por data. Valores vencidos exigem uma data esperada futura para calcular TIR, VPL e payback.</dd>
+      <dt>Datas</dt><dd>A data-base é sempre hoje, no horário de São Paulo; a última sincronização do Qlik é informada separadamente. Valores em aberto vencidos são projetados para hoje como premissa de cálculo. Baixas realizadas e vencimentos futuros mantêm as datas da origem. Valores sem data continuam nos totais e na linha “Sem data”, mas impedem os indicadores por data.</dd>
       <dt>Retorno e margem</dt><dd>Retorno sobre custo = saldo total ÷ gastos totais. Margem = saldo total ÷ recebimentos totais. São indicadores do ciclo completo, não taxas anuais.</dd>
-      <dt>TIR e VPL</dt><dd>TIR anual com datas efetivas (base de 365 dias), equivalente à XTIR. VPL = soma dos fluxos descontados à taxa mínima desde a primeira data. Fluxos com mais de uma mudança de sinal não exibem uma TIR única.</dd>
+      <dt>TIR e VPL</dt><dd>TIR anual com datas efetivas (base de 365 dias), equivalente à XTIR. O cálculo busca a taxa que zera o VPL e verifica se ela é única, inclusive quando pagamentos e recebimentos se alternam. Se essa confirmação for inconclusiva, a TIR fica indisponível. VPL = soma dos fluxos descontados à taxa mínima desde a primeira data.</dd>
       <dt>Payback e capital</dt><dd>Recuperação na primeira data após a qual o acumulado não volta a ficar negativo no horizonte informado. Necessidade máxima de caixa = maior déficit acumulado, com saldo inicial zero. Não considera saldo bancário disponível nem linhas de crédito externas ao fluxo.</dd>
       <dt>Abrangência</dt><dd>Os resultados representam as contas cadastradas no Qlik. Terreno, obras, impostos, comissões, despesas, distratos, estoque ainda não vendido e eventuais financiamentos precisam estar corretamente incluídos ou separados na origem para uma análise econômica completa. Não representam automaticamente o retorno do capital dos sócios.</dd>
     </dl></details>
