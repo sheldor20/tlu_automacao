@@ -633,6 +633,10 @@ function LegalSalesView({ delinquencyInitial, metricValue, metricValueForMonth, 
 function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, months, rentals }: MetricViewProps & { rentals: ManagementRentalSnapshot | null }) {
   const chartMonths = monthsThroughLastClosed(months);
   const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
+  const availabilityMonths = months.slice(0, months.findIndex((month) => month.isCurrent) + 1);
+  const availabilityValues = availabilityMonths.map((month) => month.isCurrent
+    ? rentals?.available_properties ?? null
+    : metricValueForMonth("imoveis_disponiveis", month.key));
   return (
     <div className="management-view-stack management-people-view">
       <section className="management-kpi-grid management-people-kpis">
@@ -641,7 +645,7 @@ function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, mon
         <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
       </section>
       <section className="management-two-columns">
-        <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2><p>Histórico até o último mês fechado.</p></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: closedSeries("imoveis_disponiveis") }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2><p>Histórico mensal, incluindo a disponibilidade atual.</p></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={availabilityMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availabilityValues }]} /></article>
         <article className="management-panel"><div className="management-panel-head"><div><span>Experiência</span><h2>NPS médio dos clientes</h2><p>Média mensal da pergunta de recomendação, escala 0–5, até o último mês fechado.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Média NPS (0–5)", color: "#405343", values: closedSeries("nps_clientes") }]} fixedRange={{ min: 0, max: 5 }} /></article>
       </section>
     </div>

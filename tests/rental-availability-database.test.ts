@@ -33,4 +33,38 @@ test("disponibilidade conta apenas desocupados com permissão e mantém o acesso
   await assert.rejects(() => db.query("select * from public.management_rental_snapshot()"), /indicator_area_access_required/);
   await db.exec("reset role; set role anon");
   await assert.rejects(() => db.query("select * from public.management_rental_snapshot()"), /permission denied/);
+  await db.exec("reset role");
+
+  const historyQuery = `select reference_month, value, metadata from public.management_indicator_values
+    where area='rh-marketing-clientes' and metric_key='imoveis_disponiveis'
+      and reference_month <> date_trunc('month', now() at time zone 'America/Sao_Paulo')::date
+    order by reference_month`;
+  const historyBefore = (await db.query(historyQuery)).rows;
+  await migrate(db, "20260916202303_rental_availability_monthly_history.sql");
+  const currentAvailability = async () => {
+    const result = await db.query<{ value: string }>(`select value from public.management_indicator_values
+      where area='rh-marketing-clientes' and metric_key='imoveis_disponiveis'
+        and reference_month=date_trunc('month', now() at time zone 'America/Sao_Paulo')::date`);
+    assert.equal(result.rows.length, 1);
+    return Number(result.rows[0].value);
+  };
+  assert.equal(await currentAvailability(), 1);
+  assert.equal(Number((await db.query<{ count: string }>("select count(*) from public.rentals")).rows[0].count), 9);
+  await db.exec("set role service_role");
+  await db.exec("update public.rentals set rentable=true where status='desocupado' and rentable=false");
+  await db.exec("reset role");
+  assert.equal(await currentAvailability(), 2);
+  await db.query("insert into public.profile_departments(user_id,department_slug) values($1,'alugueis')", [allowed]);
+  await db.query("select set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: allowed, role: "authenticated" })]);
+  await db.exec("set role authenticated");
+  await db.exec("update public.rentals set status='alugado' where status='desocupado' and rentable=true");
+  await db.exec("reset role");
+  assert.equal(await currentAvailability(), 0);
+  await db.exec("insert into public.rentals(name,property_address,lessor_type,lessor_name,status,rentable) values('Disponível novo','Rua de teste','pf','Locador','desocupado',true)");
+  assert.equal(await currentAvailability(), 1);
+  await db.exec("delete from public.rentals where name='Disponível novo'");
+  assert.equal(await currentAvailability(), 0);
+  assert.deepEqual((await db.query(historyQuery)).rows, historyBefore);
+  const privileges = await db.query<{ allowed: boolean }>("select has_function_privilege('anon','public.record_rental_availability_month()','execute') or has_function_privilege('authenticated','public.record_rental_availability_month()','execute') as allowed");
+  assert.equal(privileges.rows[0].allowed, false);
 });
