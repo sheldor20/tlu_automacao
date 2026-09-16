@@ -35,3 +35,8 @@ test("rejeita dados incompletos ou inconsistentes em vez de publicar uma curva i
   assert.throws(() => projectVgv(1000, 8, [{ year: 2025, value: 1000 }], 2026));
   assert.throws(() => projectVgv(1000, 8, [{ year: 2026, value: -1000 }], 2026));
 });
+
+test('não acumula centavos fictícios ao arredondar previsões anuais do Qlik', () => {
+  const result = projectVgv(1, 2.47, [{ year: 2026, value: 0.334 }, { year: 2027, value: 0.334 }, { year: 2028, value: 0.332 }], 2026);
+  assert.deepEqual(result.points.map(point => point.closingBalance), [0.67, 0.33, 0]);
+});

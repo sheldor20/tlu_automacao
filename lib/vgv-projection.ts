@@ -33,11 +33,15 @@ export function projectVgv(total: number, delinquencyPercent: number, receipts: 
   }
   const factor = 1 - delinquencyPercent / 100;
   let balance = money(total);
+  let accumulatedReceipts = 0;
   const points: VgvProjectionPoint[] = [];
   for (let year = firstYear; year <= Math.max(...byYear.keys()); year += 1) {
     const receipts = money(byYear.get(year) || 0);
     const openingBalance = balance;
-    balance = money(Math.max(overdue, balance - receipts));
+    // Qlik projections can contain fractions of a cent. Round the cumulative
+    // position only, so rounding each year does not leave a fictitious balance.
+    accumulatedReceipts += byYear.get(year) || 0;
+    balance = money(Math.max(overdue, total - accumulatedReceipts));
     points.push({ year, receipts, openingBalance, closingBalance: balance, adjustedClosingBalance: money(balance * factor) });
   }
   return { total: money(total), overdue: money(overdue), delinquencyPercent, adjustedTotal: money(total * factor), points };

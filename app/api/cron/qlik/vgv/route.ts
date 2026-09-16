@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { QLIK_VGV_APPS, QLIK_VGV_CONNECTION, QLIK_VGV_SOURCE, vgvIndicatorRows } from "@/lib/qlik-vgv";
+import { vgvAppsForDate, QLIK_VGV_CONNECTION, QLIK_VGV_SOURCE, vgvIndicatorRows } from "@/lib/qlik-vgv";
 import { todayIso } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   let phase = "read-qlik";
   try {
     const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
-    const snapshots = await scrapeQlikCloudMetrics({ username, password, apps: QLIK_VGV_APPS,
+    const snapshots = await scrapeQlikCloudMetrics({ username, password, apps: vgvAppsForDate(referenceDate),
       year: Number(referenceDate.slice(0, 4)), throughMonth: Number(referenceDate.slice(5, 7)),
     });
     phase = "validate-projection";

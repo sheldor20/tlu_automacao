@@ -24,7 +24,8 @@ export type QlikCloudMetricDefinition = {
   mode: "monthly" | "snapshot" | "breakdown";
   periodStrategy?: "filters" | "series" | "date-field" | "date-through-month" | "date-exclude-after-month" | "date-through-business-day" | "date-last-day" | "date-last-business-day" | "month-end-variables";
   periodVariables?: ReadonlyArray<string>;
-  aggregation?: "sum-rows";
+  variables?: ReadonlyArray<{ name: string; value: string | number; text?: string; label?: string }>;
+  aggregation?: "sum-rows" | "grand-total";
   stateName?: string;
   dateField?: string;
   dateFieldCandidates?: ReadonlyArray<string>;
@@ -863,6 +864,22 @@ async function readQlikEngineMetrics(
 
       const applyMetricFilters = async (metric: QlikCloudMetricDefinition) => {
         const selections: Record<string, string> = {};
+        for (const variable of metric.variables || []) {
+          const handle = handleFrom(await call(docHandle, "GetVariableByName", { qName: variable.name }));
+          if (typeof handle !== "number") throw new Error(`Qlik Engine: variável “${variable.name}” não encontrada.`);
+          if (typeof variable.value === "number" && variable.text !== undefined) {
+            await call(handle, "SetDualValue", { qNum: variable.value, qText: variable.text });
+          } else {
+            await call(handle, typeof variable.value === "number" ? "SetNumValue" : "SetStringValue", { qVal: variable.value });
+          }
+          const { qLayout } = await call(handle, "GetLayout");
+          const actual = qLayout as { qNum?: number; qText?: string };
+          if ((typeof variable.value === "number" ? actual.qNum : actual.qText) !== variable.value
+            || (variable.text !== undefined && actual.qText !== variable.text)) {
+            throw new Error(`Qlik Engine: a variável “${variable.name}” não confirmou o valor solicitado.`);
+          }
+          selections[variable.name] = variable.label ?? String(variable.value);
+        }
         for (const filter of metric.filters || []) {
           const expectedValues = (filter.values || []).map(normalize);
           const expectedFragments = (filter.contains || []).map(normalize);
@@ -971,6 +988,19 @@ async function readQlikEngineMetrics(
             metricKey: metric.metricKey, mode: metric.mode, referenceMonth, value,
             appId, sheetId: metric.sheetId, objectId: object.id, objectTitle: metric.targetLabel, targetLabel: metric.targetLabel,
             selections: { ...selections, qlik_state: metric.stateName || "$", account_balances: JSON.stringify(balances), account_count: String(balances.length), qlik_total: String(total) },
+          };
+        }
+        if (metric.aggregation === "grand-total") {
+          const cell = hyperCube.qGrandTotalRow?.[metric.measureIndex ?? 0];
+          if (typeof cell?.qNum !== "number" || !Number.isFinite(cell.qNum)) {
+            throw new Error(`Qlik Engine: total da coluna “${metric.targetLabel}” indisponível.`);
+          }
+          return {
+            metricKey: metric.metricKey, mode: metric.mode, referenceMonth,
+            value: cell.qNum, valueText: cell.qText,
+            appId, sheetId: metric.sheetId, objectId: object.id,
+            objectTitle: object.labels[0] || metric.targetLabel, targetLabel: metric.targetLabel,
+            selections,
           };
         }
         const dataResult = await call(objectHandle, "GetHyperCubeData", {
@@ -1601,7 +1631,7 @@ export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions, se
           timeout: 120_000,
         });
         const nativeSocketUrl = await socketObserver.waitForAuthenticatedUrl();
-        const socketUrl = app.isolatedSession
+        const socketUrl = (app.isolatedSession || app.metrics.some((metric) => metric.variables?.length))
           ? isolatedQlikAppWebSocketUrl(nativeSocketUrl, appId, `finance-${crypto.randomUUID()}`)
           : nativeSocketUrl;
         try {

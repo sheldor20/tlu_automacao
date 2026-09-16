@@ -363,23 +363,29 @@ A rotina `/api/cron/qlik/vgv` usa as credenciais Qlik já configuradas e roda à
 segundas-feiras às 12:00 UTC (09:00 em Brasília). O botão **Atualizar** do painel
 executa a mesma rotina com validação da sessão e do acesso a Novos Negócios.
 
-- Fonte da carteira: **Contas A Receber | Financeiro**, somente
-  `Grupo Empresa = Terra Lótus`.
-- O cronograma reutiliza a medida do KPI e agrega por `Data Vencimento`, sem
-  importar clientes, contratos ou parcelas individuais.
+- Fonte do VGV: **BI — Gestão Financeira → Detalhamento Fluxo de Caixa
+  Realizado + Projetado (DFC) → (+) Previsto Entrada**, a coluna azul.
+- Filtro: `Grupo Empresa = Terra Lótus`. O total inclui todos os agrupadores
+  e fluxos financeiros; selecionar apenas Dividendos excluiria outras entradas.
+- Período: primeiro dia do mês da leitura até **31/12/2200**. As variáveis
+  `vPosicaoInicialDFC` e `vPosicaoFinalDFC` são aplicadas como datas numéricas
+  com apresentação brasileira e conferidas antes da leitura. Previsões ficam
+  habilitadas e movimentos InterCompany continuam incluídos, como no Qlik.
+- O total vem do rodapé da coluna azul. O cronograma reutiliza a mesma medida
+  e agrega por `Período`, sem importar dados de clientes ou parcelas.
 - Fonte da taxa: segunda medida do KPI **Inadimplência** em **Multi Análises |
-  Inadimplência**, visão geral sem filtros adicionais. Não é a taxa de redução
-  mensal usada no indicador de eficiência da cobrança.
+  Inadimplência**, visão geral sem filtros adicionais. Essa origem não mudou.
 - O ajuste usa `total a receber × (1 − taxa / 100)` com a precisão numérica
-  original do Qlik. A interface exibe a taxa com duas casas decimais.
-- Valores vencidos antes da data da leitura permanecem no saldo, sem presumir
-  a data de recuperação. A projeção não inclui novas vendas.
-- A soma dos vencimentos futuros mais o vencido precisa conciliar com o KPI
-  total. Falhas preservam o último snapshot válido; cartões e anos são gravados
-  na mesma transação. A data da carga e o aviso de desatualização ficam visíveis.
+  original. A interface exibe a taxa com duas casas decimais.
+- A soma das entradas previstas por ano deve conciliar com o total da coluna.
+  O saldo anual desconta as entradas de cada ano, incluindo todo o mês inicial
+  selecionado. Falhas preservam o último snapshot válido; cartões e anos são
+  gravados na mesma transação, com origem, filtros, período e data da carga.
+- A leitura do DFC usa uma sessão isolada, sem alterar a visão de outros usuários.
 
-A migration `20260914180241_qlik_vgv_projection.sql` cadastra os quatro
-indicadores e a conexão, preservando o controle de acesso existente por área.
+A migration `20260916121242_vgv_dfc_source.sql` atualiza a descrição e a origem
+financeira da conexão existente. Os indicadores, acessos, frequência automática
+ e origem da inadimplência são preservados.
 
 ## Fotos opcionais nas vistorias de obras
 
