@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { annualPerformance, capitalPerformance, datedIrr, datedNpv, datedPerformance, emptyAmounts, performanceAmounts, schedulePerformance, totalPerformance, validCashDate, type PerformanceRow } from "../lib/enterprise-performance.ts";
+import { annualPerformance, capitalPerformance, currentPerformanceDate, datedIrr, datedNpv, datedPerformance, emptyAmounts, performanceAmounts, schedulePerformance, totalPerformance, validCashDate, type PerformanceRow } from "../lib/enterprise-performance.ts";
 import { PERFORMANCE_APP, PERFORMANCE_SHEETS, performanceMetricApps, validatedPerformanceSnapshot } from "../lib/qlik-enterprise-performance.ts";
 import type { QlikMetricSnapshot } from "../lib/qlik-cloud.ts";
 
@@ -26,20 +26,65 @@ test("TIR negativa, prazo longo, fluxos sem sinal e múltiplas raízes", () => {
   const long = [{ date: "2025-01-01", value: -100 }, { date: "2200-01-01", value: 1000 }];
   assert.ok(Math.abs(datedNpv(long, datedIrr(long).rate!)!) < 1e-6);
   assert.equal(datedIrr([{ date: "2026-01-01", value: 100 }]).rate, null);
-  assert.match(datedIrr([...negative, { date: "2027-01-01", value: -20 }]).reason!, /não convencional/);
+  assert.match(datedIrr([...negative, { date: "2027-01-01", value: -20 }]).reason!, /confirmar uma TIR única/);
   assert.equal(datedNpv(negative, -1), null);
 });
 
-test("vencidos exigem premissa; a reprogramação preserva todos os totais e não modifica baixas", () => {
-  const rows = [{ ...emptyAmounts(), date: "2025-06-01", received: 120, paid: 20, receivable: 80, payable: 30 }];
-  assert.match(schedulePerformance(rows, "2026-09-16").blockedReason!, /data esperada/);
-  assert.match(schedulePerformance(rows, "2026-09-16", "2026-01-01").blockedReason!, /data esperada/);
-  const scheduled = schedulePerformance(rows, "2026-09-16", "2026-12-31");
+test("vencidos são projetados para hoje, preservando totais, baixas e vencimentos futuros", () => {
+  const rows = [
+    { ...emptyAmounts(), date: "2025-06-01", received: 120, paid: 20, receivable: 80, payable: 30 },
+    { ...emptyAmounts(), date: "2026-09-16", receivable: 10 },
+    { ...emptyAmounts(), date: "2027-06-01", receivable: 200 },
+  ];
+  const scheduled = schedulePerformance(rows, "2026-09-16");
   assert.equal(scheduled.blockedReason, null);
+  assert.equal(scheduled.overdue, 110);
   assert.deepEqual(totalPerformance(rows), totalPerformance(scheduled.rows));
   const years = annualPerformance(scheduled.rows, "total");
-  assert.deepEqual(years.map(row => [row.year, row.net]), [["2025", 100], ["2026", 50]]);
+  assert.deepEqual(years.map(row => [row.year, row.net]), [["2025", 100], ["2026", 60], ["2027", 200]]);
+  assert.equal(scheduled.rows.find(row => row.receivable === 80)?.date, "2026-09-16");
+  assert.equal(scheduled.rows.find(row => row.receivable === 200)?.date, "2027-06-01");
+  assert.equal(schedulePerformance(rows, "2026-09-17").rows.find(row => row.receivable === 10)?.date, "2026-09-17");
   assert.equal(rows[0].date, "2025-06-01");
+});
+
+test("data-base usa o dia de São Paulo inclusive na virada UTC e do ano", () => {
+  assert.equal(currentPerformanceDate(new Date("2026-09-17T02:59:59Z")), "2026-09-16");
+  assert.equal(currentPerformanceDate(new Date("2026-09-17T03:00:00Z")), "2026-09-17");
+  assert.equal(currentPerformanceDate(new Date("2027-01-01T02:59:59Z")), "2026-12-31");
+  assert.equal(currentPerformanceDate(new Date("2027-01-01T03:00:00Z")), "2027-01-01");
+});
+
+test("XTIR calcula a taxa única com entradas e saídas intercaladas", () => {
+  // At 10%, discounted balances are -100, -50, -100, 0.
+  const flows = [
+    { date: "2025-01-01", value: -100 }, { date: "2026-01-01", value: 55 },
+    { date: "2027-01-01", value: -60.5 }, { date: "2028-01-01", value: 133.1 },
+  ];
+  const irr = datedIrr(flows);
+  assert.equal(irr.reason, null);
+  assert.ok(Math.abs(irr.rate! - .1) < 1e-10);
+  assert.ok(Math.abs(datedNpv(flows, irr.rate!)!) < 1e-8);
+  assert.ok(Math.abs(datedIrr([...flows].reverse()).rate! - .1) < 1e-10);
+  assert.ok(Math.abs(datedIrr(flows.map(row => ({ ...row, value: -row.value }))).rate! - .1) < 1e-10);
+});
+
+test("XTIR não escolhe arbitrariamente uma taxa quando existem múltiplas raízes", () => {
+  const dates = ["2025-01-01", "2026-01-01", "2027-01-01", "2028-01-01"];
+  const twoRoots = [-100, 230, -132].map((value, i) => ({ date: dates[i], value }));
+  assert.ok(Math.abs(datedNpv(twoRoots, .1)!) < 1e-8);
+  assert.ok(Math.abs(datedNpv(twoRoots, .2)!) < 1e-8);
+  assert.equal(datedIrr(twoRoots).rate, null);
+  // Three roots have opposite endpoint signs, so bisection alone is insufficient.
+  const threeRoots = [-100, 350, -406, 156].map((value, i) => ({ date: dates[i], value }));
+  for (const rate of [0, .2, .3]) assert.ok(Math.abs(datedNpv(threeRoots, rate)!) < 1e-8);
+  assert.equal(datedIrr(threeRoots).rate, null);
+});
+
+test("XTIR agrega fluxos na mesma data antes de avaliar os sinais", () => {
+  const flows = [{ date: "2025-01-01", value: -200 }, { date: "2025-01-01", value: 100 }, { date: "2026-01-01", value: 110 }];
+  assert.ok(Math.abs(datedIrr(flows).rate! - .1) < 1e-10);
+  assert.equal(datedIrr(flows.map(row => ({ ...row, date: "2025-01-01" }))).rate, null);
 });
 
 test("datas ausentes não somem dos totais e baixas futuras impedem métricas por data", () => {
