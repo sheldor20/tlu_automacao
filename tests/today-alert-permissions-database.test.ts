@@ -47,6 +47,7 @@ test("Hoje respeita departamentos, acesso ao item e revogação na lista e no co
 
   await asUser(user, async () => assert.equal((await notifications()).length, 4, "reproduz o vazamento antes da correção"));
   await migrate(db, "20260916202418_today_alert_department_permissions.sql");
+  await migrate(db, "20260916203610_resolve_today_alerts.sql");
 
   await t.test("somente Projetos: oculta Governança, Aluguéis, Obras e itens inacessíveis", async () => {
     await asUser(user, async () => {

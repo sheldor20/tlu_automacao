@@ -62,6 +62,7 @@ export function friendlyError(error: unknown) {
 
   if (message.includes("Invalid login credentials")) return "E-mail ou senha incorretos.";
   if (message.includes("Email not confirmed")) return "Confirme seu e-mail antes de entrar.";
+  if (message.includes("today_alert_not_available")) return "Este alerta mudou ou você não tem mais acesso a ele. Atualize o HOJE e tente novamente.";
   if (message.includes("rental_receipts_rental_month_key")) {
     return "Já existe um recebimento para este mês. Recarregue a página para editar o lançamento existente.";
   }
