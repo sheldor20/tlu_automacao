@@ -189,6 +189,11 @@ export type LessorType = "pf" | "pj";
 
 export type Rental = {
   id: string;
+  property_type: string | null;
+  rentable: boolean | null;
+  qlik_property_id: string | null;
+  qlik_synced_at: string | null;
+  qlik_present: boolean | null;
   name: string;
   property_address: string;
   status: RentalStatus;

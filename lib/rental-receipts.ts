@@ -5,6 +5,7 @@ export const receiptFields = [
   { key: "fines", label: "Multas recebidas (R$)" },
   { key: "reimbursements", label: "Reembolsos recebidos (R$)" },
   { key: "property_tax", label: "IPTU descontado (R$)" },
+  { key: "income_tax", label: "IR descontado (R$)" },
 ] as const;
 
 export type ReceiptField = typeof receiptFields[number]["key"];
@@ -23,7 +24,7 @@ export type ReceiptSummary = ReceiptAmounts & {
   net_received: number;
 };
 
-export const receiptFormula = "Aluguel + multas + reembolsos − taxa de administração − fundo de reserva − IPTU.";
+export const receiptFormula = "Aluguel + multas + reembolsos − taxa de administração − fundo de reserva − IPTU − IR.";
 export const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 export function receiptForm(receipt?: ReceiptAmounts): ReceiptForm {
@@ -44,7 +45,7 @@ export function parseReceiptForm(form: ReceiptForm): ReceiptAmounts {
 export function receiptTotals(amounts: ReceiptAmounts) {
   const cents = (key: ReceiptField) => Math.round(Number(amounts[key]) * 100);
   const credits = cents("rent_received") + cents("fines") + cents("reimbursements");
-  const deductions = cents("administration_fee") + cents("reserve_fund") + cents("property_tax");
+  const deductions = cents("administration_fee") + cents("reserve_fund") + cents("property_tax") + cents("income_tax");
   return { credits: credits / 100, deductions: deductions / 100, net: (credits - deductions) / 100 };
 }
 

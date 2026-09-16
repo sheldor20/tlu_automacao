@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   outputFileTracingIncludes: {
+    "/api/cron/qlik/rental-*": [
+      "./node_modules/@sparticuz/chromium/**/*",
+      "./node_modules/puppeteer-core/**/*",
+      "./node_modules/@puppeteer/browsers/**/*",
+    ],
     "/api/cron/qlik/enterprise-performance": [
       "./node_modules/@sparticuz/chromium/**/*",
       "./node_modules/puppeteer-core/**/*",

@@ -31,6 +31,14 @@
     {
       "path": "/api/cron/qlik/finance",
       "schedule": "30 11 * * 1"
+    },
+    {
+      "path": "/api/cron/qlik/rental-inventory",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/rental-receipts",
+      "schedule": "30 9 * * *"
     }
   ]
 }

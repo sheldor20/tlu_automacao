@@ -21,8 +21,8 @@ export function RentalReceipts({ rentalId }: { rentalId?: string }) {
     <section className="content-card rental-receipts-card">
       <div className="content-card-head rental-receipts-head">
         <div>
-          <h2>{rentalId ? "Recebimentos mensais" : "Recebimentos da carteira"}</h2>
-          <p>{rentalId ? "Selecione o mês para lançar ou editar os valores recebidos." : "Total dos lançamentos de todos os imóveis, mês a mês. Abra um imóvel para lançar."}</p>
+          <h2>{rentalId ? "Lançamentos mensais manuais" : "Lançamentos manuais da carteira"}</h2>
+          <p>{rentalId ? "Selecione o mês para lançar ou editar valores e ajustes manuais." : "Total dos lançamentos de todos os imóveis, mês a mês. Abra um imóvel para lançar."}</p>
         </div>
         <Field label="Mês de referência">
           <input type="month" min="1900-01" max="9999-12" value={period} disabled={busy}
@@ -89,7 +89,7 @@ function ReceiptYear({ rentalId, year, period, onPeriodChange, onBusy }: {
       {rentalId ? <ReceiptEditor key={`${period}-${selected?.updated_at || "new"}`} rentalId={rentalId} referenceMonth={`${period}-01`} receipt={selected} onSaved={refresh} onBusy={changeBusy} /> : null}
       <div className="rental-receipt-summary kpi-grid">
         <KpiCard label={`Entradas em ${year}`} value={summaries.length ? currency(totals.credits / 100) : "—"} helper="aluguel, multas e reembolsos" icon={<CircleDollarSign size={17} />} />
-        <KpiCard label={`Descontos em ${year}`} value={summaries.length ? currency(totals.deductions / 100) : "—"} helper="administração, reserva e IPTU" />
+        <KpiCard label={`Descontos em ${year}`} value={summaries.length ? currency(totals.deductions / 100) : "—"} helper="administração, reserva, IPTU e IR" />
         <KpiCard label={`Líquido em ${year}`} value={summaries.length ? currency(totals.net / 100) : "—"} helper={`${summaries.length} mês(es) com lançamento`} tone={totals.net >= 0 ? "success" : "warning"} />
       </div>
       <h3>Recebimentos mês a mês · {year}</h3>
@@ -101,13 +101,13 @@ function ReceiptYear({ rentalId, year, period, onPeriodChange, onBusy }: {
       <div className="rental-table-wrap">
         <table className="data-table rental-receipts-table">
           <caption>Histórico mensal de {year}{rentalId ? " do imóvel" : " de todos os imóveis"}</caption>
-          <thead><tr><th>Mês</th><th>Aluguel recebido</th><th>Taxa de adm.</th><th>Fundo de reserva</th><th>Multas</th><th>Reembolsos</th><th>IPTU</th><th>Líquido</th>{rentalId ? <th>Ação</th> : <th>Imóveis lançados</th>}</tr></thead>
+          <thead><tr><th>Mês</th><th>Aluguel recebido</th><th>Taxa de adm.</th><th>Fundo de reserva</th><th>Multas</th><th>Reembolsos</th><th>IPTU</th><th>IR</th><th>Líquido</th>{rentalId ? <th>Ação</th> : <th>Imóveis lançados</th>}</tr></thead>
           <tbody>{months.map(({ label, referenceMonth, row, totals: amounts }) => <tr key={referenceMonth}>
             <th scope="row">{label}</th>
             {row ? <>
               {receiptFields.map(({ key }) => <td key={key}>{currency(Number(row[key]))}</td>)}
               <td><strong>{currency(amounts!.net)}</strong></td>
-            </> : <td colSpan={7} className="rental-receipt-hint">Sem lançamento</td>}
+            </> : <td colSpan={8} className="rental-receipt-hint">Sem lançamento</td>}
             <td>{rentalId ? <button type="button" className="rental-receipt-edit" disabled={busy} onClick={() => {
               onPeriodChange(referenceMonth.slice(0, 7));
               document.getElementById("rental-receipt-editor")?.scrollIntoView({ behavior: "smooth", block: "center" });

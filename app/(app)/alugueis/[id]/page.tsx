@@ -1,5 +1,6 @@
 "use client";
 
+import { RentalQlikReceipts } from "@/components/rental-qlik-receipts";
 import { RentalReceipts } from "@/components/rental-receipts";
 import { Button, Field, KpiCard, StatusPill, Toast } from "@/components/ui";
 import { currency, dateBr } from "@/lib/format";
@@ -18,7 +19,8 @@ const statusLabel: Record<RentalStatus, string> = {
 
 function rentalToForm(rental: Rental) {
   return {
-    name: rental.name,
+    property_type: rental.property_type || "",
+    rentable: rental.rentable === null ? "" : String(rental.rentable),
     property_address: rental.property_address,
     status: rental.status,
     monthly_rent: String(rental.monthly_rent),
@@ -65,7 +67,8 @@ export default function RentalDetailPage() {
     if (!supabase || !form || !rental) return;
     setSaving(true);
     const { error } = await supabase.from("rentals").update({
-      name: form.name.trim(),
+      property_type: form.property_type.trim() || null,
+      rentable: form.rentable === "" ? null : form.rentable === "true",
       property_address: form.property_address.trim(),
       status: form.status,
       monthly_rent: Number(form.monthly_rent || 0),
@@ -78,7 +81,7 @@ export default function RentalDetailPage() {
     }).eq("id", rental.id);
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setToast({ message: "Dados do imóvel atualizados.", type: "success" });
+    setToast({ message: "Contrato e locação atualizados.", type: "success" });
     await loadRental();
   }
 
@@ -92,8 +95,10 @@ export default function RentalDetailPage() {
       <header className="rental-detail-header">
         <div>
           <div className="work-detail-tags"><StatusPill tone={form.status === "alugado" ? "success" : form.status === "aguardando_reforma" ? "warning" : "neutral"}>{statusLabel[form.status]}</StatusPill><StatusPill tone="neutral">{form.lessor_type.toUpperCase()}</StatusPill></div>
-          <h1>{form.name}</h1>
+          <h1>{rental.name}</h1>
           <p><Home size={14} /> {form.property_address}</p>
+          <p>Cód. Imóvel: {rental.qlik_property_id || "Aguardando importação"}</p>
+          <p>{rental.qlik_synced_at ? `Qlik atualizado em ${dateBr(rental.qlik_synced_at.slice(0, 10))}` : "Aguardando vínculo com a origem Qlik"}{rental.qlik_present === false ? " · Ausente na última carga" : ""}</p>
         </div>
       </header>
 
@@ -103,11 +108,12 @@ export default function RentalDetailPage() {
       </section>
 
       <section className="content-card rental-edit-card">
-        <div className="content-card-head"><div><h2>Dados do imóvel</h2><p>Valor mensal da locação é a base do contrato. Registre os recebimentos na seção abaixo.</p></div></div>
+        <div className="content-card-head"><div><h2>Dados do imóvel</h2><p>O nome do imóvel é mantido pela origem Qlik. O valor mensal da locação continua como base do contrato.</p></div></div>
         <div className="content-card-body">
           <form className="form-grid" onSubmit={saveRental}>
-            <Field label="Nome do imóvel"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required /></Field>
-            <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as RentalStatus })}><option value="alugado">Alugado</option><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option></select></Field>
+            <Field label="Tipo de imóvel"><input value={form.property_type} onChange={(event) => setForm({ ...form, property_type: event.target.value })} maxLength={120} list="rental-property-types" placeholder="Selecione ou informe" /><datalist id="rental-property-types"><option value="Casa" /><option value="Apartamento" /><option value="Sala comercial" /><option value="Loja" /><option value="Galpão" /><option value="Terreno" /><option value="Área rural" /></datalist></Field>
+            <Field label="Pode ser locado?" hint="Independente da ocupação atual."><select value={form.rentable} onChange={(event) => setForm({ ...form, rentable: event.target.value })}><option value="">Não informado</option><option value="true">Sim, pode ser locado</option><option value="false">Não pode ser locado</option></select></Field>
+            <Field label="Ocupação"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as RentalStatus })}><option value="alugado">Alugado</option><option value="desocupado">Desocupado</option><option value="aguardando_reforma">Aguardando reforma</option></select></Field>
             <Field label="Endereço do imóvel" className="form-span-2"><input value={form.property_address} onChange={(event) => setForm({ ...form, property_address: event.target.value })} maxLength={260} required /></Field>
             <Field label="Valor mensal da locação"><input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={(event) => setForm({ ...form, monthly_rent: event.target.value })} required /></Field>
             <Field label="Reajuste anual (%)" hint="Referência do contrato; não altera os recebimentos já lançados."><input type="number" min="0" max="100" step="0.01" value={form.annual_adjustment_percent} onChange={(event) => setForm({ ...form, annual_adjustment_percent: event.target.value })} /></Field>
@@ -121,6 +127,7 @@ export default function RentalDetailPage() {
         </div>
       </section>
 
+      <RentalQlikReceipts rentalId={rental.id} />
       <RentalReceipts rentalId={rental.id} />
 
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
