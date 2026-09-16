@@ -3,6 +3,7 @@
 import { Button, Dialog, EmptyState, Field, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { DetailTabs } from "@/components/detail-tabs";
 import { ProjectTaskEditor, taskToDraft, type ProjectTaskDraft } from "@/components/project-task-editor";
+import { ProjectTaskHistory } from "@/components/task-activity";
 import { ProjectTaskBoard } from "@/components/project-task-board";
 import { UserSelect } from "@/components/user-select";
 import { BUSINESS_STAGES } from "@/lib/constants";
@@ -494,6 +495,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
           <div className="content-card-head"><div><h2>Comentários gerais</h2><p>Atualizações, decisões e contexto do projeto</p></div><MessageSquare size={18} /></div>
           <form className="comment-form" onSubmit={addComment}><textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Adicionar atualização ou comentário…" maxLength={2500} required /><div><small>O comentário ficará visível para todos os usuários.</small><Button type="submit" loading={saving} disabled={!comment.trim()}>Comentar</Button></div></form>
           <div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><span className="comment-avatar">{initials(item.author_name)}</span><div><div><strong>{item.author_name}</strong><span><small>{dateBr(item.created_at)}</small>{allowUpdates ? <span className="record-actions"><button type="button" onClick={() => void editComment(item)} aria-label="Editar atualização"><Pencil size={13} /></button><button type="button" className="danger" onClick={() => void deleteComment(item)} aria-label="Excluir atualização"><Trash2 size={13} /></button></span> : null}</span></div><p>{item.body}</p></div></article>) : <div className="mini-empty">Nenhum comentário ainda.</div>}</div>
+          <ProjectTaskHistory key={project.id} projectId={project.id} />
         </section> : null}
         {visibleActiveTab === "arquivos" ? <section className="content-card">
           <div className="content-card-head"><div><h2>Arquivos e imagens</h2><p>Referências compartilhadas e reaproveitadas pela obra vinculada</p></div>{allowFiles ? <Button variant="secondary" onClick={() => setFileDialog(true)}><Plus size={16} /> Arquivo</Button> : null}</div>
