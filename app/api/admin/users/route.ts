@@ -29,11 +29,9 @@ const createUserSchema = z.object({
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
+  payment_permission: processPermissionSchema,
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
-  if (!data.is_admin && data.departments.length === 0) {
-    context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
-  }
   if (!data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
     context.addIssue({ code: "custom", path: ["indicator_areas"], message: "indicator_area_required" });
   }
@@ -48,11 +46,9 @@ const updateUserSchema = z.object({
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
+  payment_permission: z.object({ can_manage: z.boolean() }).optional(),
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
-  if (data.active && !data.is_admin && data.departments.length === 0) {
-    context.addIssue({ code: "custom", path: ["departments"], message: "department_required" });
-  }
   if (data.active && !data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
     context.addIssue({ code: "custom", path: ["indicator_areas"], message: "indicator_area_required" });
   }
@@ -182,6 +178,11 @@ async function replaceReportingLine(service: SupabaseClient, userId: string, lea
   if (error) throw error;
 }
 
+async function replacePaymentPermission(service: SupabaseClient, userId: string, canManage: boolean) {
+  const { error } = await service.from("profile_payment_permissions").upsert({ user_id: userId, can_manage: canManage });
+  if (error) throw error;
+}
+
 export async function POST(request: Request) {
   const context = await requireAdmin(request);
   if (context instanceof NextResponse) return context;
@@ -189,12 +190,12 @@ export async function POST(request: Request) {
   const parsed = createUserSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Preencha nome, e-mail, senha de ao menos 8 caracteres e um departamento." },
+      { error: "Preencha nome, e-mail e senha de ao menos 8 caracteres." },
       { status: 400 },
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, leader_user_id } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, leader_user_id } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -225,6 +226,7 @@ export async function POST(request: Request) {
     );
     await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, created.user.id, departments.includes("processos"), process_permission.can_manage);
+    await replacePaymentPermission(context.service, created.user.id, payment_permission.can_manage);
     await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
@@ -244,10 +246,10 @@ export async function PATCH(request: Request) {
 
   const parsed = updateUserSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Revise os dados e selecione ao menos um departamento." }, { status: 400 });
+    return NextResponse.json({ error: "Revise os dados e as permissões informadas." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, leader_user_id } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, leader_user_id } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -290,6 +292,7 @@ export async function PATCH(request: Request) {
     );
     await replaceProjectPermission(context.service, user_id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, user_id, departments.includes("processos"), process_permission.can_manage);
+    if (payment_permission) await replacePaymentPermission(context.service, user_id, payment_permission.can_manage);
     await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";

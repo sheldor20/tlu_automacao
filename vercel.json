@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/payment-emails",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/qlik/enterprise-performance",
       "schedule": "0 13 * * 1"
     },

@@ -7,7 +7,7 @@ import type { DepartmentSlug, ManagementAreaSlug, ProcessPermission, ProfileDepa
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserRoundCog, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; leader_user_id: string | null };
+type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; payment_permission: { can_manage: boolean }; leader_user_id: string | null };
 
 type AdminForm = {
   full_name: string;
@@ -19,6 +19,7 @@ type AdminForm = {
   indicator_areas: ManagementAreaSlug[];
   project_permission: Omit<ProfileProjectPermission, "user_id">;
   process_permission: Omit<ProcessPermission, "user_id">;
+  payment_permission: { can_manage: boolean };
   leader_user_id: string;
 };
 
@@ -32,6 +33,7 @@ const emptyForm: AdminForm = {
   indicator_areas: [] as ManagementAreaSlug[],
   project_permission: { access_scope: "full", allow_files: true, allow_updates: true },
   process_permission: { can_manage: false },
+  payment_permission: { can_manage: false },
   leader_user_id: "",
 };
 
@@ -48,16 +50,17 @@ export default function AdministrationPage() {
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult] = await Promise.all([
+    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult, paymentPermissionResult] = await Promise.all([
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").is("deleted_at", null).order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
       supabase.from("profile_indicator_areas").select("user_id,area"),
       supabase.from("profile_project_permissions").select("user_id,access_scope,allow_files,allow_updates"),
       supabase.from("profile_process_permissions").select("user_id,can_manage"),
       supabase.from("profile_reporting_lines").select("report_user_id,leader_user_id"),
+      supabase.from("profile_payment_permissions").select("user_id,can_manage"),
     ]);
-    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error) {
-      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error), type: "error" });
+    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error) {
+      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error), type: "error" });
       setLoading(false);
       return;
     }
@@ -72,6 +75,7 @@ export default function AdministrationPage() {
       indicator_areas: indicatorAccesses.filter((access) => access.user_id === profile.user_id).map((access) => access.area),
       project_permission: projectPermissions.find((permission) => permission.user_id === profile.user_id) || { access_scope: "full", allow_files: true, allow_updates: true },
       process_permission: processPermissions.find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
+      payment_permission: (paymentPermissionResult.data || []).find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
       leader_user_id: reportingLines.find((line) => line.report_user_id === profile.user_id)?.leader_user_id || null,
     })));
     setLoading(false);
@@ -111,6 +115,7 @@ export default function AdministrationPage() {
         allow_updates: user.project_permission.allow_updates,
       },
       process_permission: { can_manage: user.process_permission.can_manage },
+      payment_permission: { can_manage: user.payment_permission.can_manage },
       leader_user_id: user.leader_user_id || "",
     });
     setDialogOpen(true);
@@ -140,10 +145,6 @@ export default function AdministrationPage() {
   async function saveUser(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
-    if (!form.is_admin && form.active && form.departments.length === 0) {
-      setToast({ message: "Selecione ao menos um departamento para o usuário.", type: "error" });
-      return;
-    }
     if (!form.is_admin && form.active && form.departments.includes("indicadores") && form.indicator_areas.length === 0) {
       setToast({ message: "Selecione ao menos uma visão de Indicadores para o usuário.", type: "error" });
       return;
@@ -168,6 +169,7 @@ export default function AdministrationPage() {
         indicator_areas: form.indicator_areas,
         project_permission: form.project_permission,
         process_permission: form.process_permission,
+        payment_permission: form.payment_permission,
         leader_user_id: form.leader_user_id || null,
       } : { ...form, leader_user_id: form.leader_user_id || null }),
     });
@@ -308,6 +310,11 @@ export default function AdministrationPage() {
             </fieldset>
           ) : null}
 
+          <fieldset className="department-access-fieldset form-span-2">
+            <legend>Gestão de pagamentos</legend>
+            <p>Todos os usuários ativos podem solicitar e acompanhar os próprios pagamentos. Administradores já possuem gestão completa.</p>
+            <div className="admin-toggle-grid"><label><input type="checkbox" disabled={form.is_admin} checked={form.is_admin || form.payment_permission.can_manage} onChange={event => setForm({ ...form, payment_permission: { can_manage: event.target.checked } })} /><span><strong>Gerenciar solicitações de pagamento</strong><small>Consultar todos os pedidos, pedir informações, alterar status e enviar comprovantes.</small></span></label></div>
+          </fieldset>
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>{editing ? "Salvar acessos" : "Criar usuário"}</Button></div>
         </form>
       </Dialog>
