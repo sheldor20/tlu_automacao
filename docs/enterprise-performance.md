@@ -2,11 +2,11 @@
 
 Tela: `/novos-negocios/performance-de-empreendimentos`, dentro de Novos negócios.
 
-O catálogo vem do campo Empresa no Qlik. A leitura retorna uma empresa ou a soma de todas por data, sempre a partir de uma única carga completa. TIR, VPL, payback e déficit máximo são recalculados sobre o fluxo consolidado. Nenhum dado demonstrativo é inserido no banco.
+O catálogo vem do campo `Nome Empresa`, exibido como Empresa no Qlik. A leitura retorna uma empresa ou a soma de todas por data, sempre a partir de uma única carga completa. TIR, VPL, payback e déficit máximo são recalculados sobre o fluxo consolidado. Nenhum dado demonstrativo é inserido no banco.
 
 ## Situação da primeira carga
 
-A conexão `qlik-enterprise-performance` começa pausada e com `mapping_verified: false`. O acesso ao Qlik foi bloqueado pela verificação de segurança do navegador durante a implementação; os objetos e campos das três planilhas ainda precisam ser conferidos por acesso autorizado. Não ativar a conexão apenas para remover o aviso da tela.
+A conexão `qlik-enterprise-performance` começa pausada e com `mapping_verified: false`. Em 16/09/2026, o acesso autenticado permitiu conferir as três planilhas, os objetos e os campos abaixo. Após essa conferência, a conexão foi ativada e a primeira carga completa terminou às 11h10 de São Paulo, conciliando as quatro medidas e publicando o catálogo de 32 empresas. Novas instalações devem preservar a mesma etapa de validação antes da ativação.
 
 Aplicativo: `e3d13862-ec1f-4332-8a5b-df4c7b93fa7c`.
 
@@ -16,6 +16,19 @@ Aplicativo: `e3d13862-ec1f-4332-8a5b-df4c7b93fa7c`.
 | paid | 96551230-06b0-4e0f-9881-890030e2992a | Pagamentos efetivamente baixados | Baixa do pagamento |
 | payable | 96551230-06b0-4e0f-9881-890030e2992a | Saldo residual em aberto, excluindo baixas | Data esperada de pagamento |
 | receivable | 32a488c2-14d8-4bde-ba4f-35211d75376b | Saldo residual em aberto, excluindo baixas | Data esperada de recebimento |
+
+Mapeamento conferido na interface e nas propriedades oficiais do Qlik (medida de índice zero em todos os objetos):
+
+| Medida | Objeto | Campo de data |
+| --- | --- | --- |
+| received | b92ac856-4098-44d8-bc83-a21a48e68db5 | Período (Data Recebimento na tabela de origem) |
+| paid | ZJWVapq | Data Baixa (Data Pagamento na tabela de origem) |
+| payable | cJmDgZJ | Data Vencimento |
+| receivable | f8bff9fa-91db-4f60-8c0b-2e91cfdc1134 | Data Prorrogação Vencimento |
+
+Cada leitura fixa `vQtdDias = 99999999` (Tudo) e `vDesembolsoFinanceiro = Normal` (Com Desembolso), dentro de uma sessão isolada. O coletor confirma os valores das variáveis antes de ler as medidas. A expressão original da medida mestre e os parâmetros usados ficam no metadado de auditoria, sem reescrever fórmulas.
+
+O endpoint protegido de cron aceita `?inspect=1` para reconciliar uma configuração candidata e retornar totais por empresa, datas e expressões, sem ativar a conexão nem gravar snapshots. Continua exigindo `CRON_SECRET`; a atualização manual exige sessão e acesso ao departamento.
 
 Após liberar o acesso autorizado, conferir os identificadores das visualizações, índices das medidas e nomes exatos dos campos de data. Registrar em `data_connections.settings.sources`, nas quatro chaves acima, os campos `object_id`, `date_field` e `measure_index` (índice a partir de zero). Manter `company_field` com o nome exato do campo de empresa. Só marcar `mapping_verified: true` e ativar a conexão depois dessa conferência.
 
@@ -40,4 +53,4 @@ Retorno sobre custo: `(recebido + a receber - pago - a pagar) / (pago + a pagar)
 
 ## Verificação
 
-Testes de XTIR contra o exemplo da Microsoft, VPL na raiz, consolidação ponderada por fluxos, horizontes até 2200, vencidos, datas ausentes, payback definitivo, paginação do coletor, reconciliação, autorização/RLS e rollback de cargas inválidas. Os testes usam fixtures locais; não substituem a conferência das fontes reais pendente acima.
+Testes de XTIR contra o exemplo da Microsoft, VPL na raiz, consolidação ponderada por fluxos, horizontes até 2200, vencidos, datas ausentes, payback definitivo, paginação do coletor, reconciliação, autorização/RLS e rollback de cargas inválidas. Os testes usam fixtures locais; a validação de produção também comparou Vale das Águas e Jardim Araguaia com o Qlik, além de verificar o filtro de empresas, o estado sem movimentos e as visões anual, realizada, prevista e total no Space.

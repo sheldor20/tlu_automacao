@@ -75,6 +75,7 @@ export type QlikMetricSnapshot = {
   dimensionLabel?: string;
   companyName?: string;
   cashDate?: string | null;
+  sourceExpression?: string;
 };
 
 const QLIK_READY_SELECTOR = "[data-testid='top-bar-root'], #qv-stage-container";
@@ -1235,6 +1236,7 @@ async function readQlikEngineMetrics(
       let companyCatalogLoaded = false;
       for (const metric of metrics.filter((item) => item.companyDateBreakdown)) {
         await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        const sourceSelections = await applyMetricFilters(metric);
         const companyField = findExactField([metric.companyDateBreakdown!.companyField], "empresa");
         const dateField = findExactField([metric.companyDateBreakdown!.dateField], "data do fluxo financeiro");
         const object = resolvedMetrics.get(metric.metricKey)!;
@@ -1243,14 +1245,23 @@ async function readQlikEngineMetrics(
         const properties = await call(sourceHandle, "GetEffectiveProperties");
         const prop = properties.qProp as { qStateName?: string; qHyperCubeDef?: { qMeasures?: unknown[]; qStateName?: string } };
         const definition = prop?.qHyperCubeDef;
-        const measure = definition?.qMeasures?.[metric.measureIndex || 0];
+        const measure = definition?.qMeasures?.[metric.measureIndex || 0] as { qLibraryId?: string; qDef?: { qDef?: string } } | undefined;
         if (!measure || (prop.qStateName && prop.qStateName !== "$") || (definition?.qStateName && definition.qStateName !== "$")) {
           throw new Error("Qlik: a medida de performance precisa usar o estado de seleção validado.");
         }
+        let sourceExpression = measure.qDef?.qDef;
+        if (measure.qLibraryId) {
+          const measureHandle = handleFrom(await call(docHandle, "GetMeasure", { qId: measure.qLibraryId }));
+          if (typeof measureHandle !== "number") throw new Error("Qlik: definição da medida financeira indisponível.");
+          const result = await call(measureHandle, "GetProperties");
+          sourceExpression = (result.qProp as { qMeasure?: { qDef?: string } })?.qMeasure?.qDef;
+        }
+        if (!sourceExpression?.trim()) throw new Error("Qlik: expressão da medida financeira indisponível para auditoria.");
         const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
         const common = { mode: metric.mode, referenceMonth, appId, sheetId: metric.sheetId, objectId: object.id,
           objectTitle: object.labels[0] || metric.targetLabel, targetLabel: metric.targetLabel,
-          selections: { company_field: companyField, date_field: dateField, period: "all-source-dates" } };
+          sourceExpression,
+          selections: { ...sourceSelections, company_field: companyField, date_field: dateField, period: "all-source-dates" } };
         if (!companyCatalogLoaded) {
           const companies = await fieldValues(companyField);
           for (const company of companies) if (company.text.trim() && !/^[-–]$/.test(company.text.trim())) {
