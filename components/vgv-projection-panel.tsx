@@ -18,7 +18,7 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
   const total = metric("vgv_total_receber");
   const rate = metric("vgv_inadimplencia_atual");
   const adjusted = metric("vgv_projetado_liquido");
-  const annual = snapshot.filter((row) => row.metric_key === "vgv_saldo_anual" && /^\d{4}$/.test(row.dimension_key))
+  const annual = snapshot.filter((row) => row.metric_key === "vgv_saldo_anual" && /^\d{4}$/.test(row.dimension_key) && row.value !== 0)
     .sort((a, b) => a.dimension_key.localeCompare(b.dimension_key));
   const synchronizedAt = typeof latest?.metadata.synchronized_at === "string" ? new Date(latest.metadata.synchronized_at) : null;
   const updated = synchronizedAt && Number.isFinite(synchronizedAt.getTime())
@@ -26,7 +26,11 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
     : null;
   const stale = synchronizedAt ? readAt - synchronizedAt.getTime() > 8 * 86_400_000 : false;
   const percent = rate === null ? "—" : `${rate.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
-  const labels = annual.length ? ["Atual", ...annual.map((row) => row.dimension_key)] : [];
+  const chartPoints = [
+    ...(total !== null && total !== 0 ? [{ label: "Atual", value: total }] : []),
+    ...annual.map((row) => ({ label: row.dimension_key, value: row.value })),
+  ];
+  const labels = chartPoints.map((point) => point.label);
   const periodLabel = typeof latest?.metadata.period_start === "string" && typeof latest?.metadata.period_end === "string"
     ? `${latest.metadata.period_start.split("-").reverse().join("/")} a ${latest.metadata.period_end.split("-").reverse().join("/")}`
     : null;
@@ -43,9 +47,9 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
           <div><span>Fluxo de caixa · Terra Lótus</span><h2>VGV projetado futuro</h2><p>Saldo das entradas previstas após os recebimentos até o fim de cada ano. Valores em reais.</p>{periodLabel ? <p>Período: {periodLabel}</p> : null}</div>
           <div className="vgv-source-date">{updated ? `Atualizado em ${updated}` : "Aguardando primeira carga do Qlik"}{stale ? <strong>Atualização pendente</strong> : null}</div>
         </div>
-        <TrendChart wide labels={labels} maximumFractionDigits={2} axisLabelInterval={Math.max(1, Math.ceil(labels.length / 10))} valueLabelInterval={Math.max(1, Math.ceil(labels.length / 7))} highlightLatest={false} emptyLabel="Os valores aparecerão após a sincronização validada do Qlik."
+        <TrendChart wide labels={labels} maximumFractionDigits={2} axisLabelInterval={Math.max(1, Math.ceil(labels.length / 10))} valueLabelInterval={Math.max(1, Math.ceil(labels.length / 7))} highlightLatest={false} emptyLabel={total === null ? "Os valores aparecerão após a sincronização validada do Qlik." : "Não há saldo de VGV diferente de zero no período."}
           series={[
-            { label: "VGV a receber", color: "#4b98c4", values: annual.length ? [total, ...annual.map((row) => row.value)] : [] },
+            { label: "VGV a receber", color: "#4b98c4", values: chartPoints.map((point) => point.value) },
           ]} />
         {annual.length ? <details className="vgv-annual-details"><summary>Ver valores por ano</summary>
           <div className="vgv-table-scroll"><table><caption>Recebimentos previstos e saldo remanescente por ano</caption><thead><tr><th scope="col">Ano</th><th scope="col">Recebimento previsto</th><th scope="col">Saldo ao fim do ano</th><th scope="col">Após inadimplência</th></tr></thead>
