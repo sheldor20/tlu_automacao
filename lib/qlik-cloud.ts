@@ -33,6 +33,7 @@ export type QlikCloudMetricDefinition = {
   requireScalar?: boolean;
   measureIndex?: number;
   breakdownDateField?: string;
+  companyDateBreakdown?: { companyField: string; dateField: string };
   filters?: ReadonlyArray<QlikCloudMetricFilter>;
 };
 
@@ -72,6 +73,8 @@ export type QlikMetricSnapshot = {
   selections: Record<string, string>;
   dimensionKey?: string;
   dimensionLabel?: string;
+  companyName?: string;
+  cashDate?: string | null;
 };
 
 const QLIK_READY_SELECTOR = "[data-testid='top-bar-root'], #qv-stage-container";
@@ -830,6 +833,7 @@ async function readQlikEngineMetrics(
           });
           matrix = matrix.concat((dataResult.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }> | undefined)?.[0]?.qMatrix || []);
         }
+        if (matrix.length !== rowCount) throw new Error(`Qlik: leitura incompleta dos valores de “${fieldName}”.`);
         const values = matrix.map((row) => ({
           text: row[0]?.qText || "",
           number: Number.isFinite(row[0]?.qNum) ? row[0]?.qNum : undefined,
@@ -1226,6 +1230,92 @@ async function readQlikEngineMetrics(
       };
 
       const snapshots: QlikMetricSnapshot[] = [];
+      // Aggregate the original measures by the exact company and date fields.
+      // Never persist client identities, titles, parcels, or guessed dates.
+      let companyCatalogLoaded = false;
+      for (const metric of metrics.filter((item) => item.companyDateBreakdown)) {
+        await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
+        const companyField = findExactField([metric.companyDateBreakdown!.companyField], "empresa");
+        const dateField = findExactField([metric.companyDateBreakdown!.dateField], "data do fluxo financeiro");
+        const object = resolvedMetrics.get(metric.metricKey)!;
+        const sourceHandle = handleFrom(await call(docHandle, "GetObject", { qId: object.id }));
+        if (typeof sourceHandle !== "number") throw new Error("Qlik: objeto financeiro indisponível.");
+        const properties = await call(sourceHandle, "GetEffectiveProperties");
+        const prop = properties.qProp as { qStateName?: string; qHyperCubeDef?: { qMeasures?: unknown[]; qStateName?: string } };
+        const definition = prop?.qHyperCubeDef;
+        const measure = definition?.qMeasures?.[metric.measureIndex || 0];
+        if (!measure || (prop.qStateName && prop.qStateName !== "$") || (definition?.qStateName && definition.qStateName !== "$")) {
+          throw new Error("Qlik: a medida de performance precisa usar o estado de seleção validado.");
+        }
+        const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
+        const common = { mode: metric.mode, referenceMonth, appId, sheetId: metric.sheetId, objectId: object.id,
+          objectTitle: object.labels[0] || metric.targetLabel, targetLabel: metric.targetLabel,
+          selections: { company_field: companyField, date_field: dateField, period: "all-source-dates" } };
+        if (!companyCatalogLoaded) {
+          const companies = await fieldValues(companyField);
+          for (const company of companies) if (company.text.trim() && !/^[-–]$/.test(company.text.trim())) {
+            snapshots.push({ ...common, metricKey: "performance_company", value: 0, companyName: company.text.trim() });
+          }
+          companyCatalogLoaded = true;
+        }
+        const temporaryIds: string[] = [];
+        try {
+          const createCube = async (dimensions: string[]) => {
+            const result = await call(docHandle, "CreateSessionObject", { qProp: {
+              qInfo: { qType: "terra-lotus-enterprise-performance" },
+              qHyperCubeDef: { qStateName: "$", qMode: "S", qSuppressZero: true, qSuppressMissing: false,
+                qDimensions: dimensions.map((field) => ({ qDef: { qFieldDefs: [field] }, qNullSuppression: false })),
+                qMeasures: [measure] },
+            } });
+            const handle = handleFrom(result);
+            if (typeof handle !== "number") throw new Error("Qlik: não foi possível preparar o fluxo financeiro.");
+            const resultLayout = await call(handle, "GetLayout");
+            const layout = resultLayout.qLayout as { qInfo?: { qId?: string }; qHyperCube?: {
+              qSize?: { qcx?: number; qcy?: number }; qError?: { qErrorCode?: number };
+              qMeasureInfo?: Array<{ qError?: { qErrorCode?: number } }>;
+              qGrandTotalRow?: HyperCubeCell[];
+            } };
+            if (layout.qInfo?.qId) temporaryIds.push(layout.qInfo.qId);
+            const cube = layout.qHyperCube;
+            if (!cube || cube.qError?.qErrorCode || cube.qMeasureInfo?.some((m) => m.qError?.qErrorCode)) throw new Error("Qlik: medida financeira inválida.");
+            return { handle, cube };
+          };
+          const scalar = await createCube([]);
+          const total = scalar.cube.qGrandTotalRow?.[0]?.qNum;
+          if (typeof total !== "number" || !Number.isFinite(total)) throw new Error("Qlik: total financeiro indisponível para conciliação.");
+          snapshots.push({ ...common, metricKey: `${metric.metricKey}:total`, value: total });
+          const grouped = await createCube([companyField, dateField]);
+          const rowCount = grouped.cube.qSize?.qcy;
+          if (grouped.cube.qSize?.qcx !== 3 || typeof rowCount !== "number" || !Number.isInteger(rowCount) || rowCount < 0 || rowCount > 500_000) throw new Error("Qlik: dimensão do fluxo financeiro inválida ou acima do limite de leitura.");
+          let read = 0;
+          for (let top = 0; top < rowCount; top += 1000) {
+            const result = await call(grouped.handle, "GetHyperCubeData", { qPath: "/qHyperCubeDef", qPages: [{ qTop: top, qLeft: 0, qHeight: Math.min(1000, rowCount - top), qWidth: 3 }] });
+            const matrix = (result.qDataPages as Array<{ qMatrix?: HyperCubeCell[][] }>)?.[0]?.qMatrix || [];
+            read += matrix.length;
+            for (const cells of matrix) {
+              const value = cells[2]?.qNum;
+              if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("Qlik: valor não numérico no fluxo financeiro.");
+              const companyName = cells[0]?.qText?.trim();
+              if (!companyName || /^[-–]$/.test(companyName)) throw new Error("Qlik: movimento financeiro sem empresa.");
+              const dateCell = cells[1];
+              const parsed = fieldValueDate({ text: dateCell?.qText || "", number: dateCell?.qNum });
+              if (!parsed && dateCell?.qText && !/^[-–]$/.test(dateCell.qText.trim())) throw new Error("Qlik: data financeira inválida.");
+              const hasNumericDate = typeof dateCell?.qNum === "number" && Number.isFinite(dateCell.qNum) && dateCell.qNum >= 20_000 && dateCell.qNum < 110_000;
+              if (parsed && !hasNumericDate) {
+                const text = dateCell?.qText || "";
+                const br = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+                const iso = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+                const parts = br ? [Number(br[3]), Number(br[2]), Number(br[1])] : iso ? [Number(iso[1]), Number(iso[2]), Number(iso[3])] : null;
+                if (!parts || parsed.getUTCFullYear() !== parts[0] || parsed.getUTCMonth() + 1 !== parts[1] || parsed.getUTCDate() !== parts[2]) throw new Error("Qlik: data financeira inválida.");
+              }
+              snapshots.push({ ...common, metricKey: metric.metricKey, value, companyName, cashDate: parsed?.toISOString().slice(0, 10) || null });
+            }
+          }
+          if (read !== rowCount) throw new Error("Qlik: leitura financeira incompleta; a carga anterior será preservada.");
+        } finally {
+          for (const id of temporaryIds) await call(docHandle, "DestroySessionObject", { qId: id }).catch(() => undefined);
+        }
+      }
       for (const metric of metrics.filter((item) => item.periodStrategy === "month-end-variables")) {
         if (!metric.periodVariables?.length) throw new Error(`Qlik Engine: variáveis de período ausentes para “${metric.targetLabel}”.`);
         const variables = [];
@@ -1446,7 +1536,7 @@ async function readQlikEngineMetrics(
         }
       }
 
-      const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot" && !metric.breakdownDateField);
+      const snapshotMetrics = metrics.filter((metric) => metric.mode === "snapshot" && !metric.breakdownDateField && !metric.companyDateBreakdown);
       if (snapshotMetrics.length) {
         const referenceMonth = `${year}-${String(throughMonth).padStart(2, "0")}-01`;
         for (const metric of snapshotMetrics) {
