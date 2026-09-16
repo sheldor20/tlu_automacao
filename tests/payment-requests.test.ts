@@ -8,6 +8,8 @@ import {
   PAYMENT_TRANSITIONS,
   CLOSED_PAYMENT_STATUSES,
   PAYMENT_STATUSES,
+  requiresPaymentReceipt,
+  paymentMoney,
 } from "../lib/payment-requests.ts";
 
 const input = () => ({
@@ -63,6 +65,9 @@ test("invalid dates, negative values, fractions of cents, empty descriptions and
     { due_date: "2026-02-30" },
     { amount: -1 },
     { amount: 0 },
+    { amount: null },
+    { amount: undefined },
+    { beneficiary: undefined },
     { amount: 1.005 },
     { description: " " },
     { website: "spam" },
@@ -130,6 +135,9 @@ test("termination matches all five components from the source template", () => {
     paymentCreateSchema.safeParse({ ...input(), details, amount: 200 }).success,
     true,
   );
+  assert.equal(paymentCreateSchema.parse({
+    ...input(), details: { ...details, contract: undefined }, amount: 200,
+  }).details.type, "termination");
   assert.equal(
     paymentCreateSchema.safeParse({ ...input(), details, amount: 199 }).success,
     false,
@@ -142,6 +150,52 @@ test("termination matches all five components from the source template", () => {
     }).success,
     false,
   );
+});
+test("materials allow unknown prices, beneficiary and payment method without inventing zero", () => {
+  const details = {
+    type: "materials" as const, delivery_address: "Almoxarifado",
+    items: [{ description: "Cimento", quantity: 2, unit: "saco" }],
+  };
+  const result = paymentCreateSchema.parse({
+    ...input(), amount: undefined, beneficiary: undefined, details,
+  });
+  assert.equal(result.amount, null);
+  assert.equal(result.beneficiary.name, "");
+  assert.equal(result.beneficiary.method, "");
+  assert.equal(detailsTotal(result.details), null);
+  assert.equal(paymentMoney(result.amount), "A definir");
+  assert.notEqual(paymentMoney(0), "A definir");
+  assert.equal(paymentCreateSchema.safeParse({
+    ...input(), amount: null, beneficiary: { name: "Fornecedor a confirmar" }, details,
+  }).success, true);
+  assert.equal(paymentCreateSchema.safeParse({
+    ...input(), amount: null, beneficiary: { tax_id: "11111111111" }, details,
+  }).success, false);
+});
+test("partial material prices do not produce a misleading total; entered amounts stay validated", () => {
+  const details = {
+    type: "materials" as const, delivery_address: "Almoxarifado",
+    items: [
+      { description: "Areia", quantity: 2, unit: "m³", unit_price: 10 },
+      { description: "Cimento", quantity: 2, unit: "saco", unit_price: null },
+    ],
+  };
+  assert.equal(detailsTotal(details), null);
+  assert.equal(paymentCreateSchema.safeParse({ ...input(), details, amount: null }).success, true);
+  assert.equal(paymentCreateSchema.safeParse({ ...input(), details, amount: 20 }).success, false);
+  for (const price of [-1, 1.005, Number.NaN])
+    assert.equal(paymentCreateSchema.safeParse({
+      ...input(), details: { ...details, items: [{ ...details.items[0], unit_price: price }] }, amount: null,
+    }).success, false);
+  assert.equal(paymentCreateSchema.safeParse({
+    ...input(), details: { ...details, items: [{ ...details.items[0], unit_price: 0 }] }, amount: 0,
+  }).success, true);
+});
+test("receipt remains mandatory only for services and terminations", () => {
+  assert.equal(requiresPaymentReceipt("materials"), false);
+  assert.equal(requiresPaymentReceipt("bills"), false);
+  assert.equal(requiresPaymentReceipt("service"), true);
+  assert.equal(requiresPaymentReceipt("termination"), true);
 });
 test("bill requests require issuer and reference", () => {
   const details = {

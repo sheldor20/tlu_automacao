@@ -19,6 +19,9 @@ export const PAYMENT_STATUSES = {
 } as const;
 export type PaymentStatus = keyof typeof PAYMENT_STATUSES;
 export type PaymentType = keyof typeof PAYMENT_TYPES;
+export function requiresPaymentReceipt(type: PaymentType) {
+  return type === "service" || type === "termination";
+}
 export const PAYMENT_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
   submitted: ["reviewing", "awaiting_information", "rejected", "cancelled"],
   reviewing: ["awaiting_information", "approved", "rejected", "cancelled"],
@@ -88,22 +91,23 @@ export function validTaxId(value: string, personType: "PF" | "PJ") {
   );
 }
 
-export const beneficiarySchema = z
+const beneficiaryFieldsSchema = z
   .object({
-    person_type: z.enum(["PF", "PJ"]),
-    name: required(200),
-    tax_id: required(30),
+    person_type: z.enum(["PF", "PJ"]).default("PF"),
+    name: text(200).default(""),
+    tax_id: text(30).default(""),
     email: z.union([z.email(), z.literal("")]).default(""),
     phone: text(40).default(""),
-    method: z.enum(["pix", "transfer", "boleto", "guide", "other"]),
+    method: z.enum(["", "pix", "transfer", "boleto", "guide", "other"]).default(""),
     pix_key: text(200).default(""),
     bank: text(100).default(""),
     branch: text(30).default(""),
     account: text(50).default(""),
     account_holder: text(200).default(""),
-  })
+  });
+const optionalBeneficiarySchema = beneficiaryFieldsSchema
   .superRefine((b, ctx) => {
-    if (!validTaxId(b.tax_id, b.person_type))
+    if (b.tax_id && !validTaxId(b.tax_id, b.person_type))
       ctx.addIssue({
         code: "custom",
         path: ["tax_id"],
@@ -125,6 +129,14 @@ export const beneficiarySchema = z
         message: "Preencha banco, agência, conta e titular.",
       });
   });
+export const beneficiarySchema = optionalBeneficiarySchema.superRefine((b, ctx) => {
+  for (const [key, message] of [
+    ["name", "Informe o nome do beneficiário."],
+    ["tax_id", "Informe o CPF ou CNPJ do beneficiário."],
+    ["method", "Informe a forma de pagamento."],
+  ] as const)
+    if (!b[key]) ctx.addIssue({ code: "custom", path: [key], message });
+});
 export const paymentDetailsSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("service"),
@@ -141,7 +153,7 @@ export const paymentDetailsSchema = z.discriminatedUnion("type", [
           description: required(500),
           quantity: z.number().positive().max(1_000_000),
           unit: required(30),
-          unit_price: money,
+          unit_price: money.nullable().default(null),
         }),
       )
       .min(1)
@@ -153,7 +165,7 @@ export const paymentDetailsSchema = z.discriminatedUnion("type", [
     reason: required(1000),
     construction_delay: z.boolean(),
     customer_name: required(200),
-    contract: required(200),
+    contract: text(200).default(""),
     lot: text(100).default(""),
     block: text(100).default(""),
     lawsuit: text(200).default(""),
@@ -183,7 +195,7 @@ export const paymentCreateSchema = z
     project_name: text(300).default(""),
     title: required(180),
     description: required(8000),
-    amount: money.refine((n) => n > 0, "Informe um valor maior que zero."),
+    amount: money.nullable().default(null),
     budget_max: money.nullable(),
     due_date: date,
     quotes: z
@@ -196,13 +208,23 @@ export const paymentCreateSchema = z
       )
       .max(20)
       .default([]),
-    beneficiary: beneficiarySchema,
+    beneficiary: beneficiaryFieldsSchema.default(beneficiaryFieldsSchema.parse({})),
     details: paymentDetailsSchema,
     website: z.literal("").default(""),
   })
   .superRefine((data, ctx) => {
+    const materials = data.details.type === "materials";
+    if (!materials && (data.amount === null || data.amount <= 0))
+      ctx.addIssue({ code: "custom", path: ["amount"], message: "Informe um valor maior que zero." });
+    const beneficiary = (materials ? optionalBeneficiarySchema : beneficiarySchema).safeParse(data.beneficiary);
+    if (!beneficiary.success)
+      for (const issue of beneficiary.error.issues)
+        ctx.addIssue({ ...issue, path: ["beneficiary", ...issue.path] });
     const total = detailsTotal(data.details);
-    if (total !== null && Math.abs(total - data.amount) > 0.005)
+    if (
+      (total !== null && (data.amount === null || Math.abs(total - data.amount) > 0.005)) ||
+      (materials && total === null && data.amount !== null)
+    )
       ctx.addIssue({
         code: "custom",
         path: ["amount"],
@@ -223,13 +245,15 @@ export function detailsTotal(details: PaymentDetails) {
           100,
       ) / 100
     );
-  if (details.type === "materials")
+  if (details.type === "materials") {
+    if (details.items.some((item) => item.unit_price === null)) return null;
     return (
       details.items.reduce(
-        (sum, item) => sum + Math.round(item.quantity * item.unit_price * 100),
+        (sum, item) => sum + Math.round(item.quantity * (item.unit_price ?? 0) * 100),
         0,
       ) / 100
     );
+  }
   return null;
 }
 export type PaymentRequest = Omit<PaymentInput, "website" | "submission_id"> & {
@@ -295,7 +319,8 @@ export const paymentActionSchema = z
 export function paymentProtocol(protocol: number) {
   return `PAG-${String(protocol).padStart(6, "0")}`;
 }
-export function paymentMoney(value: number) {
+export function paymentMoney(value: number | null) {
+  if (value === null) return "A definir";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",

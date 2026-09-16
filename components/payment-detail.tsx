@@ -19,6 +19,7 @@ import {
   PAYMENT_TYPES,
   paymentMoney,
   paymentProtocol,
+  requiresPaymentReceipt,
   type PaymentEvent,
   type PaymentFile,
   type PaymentRequest,
@@ -174,7 +175,10 @@ export function PaymentDetail({
     );
   const r = data.request,
     closed = CLOSED_PAYMENT_STATUSES.includes(r.status),
-    transitions = PAYMENT_TRANSITIONS[r.status];
+    transitions = PAYMENT_TRANSITIONS[r.status],
+    receiptMissing = requiresPaymentReceipt(r.type) &&
+      (status === "paid" || status === "finalized") &&
+      !data.files.some((f) => f.kind === "receipt" && f.ready);
   return (
     <>
       {!trackingToken && (
@@ -217,7 +221,7 @@ export function PaymentDetail({
                 </strong>
               </div>
             </div>
-            {r.budget_max !== null && r.amount > r.budget_max && (
+            {r.budget_max !== null && r.amount !== null && r.amount > r.budget_max && (
               <p className="payment-alert">
                 O valor solicitado supera o orçamento máximo informado.
               </p>
@@ -327,8 +331,8 @@ export function PaymentDetail({
                         <td>{paymentMoney(item.unit_price)}</td>
                         <td>
                           {paymentMoney(
-                            Math.round(item.quantity * item.unit_price * 100) /
-                              100,
+                            item.unit_price === null ? null :
+                              Math.round(item.quantity * item.unit_price * 100) / 100,
                           )}
                         </td>
                       </tr>
@@ -348,9 +352,8 @@ export function PaymentDetail({
                     : "Pessoa jurídica"}
                 </dt>
                 <dd>
-                  {r.beneficiary.name}
-                  <br />
-                  {r.beneficiary.tax_id}
+                  {r.beneficiary.name || "A definir"}
+                  {r.beneficiary.tax_id && <><br />{r.beneficiary.tax_id}</>}
                 </dd>
               </div>
               <div>
@@ -358,6 +361,7 @@ export function PaymentDetail({
                 <dd>
                   {
                     {
+                      "": "A definir",
                       pix: "PIX",
                       transfer: "Transferência / depósito",
                       boleto: "Boleto",
@@ -565,8 +569,7 @@ export function PaymentDetail({
                       />
                     </Field>
                   )}
-                  {status === "paid" &&
-                    !data.files.some((f) => f.kind === "receipt") && (
+                  {receiptMissing && (
                       <p className="payment-alert">
                         Anexe um comprovante na seção Documentos antes de
                         concluir o pagamento.
@@ -576,8 +579,7 @@ export function PaymentDetail({
                     disabled={
                       busy ||
                       !status ||
-                      (status === "paid" &&
-                        !data.files.some((f) => f.kind === "receipt"))
+                      receiptMissing
                     }
                     loading={busy}
                     onClick={() => void action("status")}
