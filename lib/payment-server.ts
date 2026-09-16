@@ -49,6 +49,7 @@ export function paymentFailure(error: unknown) {
       ? String(error.message)
       : "";
   const known: Record<string, [string, number]> = {
+    payment_not_found: ["Solicitação não encontrada ou excluída.", 404],
     payment_receipt_required: [
       "Anexe o comprovante antes de marcar como paga.",
       422,
@@ -206,6 +207,7 @@ export async function paymentAccess(
     .from("payment_requests")
     .select("*")
     .eq("id", id)
+    .is("deleted_at", null)
     .maybeSingle();
   if (error) throw error;
   if (

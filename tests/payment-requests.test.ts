@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   paymentCreateSchema,
+  paymentEditSchema,
+  paymentDeleteSchema,
+  paymentEventLabel,
   paymentActionSchema,
   detailsTotal,
   validTaxId,
@@ -280,7 +283,7 @@ test("closed requests have no transitions and received requests cannot skip appr
   assert.equal(PAYMENT_TRANSITIONS.submitted.includes("approved"), false);
   assert.equal(PAYMENT_TRANSITIONS.approved.includes("paid"), true);
 });
-test("only paid requests can be finalized and finalized requests remain read-only", () => {
+test("only paid requests can be finalized and finalized requests have no further status transitions", () => {
   assert.equal(PAYMENT_STATUSES.finalized, "Finalizado");
   assert.deepEqual(PAYMENT_TRANSITIONS.paid, ["finalized"]);
   for (const [status, transitions] of Object.entries(PAYMENT_TRANSITIONS))
@@ -290,4 +293,30 @@ test("only paid requests can be finalized and finalized requests remain read-onl
   assert.equal(paymentActionSchema.safeParse({
     action: "status", status: "finalized", version: 6,
   }).success, true);
+});
+
+test("editing reuses validation, requires a version and strips immutable metadata", () => {
+  const valid = { ...input(), version: 4, status: "finalized", source: "whatsapp", requester_user_id: "spoof" };
+  const edited = paymentEditSchema.parse(valid);
+  assert.equal(edited.version, 4);
+  for (const field of ["submission_id", "status", "source", "requester_user_id"])
+    assert.equal(field in edited, false);
+  for (const delta of [{version: undefined}, {version: -1}, {version: 0.5}, {requester_email: "invalid"}, {amount: 0}, {beneficiary: {}}])
+    assert.equal(paymentEditSchema.safeParse({ ...valid, ...delta }).success, false);
+  const termination = { type: "termination", cancellation_date: "2026-09-16", reason: "Distrato", construction_delay: false,
+    customer_name: "Cliente", iptu_responsibility: "company", restitution: 1000, iptu: 80, legal_fees: 100, court_costs: 50, damages: 25, document_type: "Distrato" };
+  assert.equal(paymentEditSchema.safeParse({ ...valid, details: termination, amount: 745 }).success, true);
+  assert.equal(paymentEditSchema.safeParse({ ...valid, details: termination, amount: 825 }).success, false);
+  assert.equal(paymentEditSchema.safeParse({ ...valid, details: { ...termination, iptu_responsibility: "customer" }, amount: 825 }).success, true);
+  const materials = { type: "materials", delivery_address: "Obra", items: [{description: "Cimento", quantity: 2, unit: "saco", unit_price: null}] };
+  assert.equal(paymentEditSchema.safeParse({ ...valid, details: materials, amount: null, beneficiary: {} }).success, true);
+  assert.equal(paymentEditSchema.safeParse({ ...valid, details: materials, amount: 0, beneficiary: {} }).success, false);
+});
+test("deletion requires optimistic concurrency and events distinguish edits from status updates", () => {
+  assert.equal(paymentDeleteSchema.safeParse({version: 0}).success, true);
+  assert.equal(paymentDeleteSchema.safeParse({}).success, false);
+  assert.equal(paymentDeleteSchema.safeParse({version: -1}).success, false);
+  assert.equal(paymentEventLabel("edited", "submitted"), "Solicitação editada");
+  assert.equal(paymentEventLabel("deleted", "paid"), "Solicitação excluída");
+  assert.equal(paymentEventLabel("status_changed", "finalized"), "Finalizado");
 });

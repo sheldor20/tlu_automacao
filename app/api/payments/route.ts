@@ -41,6 +41,7 @@ export async function GET(request: Request) {
         "id,protocol,type,title,company_name,company_key,requester_name,amount,budget_max,due_date,status,created_at,source",
         { count: "exact" },
       )
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (!mode || !actor.manager)
       query = query.eq("requester_user_id", actor.id);

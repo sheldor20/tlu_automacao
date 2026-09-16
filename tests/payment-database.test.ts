@@ -13,6 +13,7 @@ test("payment lifecycle includes protected finalization and an atomic email noti
     "20260916180924_payment_email_order.sql",
     "20260916192138_payment_finalized_status.sql",
     "20260916194044_payment_materials_optional_fields.sql",
+    "20260916203112_payment_edit_delete.sql",
   ]) await migrate(db, migration);
   await db.exec(`
     insert into auth.users(id,email) values
@@ -28,6 +29,7 @@ test("payment lifecycle includes protected finalization and an atomic email noti
   `);
   await db.exec(readFileSync(new URL("./payment-database.sql", import.meta.url), "utf8"));
   await db.exec(readFileSync(new URL("./payment-materials-database.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("./payment-edit-delete-database.sql", import.meta.url), "utf8"));
   assert.equal((await db.query("select id from public.payment_requests")).rows.length, 0);
   assert.equal((await db.query("select id from public.payment_email_outbox")).rows.length, 0);
 });

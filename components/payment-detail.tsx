@@ -1,12 +1,15 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   ArrowLeft,
   Download,
   FileCheck2,
   MessageSquare,
   RefreshCw,
+  Pencil,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { Button, Field } from "./ui";
@@ -18,6 +21,7 @@ import {
   PAYMENT_TRANSITIONS,
   PAYMENT_TYPES,
   paymentMoney,
+  paymentEventLabel,
   paymentProtocol,
   requiresPaymentReceipt,
   type PaymentEvent,
@@ -25,6 +29,10 @@ import {
   type PaymentRequest,
   type PaymentStatus,
 } from "@/lib/payment-requests";
+
+const PaymentRequestForm = dynamic(() => import("./payment-request-form").then((m) => m.PaymentRequestForm), {
+  loading: () => <p className="payment-loading">Carregando formulário…</p>,
+});
 
 type EmailState = {
   id: string;
@@ -79,6 +87,9 @@ export function PaymentDetail({
   const [data, setData] = useState<Detail | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const [editing, setEditing] = useState(false),
+    [deleted, setDeleted] = useState(false),
+    [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [status, setStatus] = useState<PaymentStatus | "">(""),
@@ -90,6 +101,7 @@ export function PaymentDetail({
     [fileKey, setFileKey] = useState(0);
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       setData(
         await paymentFetch(
@@ -136,6 +148,21 @@ export function PaymentDetail({
       setBusy(false);
     }
   }
+  async function remove() {
+    if (!data?.can_manage || !window.confirm(`Excluir ${paymentProtocol(data.request.protocol)} — ${data.request.title}? A solicitação sairá das listas e o link de acompanhamento será desativado. O registro será preservado para auditoria.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await paymentFetch(`/api/payments/${data.request.id}`, {
+        method: "DELETE", body: JSON.stringify({ version: data.request.version }),
+      });
+      setDeleted(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível excluir.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function upload() {
     if (!data) return;
     setBusy(true);
@@ -173,6 +200,26 @@ export function PaymentDetail({
         </Button>
       </div>
     );
+  if (deleted) return <section className="payment-section" role="status">
+    <h1>Solicitação excluída</h1>
+    <p>O pedido foi retirado das listas. A exclusão ficou registrada e o solicitante será avisado por e-mail.</p>
+    <Link className="button button-secondary" href="/pagamentos">Voltar às solicitações</Link>
+  </section>;
+  if (editing && data.can_manage) return <>
+    <header className="payment-detail-head"><div>
+      <span className="eyebrow">{paymentProtocol(data.request.protocol)}</span>
+      <h1>Editar solicitação</h1>
+      <p>Revise os dados e salve as alterações.</p>
+    </div></header>
+    <PaymentRequestForm key={`${data.request.id}:${data.request.version}`}
+      initialRequest={data.request} onCancel={() => { setEditing(false); window.scrollTo(0, 0); }}
+      onSaved={() => {
+        setEditing(false);
+        window.scrollTo(0, 0);
+        setNotice("Solicitação atualizada. As alterações foram registradas no histórico.");
+        void load();
+      }} />
+  </>;
   const r = data.request,
     closed = CLOSED_PAYMENT_STATUSES.includes(r.status),
     transitions = PAYMENT_TRANSITIONS[r.status],
@@ -199,6 +246,15 @@ export function PaymentDetail({
           {PAYMENT_STATUSES[r.status]}
         </span>
       </header>
+      {data.can_manage && <div className="payment-manage-actions">
+        <Button variant="secondary" disabled={busy || loading} onClick={() => { setNotice(""); setEditing(true); }}>
+          <Pencil size={16} /> Editar solicitação
+        </Button>
+        <Button variant="danger" disabled={busy || loading} onClick={() => void remove()}>
+          <Trash2 size={16} /> Excluir solicitação
+        </Button>
+      </div>}
+      {notice && <p className="payment-alert" role="status">{notice}</p>}
       {error && (
         <div role="alert" className="payment-alert">
           {error}
@@ -613,7 +669,7 @@ export function PaymentDetail({
             <ol className="payment-timeline">
               {[...data.events].reverse().map((event) => (
                 <li key={event.id}>
-                  <strong>{PAYMENT_STATUSES[event.status]}</strong>
+                  <strong>{paymentEventLabel(event.kind, event.status)}</strong>
                   <p className="payment-preline">
                     {event.message || "Status atualizado."}
                   </p>
