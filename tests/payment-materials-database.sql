@@ -16,7 +16,7 @@ begin
         when 'materials' then jsonb_build_object('type',v_type,'delivery_address','Almoxarifado','items',jsonb_build_array(jsonb_build_object('description','Cimento','quantity',2,'unit','saco','unit_price',null)))
         when 'bills' then jsonb_build_object('type',v_type,'issuer','Fornecedor','document_type','Boleto','reference','Teste')
         when 'service' then jsonb_build_object('type',v_type,'scope','Serviço de teste','service_date',current_date,'document_type','RPA')
-        else jsonb_build_object('type',v_type,'cancellation_date',current_date,'reason','Teste','customer_name','Cliente','contract','','construction_delay',false,'iptu_responsibility','not_applicable','restitution',100,'iptu',0,'legal_fees',0,'court_costs',0,'damages',0,'document_type','Distrato') end,
+        else jsonb_build_object('type',v_type,'cancellation_date',current_date,'reason','Teste','customer_name','Cliente','contract','','construction_delay',false,'iptu_responsibility','company','restitution',100,'iptu',0,'legal_fees',0,'court_costs',0,'damages',0,'document_type','Distrato') end,
       'quotes','[]'::jsonb);
     if v_type<>'materials' then
       begin

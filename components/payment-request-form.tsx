@@ -9,6 +9,7 @@ import {
   PAYMENT_TYPES,
   PAYMENT_FILE_TYPES,
   detailsTotal,
+  terminationTotal,
   paymentCreateSchema,
   paymentMoney,
   paymentProtocol,
@@ -54,6 +55,7 @@ export function PaymentRequestForm({
     court_costs: 0,
     damages: 0,
   });
+  const [iptuResponsibility, setIptuResponsibility] = useState<"company" | "customer" | "">("");
   useEffect(() => {
     let active = true;
     async function load() {
@@ -98,9 +100,9 @@ export function PaymentRequestForm({
     type === "materials"
       ? detailsTotal({ type: "materials", items, delivery_address: "" })
       : type === "termination"
-        ? Math.round(
-            Object.values(terminationAmounts).reduce((a, b) => a + b, 0) * 100,
-          ) / 100
+        ? iptuResponsibility
+          ? terminationTotal({ ...terminationAmounts, iptu_responsibility: iptuResponsibility })
+          : null
         : null;
 
   async function sendFiles(result: Created) {
@@ -163,7 +165,7 @@ export function PaymentRequestForm({
                   block: s("block"),
                   lawsuit: s("lawsuit"),
                   iptu_responsibility: s("iptu_responsibility") as
-                    "company" | "customer" | "not_applicable",
+                    "company" | "customer",
                   document_type: s("document_type"),
                   ...terminationAmounts,
                 }
@@ -403,8 +405,11 @@ export function PaymentRequestForm({
             </Field>
           ) : (
             <div className="payment-total">
-              <span>Valor calculado</span>
+              <span>{type === "termination" ? "Valor a pagar" : "Valor calculado"}</span>
               <strong>{paymentMoney(total)}</strong>
+              {type === "termination" && <small>
+                Restituição menos honorários, custas e danos. IPTU descontado somente quando a responsabilidade é da empresa/Terra Lotus.
+              </small>}
             </div>
           )}
           <Field
@@ -588,11 +593,11 @@ export function PaymentRequestForm({
                 <input name="lawsuit" maxLength={200} />
               </Field>
               <Field label="Responsabilidade pelo IPTU *">
-                <select name="iptu_responsibility" required defaultValue="">
+                <select name="iptu_responsibility" required value={iptuResponsibility}
+                  onChange={(e) => setIptuResponsibility(e.target.value as typeof iptuResponsibility)}>
                   <option value="">Selecione</option>
-                  <option value="company">Empresa</option>
+                  <option value="company">Empresa / Terra Lotus</option>
                   <option value="customer">Cliente</option>
-                  <option value="not_applicable">Não se aplica</option>
                 </select>
               </Field>
               {Object.entries({

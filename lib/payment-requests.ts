@@ -169,7 +169,7 @@ export const paymentDetailsSchema = z.discriminatedUnion("type", [
     lot: text(100).default(""),
     block: text(100).default(""),
     lawsuit: text(200).default(""),
-    iptu_responsibility: z.enum(["company", "customer", "not_applicable"]),
+    iptu_responsibility: z.enum(["company", "customer"]),
     restitution: money,
     iptu: money,
     legal_fees: money,
@@ -228,23 +228,22 @@ export const paymentCreateSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["amount"],
-        message: "O valor deve corresponder à soma dos itens do formulário.",
+        message: "O valor deve corresponder ao cálculo do formulário.",
       });
   });
 export type PaymentInput = z.infer<typeof paymentCreateSchema>;
 export type PaymentDetails = z.infer<typeof paymentDetailsSchema>;
+export function terminationTotal(details: Pick<Extract<PaymentDetails, { type: "termination" }>,
+  "restitution" | "iptu" | "legal_fees" | "court_costs" | "damages" | "iptu_responsibility"
+>) {
+  const cents = (value: number) => Math.round(value * 100);
+  return (cents(details.restitution) - cents(details.legal_fees) -
+    cents(details.court_costs) - cents(details.damages) -
+    (details.iptu_responsibility === "company" ? cents(details.iptu) : 0)) / 100;
+}
 export function detailsTotal(details: PaymentDetails) {
   if (details.type === "termination")
-    return (
-      Math.round(
-        (details.restitution +
-          details.iptu +
-          details.legal_fees +
-          details.court_costs +
-          details.damages) *
-          100,
-      ) / 100
-    );
+    return terminationTotal(details);
   if (details.type === "materials") {
     if (details.items.some((item) => item.unit_price === null)) return null;
     return (
