@@ -2,6 +2,7 @@ import { paymentDb } from "./payment-server";
 import {
   PAYMENT_STATUSES,
   paymentProtocol,
+  paymentEventLabel,
   type PaymentStatus,
 } from "./payment-requests";
 
@@ -47,7 +48,7 @@ export async function dispatchPaymentEmails() {
         const [requestResult, eventResult, tokenResult] = await Promise.all([
           db
             .from("payment_requests")
-            .select("protocol,requester_name,requester_email,title")
+            .select("protocol,requester_name,requester_email,title,deleted_at")
             .eq("id", job.request_id)
             .single(),
           db
@@ -65,12 +66,18 @@ export async function dispatchPaymentEmails() {
           throw new Error("Não foi possível carregar a notificação.");
         const r = requestResult.data,
           event = eventResult.data;
-        const label = PAYMENT_STATUSES[event.status as PaymentStatus];
+        const label = r.deleted_at ? "Excluída" : PAYMENT_STATUSES[event.status as PaymentStatus];
         const link = `${origin}/acompanhar-pagamento#${tokenResult.data.token}`;
-        const subject = `${paymentProtocol(r.protocol)} · ${event.kind === "reply" ? "Nova informação" : label}`;
+        const subject = `${paymentProtocol(r.protocol)} · ${paymentEventLabel(event.kind, event.status as PaymentStatus)}`;
         const message =
           event.message ||
           `O status da sua solicitação mudou para ${label.toLowerCase()}.`;
+        const followupText = r.deleted_at
+          ? "Esta solicitação foi excluída pela gestão. O link de acompanhamento foi desativado."
+          : `Acompanhe, consulte comprovantes e envie informações: ${link}\n\nEste link é pessoal. Não o compartilhe.`;
+        const followupHtml = r.deleted_at
+          ? "<p>Esta solicitação foi excluída pela gestão. O link de acompanhamento foi desativado.</p>"
+          : `<p><a style="display:inline-block;background:#263329;color:white;padding:14px 20px;border-radius:8px" href="${escape(link)}">Acompanhar solicitação</a></p><p>Consulte comprovantes e envie informações pelo link acima.</p><small>Este link é pessoal. Não o compartilhe.</small>`;
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
           signal: AbortSignal.timeout(15_000),
@@ -83,8 +90,8 @@ export async function dispatchPaymentEmails() {
             from,
             to: [r.requester_email],
             subject,
-            text: `Olá, ${r.requester_name}.\n\n${r.title}\nStatus: ${label}\n\n${message}\n\nAcompanhe, consulte comprovantes e envie informações: ${link}\n\nEste link é pessoal. Não o compartilhe.\nTerra Lótus`,
-            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:24px auto;color:#263329"><p style="letter-spacing:2px">TERRA LÓTUS</p><h1 style="font-size:24px">${escape(subject)}</h1><p>Olá, ${escape(r.requester_name)}.</p><p><strong>${escape(r.title)}</strong></p><p>Status: ${escape(label)}</p><p style="white-space:pre-line">${escape(message)}</p><p><a style="display:inline-block;background:#263329;color:white;padding:14px 20px;border-radius:8px" href="${escape(link)}">Acompanhar solicitação</a></p><p>Consulte comprovantes e envie informações pelo link acima.</p><small>Este link é pessoal. Não o compartilhe.</small></div>`,
+            text: `Olá, ${r.requester_name}.\n\n${r.title}\nStatus: ${label}\n\n${message}\n\n${followupText}\nTerra Lótus`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:24px auto;color:#263329"><p style="letter-spacing:2px">TERRA LÓTUS</p><h1 style="font-size:24px">${escape(subject)}</h1><p>Olá, ${escape(r.requester_name)}.</p><p><strong>${escape(r.title)}</strong></p><p>Status: ${escape(label)}</p><p style="white-space:pre-line">${escape(message)}</p>${followupHtml}</div>`,
           }),
         });
         const result = await response.json().catch(() => ({}));

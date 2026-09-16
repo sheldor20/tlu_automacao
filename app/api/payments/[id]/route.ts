@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import {
+  PaymentError,
   paymentAccess,
   paymentBody,
   paymentDb,
@@ -7,7 +8,7 @@ import {
   paymentJson,
   paymentLimit,
 } from "@/lib/payment-server";
-import { paymentActionSchema } from "@/lib/payment-requests";
+import { paymentActionSchema, paymentEditSchema, paymentDeleteSchema } from "@/lib/payment-requests";
 import { dispatchPaymentEmails } from "@/lib/payment-email";
 export const maxDuration = 240;
 type Context = { params: Promise<{ id: string }> };
@@ -83,4 +84,36 @@ export async function PATCH(request: Request, context: Context) {
   } catch (error) {
     return paymentFailure(error);
   }
+}
+
+async function manageRequest(request: Request, context: Context, action: "edit" | "delete") {
+  try {
+    const db = paymentDb(), { id } = await context.params;
+    const { actor, record } = await paymentAccess(request, db, id);
+    if (!actor?.manager) throw new PaymentError("Acesso restrito à gestão de pagamentos.", 403);
+    await paymentLimit(db, `manage:${actor.id}`, 60, 600);
+    const body = await paymentBody(request);
+    const payload = action === "edit" ? paymentEditSchema.parse(body) : paymentDeleteSchema.parse(body);
+    const { error } = await db.rpc("manage_payment_request", {
+      p_id: record.id,
+      p_actor: actor.id,
+      p_version: payload.version,
+      p_action: action,
+      p_data: action === "edit" ? payload : {},
+    });
+    if (error) throw error;
+    after(async () => {
+      try { await dispatchPaymentEmails(); }
+      catch { console.error("Payment notifications remain queued"); }
+    });
+    return paymentJson({ ok: true });
+  } catch (error) {
+    return paymentFailure(error);
+  }
+}
+export async function PUT(request: Request, context: Context) {
+  return manageRequest(request, context, "edit");
+}
+export async function DELETE(request: Request, context: Context) {
+  return manageRequest(request, context, "delete");
 }

@@ -185,7 +185,7 @@ export const paymentDetailsSchema = z.discriminatedUnion("type", [
     barcode: text(100).default(""),
   }),
 ]);
-export const paymentCreateSchema = z
+const paymentFieldsSchema = z
   .object({
     submission_id: z.uuid(),
     requester_name: required(200),
@@ -211,8 +211,11 @@ export const paymentCreateSchema = z
     beneficiary: beneficiaryFieldsSchema.default(beneficiaryFieldsSchema.parse({})),
     details: paymentDetailsSchema,
     website: z.literal("").default(""),
-  })
-  .superRefine((data, ctx) => {
+  });
+function validatePayment(
+  data: Pick<z.infer<typeof paymentFieldsSchema>, "details" | "amount" | "beneficiary">,
+  ctx: z.RefinementCtx,
+) {
     const materials = data.details.type === "materials";
     if (!materials && (data.amount === null || data.amount <= 0))
       ctx.addIssue({ code: "custom", path: ["amount"], message: "Informe um valor maior que zero." });
@@ -230,7 +233,19 @@ export const paymentCreateSchema = z
         path: ["amount"],
         message: "O valor deve corresponder ao cálculo do formulário.",
       });
-  });
+}
+export const paymentCreateSchema = paymentFieldsSchema.superRefine(validatePayment);
+export const paymentEditSchema = paymentFieldsSchema
+  .omit({ submission_id: true, website: true })
+  .extend({ version: z.number().int().nonnegative() })
+  .superRefine(validatePayment);
+export const paymentDeleteSchema = z.object({ version: z.number().int().nonnegative() });
+export function paymentEventLabel(kind: string, status: PaymentStatus) {
+  if (kind === "edited") return "Solicitação editada";
+  if (kind === "deleted") return "Solicitação excluída";
+  if (kind === "reply") return "Nova informação";
+  return PAYMENT_STATUSES[status];
+}
 export type PaymentInput = z.infer<typeof paymentCreateSchema>;
 export type PaymentDetails = z.infer<typeof paymentDetailsSchema>;
 export function terminationTotal(details: Pick<Extract<PaymentDetails, { type: "termination" }>,

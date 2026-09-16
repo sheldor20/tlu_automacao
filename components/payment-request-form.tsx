@@ -11,9 +11,11 @@ import {
   detailsTotal,
   terminationTotal,
   paymentCreateSchema,
+  paymentEditSchema,
   paymentMoney,
   paymentProtocol,
   type PaymentDetails,
+  type PaymentRequest,
   type PaymentType,
 } from "@/lib/payment-requests";
 import { paymentFetch, uploadPaymentFile } from "@/lib/payment-client";
@@ -22,40 +24,47 @@ type Company = { company_key: string; name: string };
 type Created = { id: string; protocol: number; token: string };
 export function PaymentRequestForm({
   publicForm = false,
+  initialRequest,
+  onSaved,
+  onCancel,
 }: {
   publicForm?: boolean;
+  initialRequest?: PaymentRequest;
+  onSaved?: () => void;
+  onCancel?: () => void;
 }) {
-  const [type, setType] = useState<PaymentType>("service");
+  const [type, setType] = useState<PaymentType>(initialRequest?.type || "service");
   const [companies, setCompanies] = useState<Company[]>([]),
     [companyDate, setCompanyDate] = useState("");
   const [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
-  const [personType, setPersonType] = useState("PF"),
-    [requiredMethod, setRequiredMethod] = useState("pix"),
-    [materialsMethod, setMaterialsMethod] = useState("");
+  const [personType, setPersonType] = useState<string>(initialRequest?.beneficiary.person_type || "PF"),
+    [requiredMethod, setRequiredMethod] = useState<string>(initialRequest?.beneficiary.method || "pix"),
+    [materialsMethod, setMaterialsMethod] = useState<string>(initialRequest?.beneficiary.method || "");
   const materials = type === "materials";
   const method = materials ? materialsMethod : requiredMethod;
-  const [identity, setIdentity] = useState({ name: "", email: "" });
+  const [identity, setIdentity] = useState({ name: initialRequest?.requester_name || "", email: initialRequest?.requester_email || "" });
   const [submissionId, setSubmissionId] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [items, setItems] = useState<Array<{
     id: number; description: string; quantity: number; unit: string; unit_price: number | null;
-  }>>([
-    { id: 1, description: "", quantity: 1, unit: "un", unit_price: null },
-  ]);
+  }>>(initialRequest?.details.type === "materials"
+    ? initialRequest.details.items.map((item, index) => ({ ...item, id: index + 1 }))
+    : [{ id: 1, description: "", quantity: 1, unit: "un", unit_price: null }]);
   const [quotes, setQuotes] = useState<
     Array<{ id: number; supplier: string; amount: number; notes: string }>
-  >([]);
+  >(initialRequest?.quotes.map((quote, index) => ({ ...quote, id: index + 1 })) || []);
+  const originalTermination = initialRequest?.details.type === "termination" ? initialRequest.details : null;
   const [terminationAmounts, setTerminationAmounts] = useState({
-    restitution: 0,
-    iptu: 0,
-    legal_fees: 0,
-    court_costs: 0,
-    damages: 0,
+    restitution: originalTermination?.restitution || 0,
+    iptu: originalTermination?.iptu || 0,
+    legal_fees: originalTermination?.legal_fees || 0,
+    court_costs: originalTermination?.court_costs || 0,
+    damages: originalTermination?.damages || 0,
   });
-  const [iptuResponsibility, setIptuResponsibility] = useState<"company" | "customer" | "">("");
+  const [iptuResponsibility, setIptuResponsibility] = useState<"company" | "customer" | "">(originalTermination?.iptu_responsibility || "");
   useEffect(() => {
     let active = true;
     async function load() {
@@ -65,7 +74,7 @@ export function PaymentRequestForm({
         setCompanies(data.companies);
         setCompanyDate(data.synchronized_at || "");
         setSubmissionId(crypto.randomUUID());
-        if (!publicForm) {
+        if (!publicForm && !initialRequest) {
           const session = await getSupabase()?.auth.getSession();
           if (session?.data.session) {
             const profile = await getSupabase()!
@@ -95,7 +104,14 @@ export function PaymentRequestForm({
     return () => {
       active = false;
     };
-  }, [publicForm]);
+  }, [publicForm, initialRequest]);
+  const detailDefault = (name: string) => {
+    const details = initialRequest?.details;
+    return details?.type === type && name in details
+      ? String((details as unknown as Record<string, unknown>)[name] ?? "") : "";
+  };
+  const availableCompanies = initialRequest && !companies.some((c) => c.company_key === initialRequest.company_key)
+    ? [{ company_key: initialRequest.company_key, name: initialRequest.company_name }, ...companies] : companies;
   const total =
     type === "materials"
       ? detailsTotal({ type: "materials", items, delivery_address: "" })
@@ -212,6 +228,14 @@ export function PaymentRequestForm({
       });
       if (!input.success)
         throw new Error(input.error.issues.map((i) => i.message).join(" "));
+      if (initialRequest) {
+        const update = paymentEditSchema.parse({ ...input.data, version: initialRequest.version });
+        await paymentFetch(`/api/payments/${initialRequest.id}`, {
+          method: "PUT", body: JSON.stringify(update),
+        });
+        onSaved?.();
+        return;
+      }
       const result = await paymentFetch("/api/payments", {
         method: "POST",
         body: JSON.stringify(input.data),
@@ -318,22 +342,22 @@ export function PaymentRequestForm({
       <fieldset className="payment-section" disabled={saving}>
         <legend>1. Solicitação e empresa</legend>
         <div className="form-grid">
-          <Field label="Seu nome *">
+          <Field label={initialRequest ? "Nome do solicitante *" : "Seu nome *"}>
             <input
               name="requester_name"
               value={identity.name}
               onChange={(e) =>
                 setIdentity({ ...identity, name: e.target.value })
               }
-              readOnly={!publicForm}
+              readOnly={!publicForm && !initialRequest}
               required
               maxLength={200}
               autoComplete="name"
             />
           </Field>
           <Field
-            label="Seu e-mail *"
-            hint="Você receberá as atualizações neste endereço."
+            label={initialRequest ? "E-mail do solicitante *" : "Seu e-mail *"}
+            hint="As atualizações serão enviadas para este endereço."
           >
             <input
               name="requester_email"
@@ -342,14 +366,14 @@ export function PaymentRequestForm({
               onChange={(e) =>
                 setIdentity({ ...identity, email: e.target.value })
               }
-              readOnly={!publicForm}
+              readOnly={!publicForm && !initialRequest}
               required
               autoComplete="email"
             />
           </Field>
           <Field label="Telefone">
             <input
-              name="requester_phone"
+              name="requester_phone" defaultValue={initialRequest?.requester_phone ?? ""}
               type="tel"
               maxLength={40}
               autoComplete="tel"
@@ -363,9 +387,9 @@ export function PaymentRequestForm({
                 : undefined
             }
           >
-            <select name="company_key" required defaultValue="">
+            <select name="company_key" required defaultValue={initialRequest?.company_key || ""}>
               <option value="">Selecione a empresa</option>
-              {companies.map((c) => (
+              {availableCompanies.map((c) => (
                 <option key={c.company_key} value={c.company_key}>
                   {c.name}
                 </option>
@@ -373,14 +397,14 @@ export function PaymentRequestForm({
             </select>
           </Field>
           <Field label="Obra / empreendimento">
-            <input name="project_name" maxLength={300} />
+            <input name="project_name" defaultValue={initialRequest?.project_name ?? ""} maxLength={300} />
           </Field>
           <Field label="Data desejada de pagamento *">
-            <input name="due_date" type="date" required />
+            <input name="due_date" defaultValue={initialRequest?.due_date.slice(0, 10) ?? ""} type="date" required />
           </Field>
           <Field label="Título da solicitação *" className="form-span-2">
             <input
-              name="title"
+              name="title" defaultValue={initialRequest?.title ?? ""}
               required
               maxLength={180}
               placeholder="Ex.: Pagamento de serviço de manutenção"
@@ -390,12 +414,12 @@ export function PaymentRequestForm({
             label="Descrição, características e justificativa *"
             className="form-span-2"
           >
-            <textarea name="description" required maxLength={8000} rows={4} />
+            <textarea name="description" defaultValue={initialRequest?.description ?? ""} required maxLength={8000} rows={4} />
           </Field>
           {type === "service" || type === "bills" ? (
             <Field label="Valor solicitado (R$) *">
               <input
-                name="amount"
+                name="amount" defaultValue={initialRequest?.amount ?? ""}
                 type="number"
                 min="0.01"
                 max="999999999.99"
@@ -417,7 +441,7 @@ export function PaymentRequestForm({
             hint="Deixe em branco quando ainda não houver um limite definido."
           >
             <input
-              name="budget_max"
+              name="budget_max" defaultValue={initialRequest?.budget_max ?? ""}
               type="number"
               min="0"
               max="999999999.99"
@@ -435,10 +459,10 @@ export function PaymentRequestForm({
                 label="Serviço a executar / executado *"
                 className="form-span-2"
               >
-                <textarea name="scope" required rows={3} maxLength={5000} />
+                <textarea name="scope" defaultValue={detailDefault("scope")} required rows={3} maxLength={5000} />
               </Field>
               <Field label="Data do serviço *">
-                <input name="service_date" type="date" required />
+                <input name="service_date" defaultValue={detailDefault("service_date")} type="date" required />
               </Field>
             </>
           )}
@@ -449,7 +473,7 @@ export function PaymentRequestForm({
                 className="form-span-2"
               >
                 <textarea
-                  name="delivery_address"
+                  name="delivery_address" defaultValue={detailDefault("delivery_address")}
                   required
                   maxLength={1000}
                   rows={2}
@@ -565,32 +589,32 @@ export function PaymentRequestForm({
           {type === "termination" && (
             <>
               <Field label="Data do cancelamento *">
-                <input name="cancellation_date" type="date" required />
+                <input name="cancellation_date" defaultValue={detailDefault("cancellation_date")} type="date" required />
               </Field>
               <Field label="Motivado por atraso da obra? *">
-                <select name="construction_delay" required defaultValue="">
+                <select name="construction_delay" required defaultValue={originalTermination ? (originalTermination.construction_delay ? "yes" : "no") : ""}>
                   <option value="">Selecione</option>
                   <option value="yes">Sim</option>
                   <option value="no">Não</option>
                 </select>
               </Field>
               <Field label="Motivo do distrato *" className="form-span-2">
-                <textarea name="reason" required rows={2} maxLength={1000} />
+                <textarea name="reason" defaultValue={detailDefault("reason")} required rows={2} maxLength={1000} />
               </Field>
               <Field label="Nome do cliente *">
-                <input name="customer_name" required maxLength={200} />
+                <input name="customer_name" defaultValue={detailDefault("customer_name")} required maxLength={200} />
               </Field>
               <Field label="Contrato">
-                <input name="contract" maxLength={200} />
+                <input name="contract" defaultValue={detailDefault("contract")} maxLength={200} />
               </Field>
               <Field label="Lote">
-                <input name="lot" maxLength={100} />
+                <input name="lot" defaultValue={detailDefault("lot")} maxLength={100} />
               </Field>
               <Field label="Quadra">
-                <input name="block" maxLength={100} />
+                <input name="block" defaultValue={detailDefault("block")} maxLength={100} />
               </Field>
               <Field label="Número do processo judicial">
-                <input name="lawsuit" maxLength={200} />
+                <input name="lawsuit" defaultValue={detailDefault("lawsuit")} maxLength={200} />
               </Field>
               <Field label="Responsabilidade pelo IPTU *">
                 <select name="iptu_responsibility" required value={iptuResponsibility}
@@ -630,11 +654,11 @@ export function PaymentRequestForm({
           {type === "bills" && (
             <>
               <Field label="Emissor / credor *">
-                <input name="issuer" required maxLength={200} />
+                <input name="issuer" defaultValue={detailDefault("issuer")} required maxLength={200} />
               </Field>
               <Field label="Referência / competência *">
                 <input
-                  name="reference"
+                  name="reference" defaultValue={detailDefault("reference")}
                   required
                   maxLength={200}
                   placeholder="Ex.: Energia — setembro/2026"
@@ -644,14 +668,17 @@ export function PaymentRequestForm({
                 label="Linha digitável / código de barras"
                 className="form-span-2"
               >
-                <input name="barcode" maxLength={100} inputMode="numeric" />
+                <input name="barcode" defaultValue={detailDefault("barcode")} maxLength={100} inputMode="numeric" />
               </Field>
             </>
           )}
           {type !== "materials" && (
             <Field label="Tipo do documento *">
-              <select name="document_type" required defaultValue="">
+              <select name="document_type" required defaultValue={detailDefault("document_type")}>
                 <option value="">Selecione</option>
+                {detailDefault("document_type") && !["Nota fiscal", "RPA", "Recibo", "Boleto", "Guia", "DARF", "Contrato / distrato", "Outros"].includes(detailDefault("document_type")) && (
+                  <option>{detailDefault("document_type")}</option>
+                )}
                 {[
                   "Nota fiscal",
                   "RPA",
@@ -688,21 +715,21 @@ export function PaymentRequestForm({
               (materials ? "" : " *")
             }
           >
-            <input name="beneficiary_name" required={!materials} maxLength={200} />
+            <input name="beneficiary_name" defaultValue={initialRequest?.beneficiary.name || ""} required={!materials} maxLength={200} />
           </Field>
           <Field label={`${personType === "PF" ? "CPF" : "CNPJ"}${materials ? "" : " *"}`}>
             <input
-              name="tax_id"
+              name="tax_id" defaultValue={initialRequest?.beneficiary.tax_id || ""}
               required={!materials}
               maxLength={30}
               inputMode={personType === "PF" ? "numeric" : "text"}
             />
           </Field>
           <Field label="E-mail do beneficiário">
-            <input name="beneficiary_email" type="email" />
+            <input name="beneficiary_email" defaultValue={initialRequest?.beneficiary.email || ""} type="email" />
           </Field>
           <Field label="Telefone do beneficiário">
-            <input name="beneficiary_phone" type="tel" maxLength={40} />
+            <input name="beneficiary_phone" defaultValue={initialRequest?.beneficiary.phone || ""} type="tel" maxLength={40} />
           </Field>
           <Field label={`Forma de pagamento${materials ? "" : " *"}`}>
             <select value={method} onChange={(e) =>
@@ -718,22 +745,22 @@ export function PaymentRequestForm({
           </Field>
           {method === "pix" && (
             <Field label="Chave PIX *" className="form-span-2">
-              <input name="pix_key" required maxLength={200} />
+              <input name="pix_key" defaultValue={initialRequest?.beneficiary.pix_key || ""} required maxLength={200} />
             </Field>
           )}
           {method === "transfer" && (
             <>
               <Field label="Banco *">
-                <input name="bank" required maxLength={100} />
+                <input name="bank" defaultValue={initialRequest?.beneficiary.bank || ""} required maxLength={100} />
               </Field>
               <Field label="Agência e dígito *">
-                <input name="branch" required maxLength={30} />
+                <input name="branch" defaultValue={initialRequest?.beneficiary.branch || ""} required maxLength={30} />
               </Field>
               <Field label="Conta e dígito *">
-                <input name="account" required maxLength={50} />
+                <input name="account" defaultValue={initialRequest?.beneficiary.account || ""} required maxLength={50} />
               </Field>
               <Field label="Titular da conta *">
-                <input name="account_holder" required maxLength={200} />
+                <input name="account_holder" defaultValue={initialRequest?.beneficiary.account_holder || ""} required maxLength={200} />
               </Field>
             </>
           )}
@@ -818,7 +845,7 @@ export function PaymentRequestForm({
           <Plus size={16} />
           Adicionar orçamento
         </Button>
-        <Field
+        {!initialRequest && <Field
           label="Anexos"
           hint="PDF, JPG, PNG, WebP, Word ou Excel. Até 10 MB por arquivo."
         >
@@ -828,7 +855,8 @@ export function PaymentRequestForm({
             multiple
             onChange={(e) => setFiles(Array.from(e.target.files || []))}
           />
-        </Field>
+        </Field>}
+        {initialRequest && <p>Os anexos existentes serão mantidos. Gerencie os documentos na página da solicitação.</p>}
         {files.length > 0 && <p>{files.length} arquivo(s) selecionado(s).</p>}
       </fieldset>
       <div className="payment-honeypot" aria-hidden="true">
@@ -842,7 +870,7 @@ export function PaymentRequestForm({
           {error}
         </div>
       )}
-      {!companies.length && (
+      {!availableCompanies.length && (
         <div className="payment-alert" role="alert">
           A lista de empresas não está disponível. Recarregue a página ou avise
           a administração.
@@ -850,16 +878,16 @@ export function PaymentRequestForm({
       )}
       <div className="payment-form-footer">
         <p>
-          Confira os dados do beneficiário antes de enviar. A solicitação será
-          analisada pela equipe responsável.
+          {initialRequest ? "As alterações serão registradas no histórico e comunicadas ao solicitante por e-mail." : "Confira os dados do beneficiário antes de enviar. A solicitação será analisada pela equipe responsável."}
         </p>
+        {initialRequest && <Button type="button" variant="secondary" disabled={saving} onClick={onCancel}>Cancelar edição</Button>}
         <Button
           type="submit"
           loading={saving}
-          disabled={saving || !companies.length || !submissionId}
+          disabled={saving || !availableCompanies.length || !submissionId}
         >
           <Send size={16} />
-          Enviar solicitação
+          {initialRequest ? "Salvar alterações" : "Enviar solicitação"}
         </Button>
       </div>
     </form>
