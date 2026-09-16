@@ -24,9 +24,12 @@ test("grava o mesmo snapshot nos três cartões e nos anos futuros", () => {
   const { rows, projection } = vgvIndicatorRows(source(), "2026-09-14T18:00:00Z", "2026-09-14");
   assert.equal(projection.adjustedTotal, 975.3);
   assert.equal(projection.overdue, 0);
-  assert.deepEqual(projection.points.map((point) => point.closingBalance), [500, 500, 0]);
+  assert.deepEqual(projection.points.slice(0, 3).map((point) => point.closingBalance), [500, 500, 0]);
+  assert.equal(projection.points.length, 175);
+  assert.equal(projection.points.at(-1)?.year, 2200);
+  assert.ok(projection.points.slice(3).every(point => point.receipts === 0 && point.closingBalance === 0));
   assert.ok(rows.every((row) => row.reference_month === "2026-09-01" && row.metadata.synchronized_at === "2026-09-14T18:00:00Z"));
-  assert.equal(rows.length, 6);
+  assert.equal(rows.length, 178);
 });
 
 test("não grava uma carga parcial, sem o filtro obrigatório ou sem conciliação", () => {

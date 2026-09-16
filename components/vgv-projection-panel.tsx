@@ -43,7 +43,7 @@ export function VgvProjectionPanel({ values }: { values: ManagementIndicatorValu
           <div><span>Fluxo de caixa · Terra Lótus</span><h2>VGV projetado futuro</h2><p>Saldo das entradas previstas após os recebimentos até o fim de cada ano. Valores em reais.</p>{periodLabel ? <p>Período: {periodLabel}</p> : null}</div>
           <div className="vgv-source-date">{updated ? `Atualizado em ${updated}` : "Aguardando primeira carga do Qlik"}{stale ? <strong>Atualização pendente</strong> : null}</div>
         </div>
-        <TrendChart wide labels={labels} maximumFractionDigits={2} valueLabelInterval={Math.max(1, Math.ceil(labels.length / 7))} highlightLatest={false} emptyLabel="Os valores aparecerão após a sincronização validada do Qlik."
+        <TrendChart wide labels={labels} maximumFractionDigits={2} axisLabelInterval={Math.max(1, Math.ceil(labels.length / 10))} valueLabelInterval={Math.max(1, Math.ceil(labels.length / 7))} highlightLatest={false} emptyLabel="Os valores aparecerão após a sincronização validada do Qlik."
           series={[
             { label: "VGV a receber", color: "#4b98c4", values: annual.length ? [total, ...annual.map((row) => row.value)] : [] },
           ]} />

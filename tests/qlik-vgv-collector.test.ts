@@ -8,7 +8,7 @@ import { vgvAppsForDate } from '../lib/qlik-vgv.ts';
 const source = readFileSync(new URL('../lib/qlik-cloud.ts', import.meta.url), 'utf8');
 const collector = ts.transpileModule(source.slice(source.indexOf('async function readQlikEngineMetrics('), source.indexOf('async function launchBrowser(')), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
-async function collect({ missingTotal = false, rejectPeriod = false } = {}) {
+async function collect({ missingTotal = false, rejectPeriod = false, lastDate = { qText: '01/01/2028' } as { qText: string; qNum?: number } } = {}) {
   const fields = ['Grupo Empresa', 'Agrupador Geral Fluxo Financeiro', 'Período'];
   const variables = new Map<number, { qNum?: number; qText?: string }>();
   const names = new Map<string, number>();
@@ -59,7 +59,7 @@ async function collect({ missingTotal = false, rejectPeriod = false } = {}) {
         result = { qDataPages: [{ qMatrix: [
           [{ qText: '01/09/2026' }, { qNum: 100 }],
           [{ qText: '01/12/2026' }, { qNum: 400 }],
-          [{ qText: '01/01/2028' }, { qNum: 500 }],
+          [lastDate, { qNum: 500 }],
         ] }] };
       } else throw new Error(`Unexpected call ${method}`);
       queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ id, result }) }));
@@ -81,4 +81,13 @@ test('lê o total da coluna azul e datas do DFC com período dual confirmado', a
 test('interrompe a carga se o Qlik não confirmar o período ou omitir o total', async () => {
   await assert.rejects(collect({ rejectPeriod: true }), /não confirmou/);
   await assert.rejects(collect({ missingTotal: true }), /total da coluna/);
+});
+
+test('aceita datas de recebimento até o fim do período em 2200', async () => {
+  const qNum = (Date.UTC(2200, 11, 31) - Date.UTC(1899, 11, 30)) / 86_400_000;
+  for (const lastDate of [{ qText: '31/12/2200' }, { qText: '2200-12-31' }, { qText: '', qNum }]) {
+    const { rows } = await collect({ lastDate });
+    const last = rows.find((r: { dimensionKey?: string }) => r.dimensionKey === '2200-12-31');
+    assert.equal(last?.value, 500);
+  }
 });

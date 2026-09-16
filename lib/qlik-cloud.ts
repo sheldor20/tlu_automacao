@@ -926,12 +926,12 @@ async function readQlikEngineMetrics(
       };
 
       const fieldValueDate = (value: FieldValue) => {
-        if (typeof value.number === "number" && value.number >= 20_000 && value.number < 100_000) {
+        if (typeof value.number === "number" && value.number >= 20_000 && value.number < 110_000) {
           return new Date(Date.UTC(1899, 11, 30) + Math.floor(value.number) * 86_400_000);
         }
-        const brazilian = value.text.match(/\b(\d{1,2})[./-](\d{1,2})[./-](20\d{2})\b/);
+        const brazilian = value.text.match(/\b(\d{1,2})[./-](\d{1,2})[./-](2[01]\d{2}|2200)\b/);
         if (brazilian) return new Date(Date.UTC(Number(brazilian[3]), Number(brazilian[2]) - 1, Number(brazilian[1])));
-        const iso = value.text.match(/\b(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\b/);
+        const iso = value.text.match(/\b(2[01]\d{2}|2200)[./-](\d{1,2})[./-](\d{1,2})\b/);
         if (iso) return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
         return null;
       };

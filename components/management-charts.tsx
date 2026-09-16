@@ -52,6 +52,7 @@ export function TrendChart({
   compact = false,
   maximumFractionDigits = 1,
   valueLabelInterval = 1,
+  axisLabelInterval = 1,
   highlightLatest = true,
   wide = false,
 }: {
@@ -62,6 +63,7 @@ export function TrendChart({
   compact?: boolean;
   maximumFractionDigits?: number;
   valueLabelInterval?: number;
+  axisLabelInterval?: number;
   highlightLatest?: boolean;
   wide?: boolean;
 }) {
@@ -114,9 +116,9 @@ export function TrendChart({
             </g>
           );
         })}
-        {labels.map((label, index) => (
+        {labels.map((label, index) => (index === labels.length - 1 || (index % axisLabelInterval === 0 && (index === 0 || labels.length - 1 - index >= axisLabelInterval))) ? (
           <text key={`${label}-${index}`} x={x(index)} y={height - (compact ? 10 : 14)} textAnchor="middle" className={`chart-axis-label${index === latestIndex ? " chart-axis-label-current" : ""}`}>{label}</text>
-        ))}
+        ) : null)}
         {!compact && bounds.hasData && series[0] ? (() => {
           const areaPoints = series[0].values
             .map((value, index) => value === null ? null : { value, index })
@@ -147,8 +149,8 @@ export function TrendChart({
                   <g key={`${item.label}-${point.index}`}>
                     {isCurrent ? <rect x={labelX - labelWidth / 2} y={labelY - (compact ? 13 : 16)} width={labelWidth} height={currentLabelHeight} rx={currentLabelHeight / 2} className="chart-current-value-bg" /> : null}
                     {showLabel ? <text x={labelX} y={labelY + 1} textAnchor="middle" className={isCurrent ? "chart-data-label chart-data-label-current" : "chart-data-label"}>{label}</text> : null}
-                    <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? (compact ? 4.5 : 6) : (compact ? 3 : 4)} fill={isCurrent ? item.color : "white"} stroke={item.color} strokeWidth={compact ? 2 : 3}>
-                      <title>{`${item.label}: ${point.value.toLocaleString("pt-BR", { maximumFractionDigits })}`}</title>
+                    <circle cx={x(point.index)} cy={y(point.value)} r={isCurrent ? (compact ? 4.5 : 6) : (compact ? 3 : 4)} fill={isCurrent ? item.color : showLabel ? "white" : "transparent"} stroke={showLabel || isCurrent ? item.color : "none"} strokeWidth={compact ? 2 : 3}>
+                      <title>{`${labels[point.index]} · ${item.label}: ${point.value.toLocaleString("pt-BR", { maximumFractionDigits })}`}</title>
                     </circle>
                   </g>
                 );

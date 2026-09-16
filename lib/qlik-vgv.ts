@@ -85,7 +85,7 @@ export function vgvIndicatorRows(snapshots: QlikMetricSnapshot[], synchronizedAt
     const year = Number(row.dimensionKey.slice(0, 4));
     receipts.set(year, (receipts.get(year) || 0) + row.value);
   }
-  const projection = projectVgv(total[0].value, qlikPercentage(rate[0]), [...receipts].map(([year, value]) => ({ year, value })), firstYear);
+  const projection = projectVgv(total[0].value, qlikPercentage(rate[0]), [...receipts].map(([year, value]) => ({ year, value })), firstYear, 0, Number(period.end.slice(0, 4)));
   const metadata = {
     synchronized_at: synchronizedAt, reference_date: referenceDate, group: "Terra Lótus",
     overdue: projection.overdue, date_field: "Período", period_start: period.start, period_end: period.end,

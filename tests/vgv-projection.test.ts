@@ -40,3 +40,12 @@ test('não acumula centavos fictícios ao arredondar previsões anuais do Qlik',
   const result = projectVgv(1, 2.47, [{ year: 2026, value: 0.334 }, { year: 2027, value: 0.334 }, { year: 2028, value: 0.332 }], 2026);
   assert.deepEqual(result.points.map(point => point.closingBalance), [0.67, 0.33, 0]);
 });
+
+test("respeita o fim do período mesmo após o último recebimento", () => {
+  const result = projectVgv(1000, 8, [{ year: 2026, value: 900 }], 2026, 100, 2200);
+  assert.equal(result.points.length, 175);
+  assert.deepEqual(result.points.at(-1), { year: 2200, receipts: 0, openingBalance: 100, closingBalance: 100, adjustedClosingBalance: 92 });
+  for (const end of [2025, 2201, 2026.5, Number.NaN]) {
+    assert.throws(() => projectVgv(1000, 8, [{ year: 2026, value: 1000 }], 2026, 0, end), /fim da projeção/);
+  }
+});
