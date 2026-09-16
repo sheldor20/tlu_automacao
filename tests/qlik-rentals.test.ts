@@ -4,6 +4,16 @@ import { parseRentalInventory,rentalInventoryMapping } from "../lib/qlik-rental-
 import { parseRentalReceiptSnapshots,RENTAL_RECEIPTS_APP,RENTAL_RECEIPTS_SHEET,RENTAL_RECEIPTS_OBJECT } from "../lib/qlik-rental-receipts.ts";
 import type { QlikMetricSnapshot } from "../lib/qlik-cloud.ts";
 import { parseReceiptForm,receiptForm,receiptTotals } from "../lib/rental-receipts.ts";
+import { qlikTableHeaders } from "../lib/qlik-table-columns.ts";
+
+test("medida intercalada não troca permissão de locação com parceria",()=>{
+ const headers=qlikTableHeaders(["Cód Imóvel","Imóvel","Tipo Imóvel","Tem Parceria?","É p/ Locação?","Imóveis"],[0,1,2,5,3,4]);
+ const mapping=rentalInventoryMapping({mapping_verified:true,object_id:"table",id_column:"Cód Imóvel",name_column:"Imóvel",type_column:"Tipo Imóvel",rentable_column:"É p/ Locação?",rentable_values:{yes:["Sim"],no:["Não"]}});
+ const rows=parseRentalInventory({headers,rows:[["1|006","Casa","Comercial","1","Não","Sim"],["1|90","Terreno","Terreno","1","Sim","Não"]],selections:{}},mapping);
+ assert.equal(rows[0].rentable,true);assert.equal(rows[1].rentable,false);
+ assert.deepEqual(qlikTableHeaders(["A","B"]),["A","B"]);
+ assert.throws(()=>qlikTableHeaders(["A","B"],[0,0]),/ordem de colunas/);
+});
 
 test("IR mensal opcional desconta centavos sem modificar outras parcelas",()=>{
  const form={...receiptForm(),rent_received:"2500.50",administration_fee:"150.20",income_tax:"100.10"};

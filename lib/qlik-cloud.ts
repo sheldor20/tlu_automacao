@@ -3,6 +3,7 @@ import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } fr
 import type { QlikTableSnapshot } from "@/lib/qlik-delinquency";
 import { extractQlikAppId, isQlikAppWebSocketUrl, isolatedQlikAppWebSocketUrl } from "@/lib/qlik-engine";
 import { isQlikAccountGatewayAction } from "@/lib/qlik-login";
+import { qlikTableHeaders } from "@/lib/qlik-table-columns";
 
 type QlikCloudCredentials = {
   username: string;
@@ -325,7 +326,7 @@ async function readQlikEngineSnapshot(
   objectId: string,
   filters: QlikCloudTableOptions["filters"],
 ): Promise<QlikTableSnapshot> {
-  return page.evaluate(async ({ socketUrl, appId, objectId, filters }) => {
+  const snapshot = await page.evaluate(async ({ socketUrl, appId, objectId, filters }) => {
     type RpcError = { code?: number; message?: string; parameter?: string };
     type RpcResult = Record<string, unknown>;
     type PendingCall = {
@@ -338,6 +339,7 @@ async function readQlikEngineSnapshot(
       qDimensionInfo?: Array<{ qFallbackTitle?: string }>;
       qMeasureInfo?: Array<{ qFallbackTitle?: string }>;
       qSize?: { qcx?: number; qcy?: number };
+      qColumnOrder?: number[];
     };
 
     const socket = new WebSocket(socketUrl);
@@ -445,6 +447,7 @@ async function readQlikEngineSnapshot(
       }
       return {
         headers,
+        columnOrder: layout.qColumnOrder,
         rows,
         selections: Object.fromEntries(filters.map((filter) => [filter.field, filter.value])),
       };
@@ -457,6 +460,7 @@ async function readQlikEngineSnapshot(
     objectId,
     filters: filters.map((filter) => ({ ...filter })),
   });
+  return { headers: qlikTableHeaders(snapshot.headers, snapshot.columnOrder), rows: snapshot.rows, selections: snapshot.selections };
 }
 
 async function readQlikEngineMetrics(
