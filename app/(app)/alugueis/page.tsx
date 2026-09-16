@@ -23,8 +23,6 @@ const statusLabel: Record<RentalStatus, string> = {
   aguardando_reforma: "Aguardando reforma",
 };
 
-type InventoryConnection = { active: boolean; last_success_at: string | null; last_error_at: string | null };
-
 export default function RentalsPage() {
   const supabase = getSupabase();
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -32,21 +30,15 @@ export default function RentalsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<RentalStatus | "all">("all");
   const [exceptionOnly, setExceptionOnly] = useState(false);
-  const [connection, setConnection] = useState<InventoryConnection | null>(null);
   const [rentableFilter, setRentableFilter] = useState("all");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [rentalsResult, connectionResult] = await Promise.all([
-      supabase.from("rentals").select("*").order("name"),
-      supabase.from("data_connections").select("active,last_success_at,last_error_at").eq("slug", "qlik-rental-inventory").maybeSingle(),
-    ]);
-    const error = rentalsResult.error || connectionResult.error;
+    const { data, error } = await supabase.from("rentals").select("*").order("name");
     if (error) setToast({ message: friendlyError(error), type: "error" });
-    setRentals((rentalsResult.data || []) as Rental[]);
-    setConnection(connectionResult.data as InventoryConnection | null);
+    setRentals((data || []) as Rental[]);
     setLoading(false);
   }, [supabase]);
 
@@ -59,8 +51,6 @@ export default function RentalsPage() {
     rented: rentals.filter((rental) => rental.status === "alugado").length,
     available: rentals.filter((rental) => rental.status === "desocupado").length,
     renovation: rentals.filter((rental) => rental.status === "aguardando_reforma").length,
-    pending: rentals.filter((rental) => !rental.qlik_property_id).length,
-    synchronized: rentals.filter((rental) => rental.qlik_property_id && rental.qlik_present).length,
   }), [rentals]);
   const visibleRentals = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR");
@@ -98,12 +88,6 @@ export default function RentalsPage() {
         title="Gestão de aluguéis"
         description="Imóveis, contratos e recebimentos lançados mês a mês."
       />
-
-      <div className="template-preview" style={{ marginBottom: 22 }} role="status">
-        <strong>{connection?.active ? "Carteira integrada ao Qlik" : "Importação do Qlik aguardando validação"}</strong>
-        <p>{connection?.active ? "Atualização diária às 6h de Brasília. Nomes, tipos e permissão para locação são mantidos pelo Qlik." : "Os imóveis existentes estão preservados. A atualização diária será ativada após confirmar a tabela e os vínculos com o Qlik."}{connection?.last_success_at ? ` Última carga: ${dateBr(connection.last_success_at.slice(0, 10))}.` : ""}{connection?.last_error_at ? " A última tentativa falhou; os dados anteriores foram mantidos." : ""}</p>
-        {connection?.last_success_at && metrics.pending > 0 ? <p>{metrics.synchronized} imóveis sincronizados. {metrics.pending} contratos anteriores preservados aguardam confirmação do código do imóvel. Seus recebimentos do Qlik aparecem no imóvel de origem, sem atribuição automática ao contrato pendente.</p> : null}
-      </div>
 
       <section className="kpi-grid">
         <KpiCard label="Imóveis na carteira" value={String(rentals.length)} helper="carteira total" icon={<Building2 size={17} />} />
