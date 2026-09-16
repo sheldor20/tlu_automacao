@@ -268,6 +268,12 @@ export function PaymentDetail({
                   <dd>{dateBr(r.paid_at)}</dd>
                 </div>
               )}
+              {r.finalized_at && (
+                <div>
+                  <dt>Finalizado em</dt>
+                  <dd>{dateBr(r.finalized_at)}</dd>
+                </div>
+              )}
             </dl>
             <h3>Descrição e características</h3>
             <p className="payment-preline">{r.description}</p>
@@ -491,7 +497,7 @@ export function PaymentDetail({
           </section>
         </main>
         <aside className="payment-detail-aside">
-          {!closed && (
+          {(!closed || (data.can_manage && transitions.length > 0)) && (
             <section className="payment-section">
               <h2>
                 {data.can_manage ? "Gestão do pagamento" : "Enviar informações"}
@@ -520,14 +526,16 @@ export function PaymentDetail({
                   }
                 />
               </Field>
-              <Button
-                variant="secondary"
-                disabled={busy || !message.trim()}
-                onClick={() => void action("reply")}
-              >
-                <MessageSquare size={16} />
-                {data.can_manage ? "Enviar mensagem" : "Enviar resposta"}
-              </Button>
+              {!closed && (
+                <Button
+                  variant="secondary"
+                  disabled={busy || !message.trim()}
+                  onClick={() => void action("reply")}
+                >
+                  <MessageSquare size={16} />
+                  {data.can_manage ? "Enviar mensagem" : "Enviar resposta"}
+                </Button>
+              )}
               {data.can_manage && (
                 <>
                   <hr />

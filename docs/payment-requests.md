@@ -17,7 +17,7 @@ As empresas vêm da última carga válida de `enterprise_performance_companies`,
 
 ## Gestão e e-mails
 
-Fluxo: recebida → em análise → aprovada → agendada → paga. É possível pagar uma aprovada sem etapa de agendamento. Em etapas abertas, gestores podem pedir informações ou cancelar. Recusa é permitida durante a análise. Solicitações encerradas ficam preservadas para consulta. Respostas de solicitantes ao pedido de informações devolvem a solicitação à análise.
+Fluxo: recebida → em análise → aprovada → agendada → paga → Finalizado. É possível pagar uma aprovada sem etapa de agendamento. Em etapas abertas, gestores podem pedir informações ou cancelar. Recusa é permitida durante a análise. Somente gestores podem passar de Paga para Finalizado. A finalização registra a data, preserva a data do pagamento e envia o e-mail de atualização ao solicitante. Solicitações pagas permitem apenas essa mudança; solicitações finalizadas ficam preservadas para consulta, sem novas alterações ou anexos. Respostas de solicitantes ao pedido de informações devolvem a solicitação à análise.
 
 Para marcar como paga, é obrigatório um comprovante enviado pela gestão e confirmado no armazenamento privado. Documentos aceitos: PDF, JPEG, PNG, WebP, DOCX e XLSX, com até 10 MB por arquivo. O servidor verifica autorização, tamanho, tipo e assinatura inicial do conteúdo. URLs de download expiram em 60 segundos. Tokens de upload não permitem sobrescrever objetos existentes.
 

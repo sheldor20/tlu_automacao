@@ -52,6 +52,10 @@ begin
   select status into v_status from public.payment_requests where id=v_id;
   if v_status<>'reviewing' then raise exception 'Requester reply did not return to review'; end if;
   perform public.payment_request_action(v_id,v_admin,null,'status','{"version":3,"status":"approved"}');
+  begin
+    perform public.payment_request_action(v_id,v_admin,null,'status','{"version":4,"status":"finalized"}');
+    raise exception 'Finalized before payment';
+  exception when others then if sqlerrm <> 'payment_invalid_transition' then raise; end if; end;
   perform public.payment_request_action(v_id,v_admin,null,'status','{"version":4,"status":"scheduled","scheduled_date":"2026-09-30"}');
   begin
     perform public.payment_request_action(v_id,v_admin,null,'status','{"version":5,"status":"paid"}');
@@ -69,14 +73,44 @@ begin
     perform public.payment_request_action(v_id,v_admin,null,'reply','{"version":6,"message":"test"}');
     raise exception 'Closed request was changed';
   exception when others then if sqlerrm <> 'payment_closed' then raise; end if; end;
+  begin
+    perform public.payment_request_action(v_id,null,v_hash,'status','{"version":6,"status":"finalized"}');
+    raise exception 'Requester finalized payment';
+  exception when others then if sqlerrm <> 'payment_forbidden' then raise; end if; end;
+  begin
+    perform public.payment_request_action(v_id,v_admin,null,'status','{"version":5,"status":"finalized"}');
+    raise exception 'Stale finalization accepted';
+  exception when others then if sqlerrm <> 'payment_conflict' then raise; end if; end;
+  update public.payment_request_files set ready=false where id=v_file;
+  begin
+    perform public.payment_request_action(v_id,v_admin,null,'status','{"version":6,"status":"finalized"}');
+    raise exception 'Finalized without confirmed receipt';
+  exception when others then if sqlerrm <> 'payment_receipt_required' then raise; end if; end;
+  update public.payment_request_files set ready=true where id=v_file;
+  update public.payment_requests set paid_at='2026-09-01T12:00:00Z' where id=v_id;
+  perform public.payment_request_action(v_id,v_admin,null,'status','{"version":6,"status":"finalized","message":"Conferência concluída."}');
+  if not exists(select 1 from public.payment_requests where id=v_id and status='finalized' and finalized_at is not null and paid_at='2026-09-01T12:00:00Z' and version=7) then
+    raise exception 'Finalization did not preserve payment or record closure';
+  end if;
+  begin
+    perform public.payment_request_action(v_id,v_admin,null,'status','{"version":7,"status":"reviewing"}');
+    raise exception 'Finalized request reopened';
+  exception when others then if sqlerrm <> 'payment_closed' then raise; end if; end;
+  begin
+    perform public.complete_payment_file(v_file,v_admin,null);
+    raise exception 'Finalized request accepted an upload';
+  exception when others then if sqlerrm <> 'payment_closed' then raise; end if; end;
+  if (select count(*) from public.payment_request_events e join public.payment_email_outbox o on o.event_id=e.id where e.request_id=v_id and e.status='finalized' and e.kind='status_changed')<>1 then
+    raise exception 'Finalization must enqueue exactly one status notification';
+  end if;
   select count(*) into v_events from public.payment_request_events where request_id=v_id;
   select count(*) into v_count from public.payment_email_outbox where request_id=v_id;
-  if v_events<>8 or v_count<>v_events then raise exception 'History / outbox mismatch: % events, % emails',v_events,v_count; end if;
+  if v_events<>9 or v_count<>v_events then raise exception 'History / outbox mismatch: % events, % emails',v_events,v_count; end if;
 
   v_input := jsonb_set(v_input,'{submission_id}',to_jsonb(gen_random_uuid()));
   v_result := public.create_payment_request(v_input,v_owner,repeat('c',64),'internal-hash','internal-digest');
   v_internal := (v_result->>'id')::uuid;
-  perform set_config('request.jwt.claim.sub',v_owner::text,true);
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',v_owner,'role','authenticated')::text,true);
   execute 'set local role authenticated';
   select count(*) into v_count from public.payment_requests where id in (v_id,v_internal);
   if v_count<>1 then raise exception 'Owner read scope incorrect'; end if;
@@ -88,7 +122,7 @@ begin
     raise exception 'Direct browser update accepted';
   exception when insufficient_privilege then null; end;
   execute 'reset role';
-  perform set_config('request.jwt.claim.sub',v_other::text,true);
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',v_other,'role','authenticated')::text,true);
   execute 'set local role authenticated';
   select count(*) into v_count from public.payment_requests where id in (v_id,v_internal);
   if v_count<>0 then raise exception 'Other member read requester records'; end if;

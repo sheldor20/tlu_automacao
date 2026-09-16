@@ -6,6 +6,8 @@ import {
   detailsTotal,
   validTaxId,
   PAYMENT_TRANSITIONS,
+  CLOSED_PAYMENT_STATUSES,
+  PAYMENT_STATUSES,
 } from "../lib/payment-requests.ts";
 
 const input = () => ({
@@ -201,9 +203,20 @@ test("status changes require explanatory messages and schedule when applicable",
   );
 });
 test("closed requests have no transitions and received requests cannot skip approval", () => {
-  for (const status of ["paid", "rejected", "cancelled"] as const)
+  for (const status of ["finalized", "rejected", "cancelled"] as const)
     assert.deepEqual(PAYMENT_TRANSITIONS[status], []);
   assert.equal(PAYMENT_TRANSITIONS.submitted.includes("paid"), false);
   assert.equal(PAYMENT_TRANSITIONS.submitted.includes("approved"), false);
   assert.equal(PAYMENT_TRANSITIONS.approved.includes("paid"), true);
+});
+test("only paid requests can be finalized and finalized requests remain read-only", () => {
+  assert.equal(PAYMENT_STATUSES.finalized, "Finalizado");
+  assert.deepEqual(PAYMENT_TRANSITIONS.paid, ["finalized"]);
+  for (const [status, transitions] of Object.entries(PAYMENT_TRANSITIONS))
+    if (status !== "paid") assert.equal(transitions.includes("finalized"), false);
+  assert.ok(CLOSED_PAYMENT_STATUSES.includes("paid"));
+  assert.ok(CLOSED_PAYMENT_STATUSES.includes("finalized"));
+  assert.equal(paymentActionSchema.safeParse({
+    action: "status", status: "finalized", version: 6,
+  }).success, true);
 });
