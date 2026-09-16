@@ -55,6 +55,7 @@ export function TrendChart({
   axisLabelInterval = 1,
   highlightLatest = true,
   wide = false,
+  connectMissing = true,
 }: {
   labels: string[];
   series: ChartSeries[];
@@ -66,6 +67,7 @@ export function TrendChart({
   axisLabelInterval?: number;
   highlightLatest?: boolean;
   wide?: boolean;
+  connectMissing?: boolean;
 }) {
   const gradientId = useId().replace(/:/g, "");
   const width = wide ? 960 : compact ? 760 : 680;
@@ -119,7 +121,7 @@ export function TrendChart({
         {labels.map((label, index) => (index === labels.length - 1 || (index % axisLabelInterval === 0 && (index === 0 || labels.length - 1 - index >= axisLabelInterval))) ? (
           <text key={`${label}-${index}`} x={x(index)} y={height - (compact ? 10 : 14)} textAnchor="middle" className={`chart-axis-label${index === latestIndex ? " chart-axis-label-current" : ""}`}>{label}</text>
         ) : null)}
-        {!compact && bounds.hasData && series[0] ? (() => {
+        {!compact && connectMissing && bounds.hasData && series[0] ? (() => {
           const areaPoints = series[0].values
             .map((value, index) => value === null ? null : { value, index })
             .filter((point): point is { value: number; index: number } => Boolean(point));
@@ -129,7 +131,7 @@ export function TrendChart({
         })() : null}
         {series.map((item, seriesIndex) => {
           const validPoints = item.values.map((value, index) => value === null ? null : { value, index }).filter((point): point is { value: number; index: number } => Boolean(point));
-          const path = validPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${x(point.index)} ${y(point.value)}`).join(" ");
+          const path = validPoints.map((point, index) => `${index === 0 || (!connectMissing && point.index !== validPoints[index - 1].index + 1) ? "M" : "L"} ${x(point.index)} ${y(point.value)}`).join(" ");
           const currentPoint = validPoints.at(-1);
           return (
             <g key={item.label}>

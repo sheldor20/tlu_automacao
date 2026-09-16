@@ -1,10 +1,11 @@
 "use client";
 
+import { RentalReceipts } from "@/components/rental-receipts";
 import { Button, Dialog, EmptyState, Field, KpiCard, PageIntro, Toast } from "@/components/ui";
 import { ListToolbar } from "@/components/list-toolbar";
 import { currency, dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { LessorType, Rental, RentalStatus } from "@/lib/types";
+import type { Rental, RentalStatus } from "@/lib/types";
 import {
   ArrowUpRight,
   Building2,
@@ -24,21 +25,7 @@ const statusLabel: Record<RentalStatus, string> = {
   aguardando_reforma: "Aguardando reforma",
 };
 
-const emptyForm = {
-  name: "",
-  property_address: "",
-  status: "desocupado" as RentalStatus,
-  monthly_rent: "",
-  lessor_type: "pf" as LessorType,
-  lessor_name: "",
-  lease_start_date: "",
-  lease_end_date: "",
-  annual_adjustment_percent: "0",
-  broker_name: "",
-  administration_fee: "0",
-  reserve_fund: "0",
-  notes: "",
-};
+const emptyForm = { name: "", property_address: "" };
 
 export default function RentalsPage() {
   const supabase = getSupabase();
@@ -81,7 +68,7 @@ export default function RentalsPage() {
     return rentals.filter((rental) => {
       const daysToEnd = rental.lease_end_date ? Math.ceil((new Date(`${rental.lease_end_date}T12:00:00`).getTime() - now) / 86_400_000) : Number.POSITIVE_INFINITY;
       const exception = rental.status === "desocupado" || (rental.status === "alugado" && daysToEnd >= 0 && daysToEnd <= 60);
-      const matchesSearch = !normalized || [rental.name, rental.property_address, rental.lessor_name, rental.broker_name].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
+      const matchesSearch = !normalized || [rental.name, rental.property_address, rental.lessor_name].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
       return matchesSearch && (statusFilter === "all" || rental.status === statusFilter) && (!exceptionOnly || exception);
     });
   }, [exceptionOnly, query, rentals, statusFilter]);
@@ -143,7 +130,7 @@ export default function RentalsPage() {
       <PageIntro
         eyebrow="Departamento · Aluguéis"
         title="Gestão de aluguéis"
-        description="Imóveis, contratos e situação de ocupação em uma visão direta."
+        description="Imóveis, contratos e recebimentos lançados mês a mês."
         action={<Button onClick={() => setDialogOpen(true)}><Plus size={18} /> Novo imóvel</Button>}
       />
 
@@ -158,7 +145,7 @@ export default function RentalsPage() {
         <div className="content-card-head project-list-head">
           <div><h2>Todos os imóveis</h2><p>Altere o status na lista ou abra o imóvel para editar os demais dados</p></div>
         </div>
-        <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por imóvel, endereço, locador ou corretor">
+        <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por imóvel, endereço ou locador">
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as RentalStatus | "all")} aria-label="Filtrar por status"><option value="all">Todos os status</option>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
           <label className="filter-check"><input type="checkbox" checked={exceptionOnly} onChange={(event) => setExceptionOnly(event.target.checked)} /> Somente exceções</label>
         </ListToolbar>
@@ -174,7 +161,7 @@ export default function RentalsPage() {
         ) : (
           <div className="rental-table-wrap">
             <table className="data-table rental-table">
-              <thead><tr><th>Imóvel</th><th>Status</th><th>Locação</th><th>Líquido base</th><th>Locador</th><th>Contrato</th><th aria-label="Acessar" /></tr></thead>
+              <thead><tr><th>Imóvel</th><th>Status</th><th>Valor mensal da locação</th><th>Locador</th><th>Contrato</th><th aria-label="Acessar" /></tr></thead>
               <tbody>
                 {visibleRentals.map((rental) => {
                   const endInDays = rental.lease_end_date ? Math.ceil((new Date(`${rental.lease_end_date}T12:00:00`).getTime() - new Date(`${todayIso()}T12:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY;
@@ -192,7 +179,6 @@ export default function RentalsPage() {
                       </div>
                     </td>
                     <td><strong>{currency(rental.monthly_rent)}</strong><small>reajuste {Number(rental.annual_adjustment_percent || 0).toFixed(2)}% a.a.</small></td>
-                    <td><strong>{currency(Math.max(Number(rental.monthly_rent) - Number(rental.broker_commission), 0))}</strong><small>- {currency(rental.broker_commission)} taxa de administração</small></td>
                     <td><strong>{rental.lessor_name}</strong><small>{rental.lessor_type.toUpperCase()}</small></td>
                     <td><strong>{dateBr(rental.lease_start_date)}</strong><small>{endInDays >= 0 && endInDays <= 60 ? `vence em ${endInDays} dia(s)` : `até ${dateBr(rental.lease_end_date)}`}</small></td>
                     <td><div className="table-actions"><Link className="table-action" href={`/alugueis/${rental.id}`} aria-label={`Acessar ${rental.name}`} title="Abrir imóvel"><ArrowUpRight size={16} /></Link><button type="button" className="table-action danger" onClick={() => setDeletingRental(rental)} aria-label={`Excluir ${rental.name}`} title="Excluir imóvel"><Trash2 size={16} /></button></div></td>
@@ -204,11 +190,13 @@ export default function RentalsPage() {
         )}
       </section>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo imóvel" description="Comece com nome e endereço. Contrato, valores e corretor são preenchidos no detalhe." wide>
+      {!loading ? <RentalReceipts key={rentals.map((rental) => rental.id).sort().join(",")} /> : null}
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="Novo imóvel" description="Comece com nome e endereço. Complete o contrato e lance os recebimentos mensais no detalhe." wide>
         <form className="form-grid" onSubmit={createRental}>
           <Field label="Nome do imóvel"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={140} required autoFocus /></Field>
           <Field label="Endereço do imóvel" className="form-span-2"><input value={form.property_address} onChange={(event) => setForm({ ...form, property_address: event.target.value })} maxLength={260} required /></Field>
-          <div className="template-preview form-span-2"><strong>Status inicial: desocupado</strong><p>Após salvar, abra o imóvel para informar locação, locador, vigência, reajuste, corretor e comissão.</p></div>
+          <div className="template-preview form-span-2"><strong>Status inicial: desocupado</strong><p>Após salvar, abra o imóvel para informar locação, locador, vigência e reajuste. Os recebimentos são lançados por mês.</p></div>
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}><Percent size={16} /> Cadastrar imóvel</Button></div>
         </form>
       </Dialog>
@@ -217,7 +205,7 @@ export default function RentalsPage() {
         open={Boolean(deletingRental)}
         onClose={() => setDeletingRental(null)}
         title="Excluir imóvel?"
-        description="A exclusão é definitiva e remove todos os dados cadastrais e contratuais deste imóvel."
+        description="A exclusão é definitiva e remove todos os dados cadastrais, contratuais e recebimentos mensais deste imóvel."
       >
         <div className="confirmation-content">
           <strong>{deletingRental?.name}</strong>

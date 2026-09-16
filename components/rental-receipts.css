@@ -1,0 +1,25 @@
+/* Aluguéis: contrato e recebimentos reais por competência. */
+.rental-contract-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rental-receipts-card { margin-bottom: 30px; }
+.rental-receipts-head { gap: 20px; flex-wrap: wrap; }
+.rental-receipts-head > .field { width: 190px; }
+.rental-receipt-editor { padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: #f8faf7; margin-bottom: 24px; }
+.rental-receipt-editor h3 { margin-top: 0; }
+.rental-receipt-hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.rental-receipt-editor > p { margin-bottom: 22px; }
+.rental-receipt-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 24px; }
+.rental-receipt-net { padding: 16px; background: white; border: 1px solid var(--line); border-radius: 12px; }
+.rental-receipt-net > span { color: var(--muted); font-size: 12px; }
+.rental-receipt-net > strong { display: block; margin-top: 6px; font-size: 23px; }
+.rental-receipt-net p { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.6; }
+.rental-receipts-table { min-width: 980px; }
+.rental-receipts-table caption { padding: 16px 0; text-align: left; font-size: 13px; font-weight: 700; }
+.rental-receipts-table tbody th { font-size: 12px; text-align: left; padding: 14px; }
+.rental-receipt-edit { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--moss-700); cursor: pointer; font: inherit; }
+.rental-receipt-edit:disabled { opacity: .5; cursor: wait; }
+.rental-receipt-error { padding: 16px; color: var(--danger); }
+@media (max-width: 700px) {
+  .rental-receipt-summary, .rental-contract-kpis { grid-template-columns: 1fr; }
+  .rental-receipt-editor { padding: 14px; }
+  .rental-receipts-head > .field { width: 100%; }
+}
