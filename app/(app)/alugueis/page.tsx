@@ -49,7 +49,7 @@ export default function RentalsPage() {
 
   const metrics = useMemo(() => ({
     rented: rentals.filter((rental) => rental.status === "alugado").length,
-    available: rentals.filter((rental) => rental.status === "desocupado").length,
+    available: rentals.filter((rental) => rental.status === "desocupado" && rental.rentable === true).length,
     renovation: rentals.filter((rental) => rental.status === "aguardando_reforma").length,
   }), [rentals]);
   const visibleRentals = useMemo(() => {
@@ -92,7 +92,7 @@ export default function RentalsPage() {
       <section className="kpi-grid">
         <KpiCard label="Imóveis na carteira" value={String(rentals.length)} helper="carteira total" icon={<Building2 size={17} />} />
         <KpiCard label="Alugados" value={String(metrics.rented)} helper="contratos ativos" tone="success" icon={<KeyRound size={17} />} />
-        <KpiCard label="Desocupados" value={String(metrics.available)} helper="sem ocupação atual" icon={<Home size={17} />} />
+        <KpiCard label="Desocupados" value={String(metrics.available)} helper="disponíveis para locação" icon={<Home size={17} />} />
         <KpiCard label="Aguardando reforma" value={String(metrics.renovation)} helper="imóveis em preparação" icon={<Hammer size={17} />} />
       </section>
 

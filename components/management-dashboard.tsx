@@ -636,7 +636,7 @@ function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, mon
   return (
     <div className="management-view-stack management-people-view">
       <section className="management-kpi-grid management-people-kpis">
-        <KpiCard label="Imóveis desocupados" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? `${rentals.total_properties} imóveis na carteira` : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
+        <KpiCard label="Imóveis desocupados" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? "disponíveis para locação" : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
         <KpiCard label="Pesquisa de clima" value={metricValue("pesquisa_clima") === null ? "—" : `${displayNumber(metricValue("pesquisa_clima"))}/10`} helper={metricHelper("pesquisa_clima", "duas medições por ano")} icon={<UsersRound size={17} />} />
         <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
       </section>
