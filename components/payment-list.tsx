@@ -248,6 +248,7 @@ export function PaymentList() {
                     <td>
                       <strong>{paymentMoney(row.amount)}</strong>
                       {row.budget_max !== null &&
+                        row.amount !== null &&
                         row.amount > row.budget_max && (
                           <small className="payment-over-budget">
                             Acima do orçamento máximo

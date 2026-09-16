@@ -31,13 +31,18 @@ export function PaymentRequestForm({
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   const [personType, setPersonType] = useState("PF"),
-    [method, setMethod] = useState("pix");
+    [requiredMethod, setRequiredMethod] = useState("pix"),
+    [materialsMethod, setMaterialsMethod] = useState("");
+  const materials = type === "materials";
+  const method = materials ? materialsMethod : requiredMethod;
   const [identity, setIdentity] = useState({ name: "", email: "" });
   const [submissionId, setSubmissionId] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [items, setItems] = useState([
-    { id: 1, description: "", quantity: 1, unit: "un", unit_price: 0 },
+  const [items, setItems] = useState<Array<{
+    id: number; description: string; quantity: number; unit: string; unit_price: number | null;
+  }>>([
+    { id: 1, description: "", quantity: 1, unit: "un", unit_price: null },
   ]);
   const [quotes, setQuotes] = useState<
     Array<{ id: number; supplier: string; amount: number; notes: string }>
@@ -91,11 +96,7 @@ export function PaymentRequestForm({
   }, [publicForm]);
   const total =
     type === "materials"
-      ? items.reduce(
-          (sum, item) =>
-            sum + Math.round(item.quantity * item.unit_price * 100),
-          0,
-        ) / 100
+      ? detailsTotal({ type: "materials", items, delivery_address: "" })
       : type === "termination"
         ? Math.round(
             Object.values(terminationAmounts).reduce((a, b) => a + b, 0) * 100,
@@ -182,7 +183,8 @@ export function PaymentRequestForm({
         project_name: s("project_name"),
         title: s("title"),
         description: s("description"),
-        amount: detailsTotal(details) ?? n("amount"),
+        amount: type === "materials" || type === "termination"
+          ? detailsTotal(details) : n("amount"),
         budget_max: s("budget_max") ? n("budget_max") : null,
         due_date: s("due_date"),
         details,
@@ -388,7 +390,7 @@ export function PaymentRequestForm({
           >
             <textarea name="description" required maxLength={8000} rows={4} />
           </Field>
-          {total === null ? (
+          {type === "service" || type === "bills" ? (
             <Field label="Valor solicitado (R$) *">
               <input
                 name="amount"
@@ -501,18 +503,18 @@ export function PaymentRequestForm({
                         }
                       />
                     </Field>
-                    <Field label="Preço unitário (R$) *">
+                    <Field label="Preço unitário (R$)" hint="Opcional. Preencha quando souber.">
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        required
-                        value={item.unit_price}
+                        value={item.unit_price ?? ""}
+                        placeholder="A definir"
                         onChange={(e) =>
                           setItems(
                             items.map((x) =>
                               x.id === item.id
-                                ? { ...x, unit_price: Number(e.target.value) }
+                                ? { ...x, unit_price: e.target.value === "" ? null : Number(e.target.value) }
                                 : x,
                             ),
                           )
@@ -544,7 +546,7 @@ export function PaymentRequestForm({
                         description: "",
                         quantity: 1,
                         unit: "un",
-                        unit_price: 0,
+                        unit_price: null,
                       },
                     ])
                   }
@@ -573,8 +575,8 @@ export function PaymentRequestForm({
               <Field label="Nome do cliente *">
                 <input name="customer_name" required maxLength={200} />
               </Field>
-              <Field label="Contrato *">
-                <input name="contract" required maxLength={200} />
+              <Field label="Contrato">
+                <input name="contract" maxLength={200} />
               </Field>
               <Field label="Lote">
                 <input name="lot" maxLength={100} />
@@ -664,8 +666,9 @@ export function PaymentRequestForm({
       </fieldset>
       <fieldset className="payment-section" disabled={saving}>
         <legend>3. Beneficiário e forma de pagamento</legend>
+        {materials && <p>Dados opcionais. Preencha se já souber quem receberá e como será o pagamento.</p>}
         <div className="form-grid">
-          <Field label="Pessoa física ou jurídica *">
+          <Field label={`Pessoa física ou jurídica${materials ? "" : " *"}`}>
             <select
               value={personType}
               onChange={(e) => setPersonType(e.target.value)}
@@ -676,17 +679,16 @@ export function PaymentRequestForm({
           </Field>
           <Field
             label={
-              personType === "PF"
-                ? "Nome completo do beneficiário *"
-                : "Razão social *"
+              (personType === "PF" ? "Nome completo do beneficiário" : "Razão social") +
+              (materials ? "" : " *")
             }
           >
-            <input name="beneficiary_name" required maxLength={200} />
+            <input name="beneficiary_name" required={!materials} maxLength={200} />
           </Field>
-          <Field label={personType === "PF" ? "CPF *" : "CNPJ *"}>
+          <Field label={`${personType === "PF" ? "CPF" : "CNPJ"}${materials ? "" : " *"}`}>
             <input
               name="tax_id"
-              required
+              required={!materials}
               maxLength={30}
               inputMode={personType === "PF" ? "numeric" : "text"}
             />
@@ -697,8 +699,11 @@ export function PaymentRequestForm({
           <Field label="Telefone do beneficiário">
             <input name="beneficiary_phone" type="tel" maxLength={40} />
           </Field>
-          <Field label="Forma de pagamento *">
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+          <Field label={`Forma de pagamento${materials ? "" : " *"}`}>
+            <select value={method} onChange={(e) =>
+              materials ? setMaterialsMethod(e.target.value) : setRequiredMethod(e.target.value)
+            }>
+              {materials && <option value="">A definir</option>}
               <option value="pix">PIX</option>
               <option value="transfer">Transferência / depósito</option>
               <option value="boleto">Boleto</option>
