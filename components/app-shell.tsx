@@ -54,6 +54,7 @@ const businessSubmenuLinks = [
   { ...BUSINESS_PORTFOLIO_SECTIONS[1], icon: Workflow },
   { key: "obras", label: "Obras", href: "/obras", icon: Building2 },
   { ...BUSINESS_PORTFOLIO_SECTIONS[2], icon: Database },
+  { key: "enterprise-performance", label: "Performance de empreendimentos", href: "/novos-negocios/performance-de-empreendimentos", icon: ChartNoAxesCombined },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
