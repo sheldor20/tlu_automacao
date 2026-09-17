@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft,
@@ -84,11 +85,11 @@ export function PaymentDetail({
   id?: string;
   trackingToken?: string;
 }) {
+  const router = useRouter();
   const [data, setData] = useState<Detail | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   const [editing, setEditing] = useState(false),
-    [deleted, setDeleted] = useState(false),
     [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -156,10 +157,9 @@ export function PaymentDetail({
       await paymentFetch(`/api/payments/${data.request.id}`, {
         method: "DELETE", body: JSON.stringify({ version: data.request.version }),
       });
-      setDeleted(true);
+      router.replace("/pagamentos?scope=management");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível excluir.");
-    } finally {
       setBusy(false);
     }
   }
@@ -200,11 +200,6 @@ export function PaymentDetail({
         </Button>
       </div>
     );
-  if (deleted) return <section className="payment-section" role="status">
-    <h1>Solicitação excluída</h1>
-    <p>O pedido foi retirado das listas. A exclusão ficou registrada e o solicitante será avisado por e-mail.</p>
-    <Link className="button button-secondary" href="/pagamentos">Voltar às solicitações</Link>
-  </section>;
   if (editing && data.can_manage) return <>
     <header className="payment-detail-head"><div>
       <span className="eyebrow">{paymentProtocol(data.request.protocol)}</span>
