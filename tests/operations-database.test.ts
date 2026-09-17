@@ -26,6 +26,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917162639_operations_initial_activation.sql",
     "20260917163239_operations_collection_index.sql",
     "20260917164123_operations_overdue_dates.sql",
+    "20260917174235_cash_projection_covering_index.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
@@ -76,6 +77,45 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
       }
     },
   );
+  await t.test("caixa mantém semanas, títulos vencidos e isolamento ao consultar o índice", async () => {
+    await db.exec(`
+      insert into operational_cash_entries(id,company_id,work_key,kind,cash_date,amount,active) values
+        ('forecast-1','2','w2','receivable','2026-09-17',10,true),
+        ('forecast-2','2','w2','receivable','2026-09-23',20,true),
+        ('forecast-3','2','w2','receivable','2026-09-24',30,true),
+        ('forecast-last','2','w2','receivable','2026-12-16',40,true),
+        ('forecast-after','2','w2','receivable','2026-12-17',1000,true),
+        ('forecast-overdue','2','w2','receivable','2026-09-16',50,true),
+        ('forecast-undated','2','w2','receivable',null,60,true),
+        ('forecast-inactive','2','w2','receivable','2026-09-17',1000,false),
+        ('forecast-paid','2','w2','paid','2026-09-17',1000,true),
+        ('forecast-payable','2','w2','payable','2026-09-17',70,true);
+    `);
+    const project = () => db.query<{ kind: string; date: string | null; amount: string }>(`
+      select kind,cash_date::text date,amount from operational_cash_projection('2026-09-17')
+      where company_id='2' order by kind,cash_date nulls last
+    `);
+    try {
+      await db.query("select set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: admin, role: "authenticated" })]);
+      await db.exec("set role authenticated");
+      assert.deepEqual((await project()).rows, [
+        { kind: "payable", date: "2026-09-17", amount: "70.000000" },
+        { kind: "receivable", date: "2026-09-16", amount: "50.000000" },
+        { kind: "receivable", date: "2026-09-17", amount: "30.000000" },
+        { kind: "receivable", date: "2026-09-24", amount: "30.000000" },
+        { kind: "receivable", date: "2026-12-10", amount: "40.000000" },
+        { kind: "receivable", date: null, amount: "60.000000" },
+      ]);
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: viewer, role: "authenticated" })]);
+      await db.exec("set role authenticated");
+      assert.equal((await project()).rows.some((r) => r.kind === "payable"), false);
+      await db.exec("reset role; delete from operational_publications where kind='receivable'; set role authenticated");
+      assert.equal((await project()).rows.length, 0);
+    } finally {
+      await db.exec("reset role; insert into operational_publications(kind) values('receivable') on conflict do nothing; delete from operational_cash_entries where id like 'forecast-%'");
+    }
+  });
   await t.test("anônimo não acessa clientes nem parcelas", async () => {
     await db.exec("set role anon");
     try {
