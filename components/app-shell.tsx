@@ -85,6 +85,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const businessMenuOpen = businessMenuPreference.pathname === pathname
     ? businessMenuPreference.open
     : businessAreaPathActive;
+  const financeAreaPathActive = pathname.startsWith("/financeiro");
+  const [financeMenuPreference, setFinanceMenuPreference] = useState({
+    pathname,
+    open: financeAreaPathActive,
+  });
+  const financeMenuOpen = financeMenuPreference.pathname === pathname
+    ? financeMenuPreference.open
+    : financeAreaPathActive;
   const [todayAlertCount, setTodayAlertCount] = useState(0);
 
   useEffect(() => {
@@ -326,7 +334,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
             if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
-            if (slug === "financeiro") return <div className="nav-group" key={href}><Link href="/financeiro/caixa-projetado" className={pathname.startsWith(href) ? "nav-link active" : "nav-link"}><Icon size={19}/><span>Financeiro</span></Link><div className="nav-submenu"><Link href="/financeiro/caixa-projetado" className={pathname.startsWith(href) ? "nav-sublink active" : "nav-sublink"}><ChartNoAxesCombined size={15}/><span>Caixa projetado</span></Link></div></div>;
+            if (slug === "financeiro") {
+              return <div className="nav-group" key={href}>
+                <button
+                  type="button"
+                  className={financeAreaPathActive ? "nav-link nav-parent active" : "nav-link nav-parent"}
+                  title={label}
+                  aria-expanded={financeMenuOpen}
+                  aria-controls="finance-submenu"
+                  onClick={() => setFinanceMenuPreference({ pathname, open: !financeMenuOpen })}
+                >
+                  <Icon size={19} />
+                  <span>{label}</span>
+                  <ChevronDown className={`nav-parent-chevron${financeMenuOpen ? " open" : ""}`} size={15} />
+                </button>
+                <div id="finance-submenu" className="nav-submenu" aria-label="Submenus de Financeiro" hidden={!financeMenuOpen}>
+                  <Link href="/financeiro/caixa-projetado" className={pathname === "/financeiro/caixa-projetado" ? "nav-sublink active" : "nav-sublink"} onClick={() => setMobileMenu(false)}>
+                    <ChartNoAxesCombined size={15} />
+                    <span>Caixa projetado</span>
+                  </Link>
+                </div>
+              </div>;
+            }
             if (slug === "novos-negocios") {
               const businessAreaActive = pathname.startsWith("/novos-negocios") || (allowedDepartments.includes("obras") && pathname.startsWith("/obras"));
               return <div className="nav-group" key={href}>
