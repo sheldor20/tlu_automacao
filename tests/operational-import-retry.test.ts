@@ -46,3 +46,9 @@ test("does not retry an invalid financial record and bounds transient retries", 
   );
   assert.equal(calls, 5);
 });
+
+test('retries a lock timeout on an idempotent import page',async()=>{
+ let calls=0;
+ const r=await retryImportWrite(async()=>({error:++calls===1?{code:'55P03',message:'canceling statement due to lock timeout'}:null}),async()=>{});
+ assert.equal(calls,2);assert.equal(r.error,null);
+});
