@@ -10,6 +10,7 @@ import {
   StatusPill,
   Toast,
 } from "@/components/ui";
+import { BusinessBudgetCurve } from "@/components/business-budget-curve";
 import { ListToolbar } from "@/components/list-toolbar";
 import { PlanDocumentManager } from "@/components/plan-document-manager";
 import { BusinessFileManager } from "@/components/business-file-manager";
@@ -29,6 +30,7 @@ import {
   ArrowRight,
   Building2,
   Clock3,
+  CalendarRange,
   ExternalLink,
   MapPin,
   Map as MapIcon,
@@ -86,6 +88,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   const [editing, setEditing] = useState<Business | null>(null);
   const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
   const [planBusiness, setPlanBusiness] = useState<Business | null>(null);
+  const [curveBusiness, setCurveBusiness] = useState<Business | null>(null);
   const [fileBusiness, setFileBusiness] = useState<Business | null>(null);
   const [businessAction, setBusinessAction] = useState<BusinessAction>("archive");
   const [form, setForm] = useState<BusinessForm>(emptyForm);
@@ -442,7 +445,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                           <MapPin size={14} /> <span>{business.location_file_name || "Ver no Google Maps"}</span> <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
+                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setCurveBusiness(business)} aria-label={`Curva mensal de ${business.name}`} title="VGV e investimento mensal"><CalendarRange size={16} /></button><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
                     </tr>
                   );
                 })}
@@ -452,6 +455,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
         )}
       </section>
 
+      {curveBusiness ? <BusinessBudgetCurve business={curveBusiness} onClose={() => setCurveBusiness(null)} onSaved={() => void loadData()} /> : null}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}

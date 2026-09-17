@@ -525,3 +525,11 @@ simultâneos são agrupados, e consultas de atualização não se sobrepõem.
 `tests/today-dashboard-performance.test.ts` verifica usuário, administrador,
 líder, atribuição por subtarefa, resolução e revogação de acesso com as migrations
 reais. `tests/refresh-scheduler.test.ts` verifica a deduplicação e cancelamento.
+
+## Planejador orçamentário
+
+A rota autenticada `/planejador-orcamentario` oferece orçamento base zero em 60
+meses, DRE gerencial, conciliação de caixa e simulação de obras, sem menu do
+sistema. Os cenários seguem as permissões de Financeiro. Novos Negócios recebe
+importação de curvas mensais de VGV e investimento. Consulte
+[escopo, regras e instalação](docs/planejador-orcamentario.md).

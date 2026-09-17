@@ -58,6 +58,7 @@ export async function allRows(
         (
           {
             construction_stage_mappings: "source_category",
+            business_budget_curves: "business_id",
             construction_stage_finances: "macro_stage_id",
             qlik_works: "key",
             collection_cases: "contract_id",
