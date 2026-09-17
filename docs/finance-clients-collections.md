@@ -16,6 +16,8 @@ A extração utiliza as medidas oficiais já existentes no Qlik, com as mesmas v
 
 Cada carga é preparada em páginas, confere quantidade e total e publica o conjunto financeiro em transação. Falhas preservam a carga financeira anterior. Os valores da origem são armazenados com seis casas decimais para preservar rateios; a interface apresenta reais e centavos. Vínculos de solicitações e compromissos evitam repetição de despesas.
 
+Na primeira carga de cada origem, a ativação avança em lotes com um ponto de retomada. As regras de acesso mantêm esses lançamentos ocultos até a publicação completa; a confirmação de promessas também exige a origem publicada. A conferência final libera o conjunto de uma vez. As consultas verificam as permissões por consulta e usam um índice próprio para os resumos dos contratos.
+
 O Qlik financeiro não fornece, nesta integração, telefones/e-mails, documentos, processos judiciais ou acordos detalhados. Esses acompanhamentos são próprios do Space. A carteira é classificada pelo histórico financeiro, preservando a situação jurídica como desconhecida até ser preenchida pela equipe. Casos registrados como judiciais ou suspensos ficam em grupo próprio.
 
 ## Acesso e manutenção

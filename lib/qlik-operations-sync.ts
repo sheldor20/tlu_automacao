@@ -127,7 +127,10 @@ export async function syncQlikOperations(kind: OperationalKind) {
     catalog.set(key, record);
   };
   try {
-    initial = await progress();
+    initial =
+      info.row_count !== null && info.row_count === info.source_rows
+        ? { rows: Number(info.row_count), total: Number(info.total) }
+        : await progress();
     count = initial.rows;
     total = initial.total;
     await checked(
@@ -247,6 +250,29 @@ export async function syncQlikOperations(kind: OperationalKind) {
           .update({ row_count: count, total: Math.round(total * 1e6) / 1e6 })
           .eq("id", run),
       );
+    }
+    let ready = kind === "catalog";
+    for (let batch = 0; batch < 5 && !ready; batch++)
+      ready = await checked(
+        db.rpc("prepare_initial_operational_publication", {
+          p_run: run,
+          p_batch: 2000,
+        }),
+      );
+    if (!ready) {
+      await checked(
+        db.from("operational_imports")
+          .update({ continuation_ready: true, attempts: 0 })
+          .eq("id", run),
+      );
+      return reply({
+        ok: true,
+        partial: true,
+        phase: "publication",
+        kind,
+        rows: count,
+        expected_rows: sourceRows,
+      });
     }
     await checked(
       db.rpc("publish_operational_import", {
