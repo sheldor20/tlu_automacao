@@ -193,7 +193,7 @@ export async function readOperationalQlik(
                 ...cube.qMeasureInfo,
               ].map((c) => c.qFallbackTitle);
               for (let batch = 0; batch < total; batch += height * 4) {
-                await Promise.all(
+                const pages = await Promise.all(
                   Array.from({ length: 4 }, (_, i) => batch + i * height)
                     .filter((top) => top < total)
                     .map(async (top) => {
@@ -227,21 +227,23 @@ export async function readOperationalQlik(
                               : null,
                         })),
                       );
-                      if (stream)
-                        await (
-                          window as unknown as {
-                            operationalRows: (c: unknown) => Promise<void>;
-                          }
-                        ).operationalRows({
-                          key: spec.key,
-                          headers,
-                          rows: pageRows,
-                          totalRows: cube.qSize.qcy,
-                          total: cube.qGrandTotalRow?.[0]?.qNum ?? null,
-                        });
-                      else rows.push(...pageRows);
+                      return pageRows;
                     }),
                 );
+                const pageRows = pages.flat();
+                if (stream)
+                  await (
+                    window as unknown as {
+                      operationalRows: (c: unknown) => Promise<void>;
+                    }
+                  ).operationalRows({
+                    key: spec.key,
+                    headers,
+                    rows: pageRows,
+                    totalRows: cube.qSize.qcy,
+                    total: cube.qGrandTotalRow?.[0]?.qNum ?? null,
+                  });
+                else rows.push(...pageRows);
               }
               cubes.push({
                 key: spec.key,
