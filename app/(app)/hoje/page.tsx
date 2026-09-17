@@ -2,15 +2,25 @@
 
 import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { dateBr, todayIso } from "@/lib/format";
-import { PROJECT_TASK_RELATIONS } from "@/lib/project-tasks";
+import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type { DepartmentSlug, ProjectTask, TaskStatus, TodayVisibleUser } from "@/lib/types";
 import { AlertTriangle, ArrowRight, Bell, Building2, Check, ClipboardCheck, Clock3, Home, ListChecks, ListTodo, RefreshCw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type TaskRow = ProjectTask & { projects?: { name: string; category: "operational" | "governance" } | null };
-type TodayTask = ProjectTask & { project_name: string };
+type TodayTask = Pick<ProjectTask, "id" | "project_id" | "category" | "title" | "due_date" | "status" | "assignee_name"> & {
+  project_name: string;
+  assignees: Array<{ assignee_name: string }>;
+};
+type TodayDashboard = {
+  current_user_id: string;
+  selected_user_id: string;
+  users: TodayVisibleUser[];
+  departments: DepartmentSlug[];
+  tasks: TodayTask[];
+  alerts: UnifiedAlert[];
+};
 type UnifiedAlert = {
   id: string;
   title: string;
@@ -66,60 +76,33 @@ export default function TodayPage() {
     setAuthorizedDepartments([]);
     setTasks([]);
     setAlerts([]);
-    const { data: authData } = await supabase.auth.getUser();
-    if (version !== loadVersion.current) return;
-    if (!authData.user) {
-      setToast({ message: "Sua sessão expirou. Entre novamente.", type: "error" });
-      setLoading(false);
-      return;
+    try {
+      const { data, error } = await supabase.rpc("today_dashboard", {
+        p_user_id: requestedUserId || selectedUserRef.current || null,
+      });
+      if (version !== loadVersion.current) return;
+      if (error) throw error;
+      if (!data) throw new Error("Não foi possível carregar suas tarefas e permissões.");
+      const dashboard = data as TodayDashboard;
+      if (selectedUserRef.current !== dashboard.selected_user_id) setShowResolved(false);
+      selectedUserRef.current = dashboard.selected_user_id;
+      setSelectedUserId(dashboard.selected_user_id);
+      setCurrentUserId(dashboard.current_user_id);
+      setAuthorizedDepartments(dashboard.departments);
+      setVisibleUsers(dashboard.users);
+      setTasks(dashboard.tasks);
+      setAlerts(dashboard.alerts);
+    } catch (error) {
+      if (version === loadVersion.current) setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      if (version === loadVersion.current) setLoading(false);
     }
-    const ownUserId = authData.user.id;
-    const { data: users, error: usersError } = await supabase.rpc("visible_today_users");
-    if (version !== loadVersion.current) return;
-    if (usersError) {
-      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(usersError)}`, type: "error" });
-      setLoading(false);
-      return;
-    }
-    const availableUsers = (users || []) as TodayVisibleUser[];
-    const preferredUserId = requestedUserId || selectedUserRef.current;
-    const targetUserId = availableUsers.some((user) => user.user_id === preferredUserId) ? preferredUserId : ownUserId;
-    if (selectedUserRef.current !== targetUserId) setShowResolved(false);
-    selectedUserRef.current = targetUserId;
-    setSelectedUserId(targetUserId);
-    const { data: access, error: accessError } = await supabase.rpc("today_department_access", { p_user_id: targetUserId });
-    if (version !== loadVersion.current) return;
-    if (accessError) {
-      setToast({ message: `Não foi possível carregar suas permissões: ${friendlyError(accessError)}`, type: "error" });
-      setLoading(false);
-      return;
-    }
-    const departments = (access || []) as DepartmentSlug[];
-    const hasAccess = (department: DepartmentSlug) => departments.includes(department);
-    const hasProjectAccess = hasAccess("projetos") || hasAccess("governanca");
-    const categories = [hasAccess("projetos") ? "operational" : null, hasAccess("governanca") ? "governance" : null].filter((category): category is string => category !== null);
-    const emptyResult = Promise.resolve({ data: [], error: null });
-    const [taskResult, alertResult] = await Promise.all([
-      hasProjectAccess ? supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,category)`).in("category", categories).neq("status", "concluida").order("due_date") : emptyResult,
-      supabase.rpc("today_alerts", { p_user_id: targetUserId }),
-    ]);
-    if (version !== loadVersion.current) return;
-    const failure = taskResult.error || alertResult.error;
-    if (failure) setToast({ message: friendlyError(failure), type: "error" });
-    setCurrentUserId(ownUserId);
-    setAuthorizedDepartments(departments);
-    setVisibleUsers(availableUsers);
-    setTasks(((taskResult.data || []) as TaskRow[])
-      .filter((task) => task.assignees?.some((assignee) => assignee.user_id === targetUserId)
-        || task.subtasks?.some((subtask) => subtask.assignees?.some((assignee) => assignee.user_id === targetUserId)))
-      .map((task) => ({ ...task, project_name: task.project_id ? task.projects?.name || "Projeto" : "Atividade avulsa" })));
-    setAlerts((alertResult.data || []) as UnifiedAlert[]);
-    setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
-    const refresh = () => void loadData();
+    const scheduler = createRefreshScheduler(() => loadData());
+    const refresh = scheduler.schedule;
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
@@ -127,6 +110,7 @@ export default function TodayPage() {
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearTimeout(timer);
+      scheduler.dispose();
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       loadVersion.current += 1;
