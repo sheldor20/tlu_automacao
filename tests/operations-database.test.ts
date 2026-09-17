@@ -22,6 +22,9 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917143529_operations_resumable_imports.sql",
     "20260917145001_operations_initial_publish_budget.sql",
     "20260917145843_operations_publication_scan.sql",
+    "20260917151438_operations_read_performance.sql",
+    "20260917162639_operations_initial_activation.sql",
+    "20260917163239_operations_collection_index.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
@@ -33,6 +36,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     ]);
   await db.query("update profiles set is_admin=(user_id=$1)", [admin]);
   await db.exec("delete from profile_departments");
+  await db.exec("insert into operational_publications(kind) values('received'),('receivable'),('paid'),('payable')");
   await db.query(
     "insert into profile_departments(user_id,department_slug) values($1,'clientes')",
     [viewer],
@@ -292,4 +296,23 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
       );
     },
   );
+  await t.test("preparação inicial retomável só fica visível após publicar tudo", async () => {
+    await db.exec("delete from operational_publications where kind='received'");
+    const run = (await db.query<{id:string}>("select begin_operational_import('received') id")).rows[0].id;
+    await db.query("select stage_operational_entries($1,$2)", [run, [50,60].map((amount,i)=>({entity:"entries",id:`first-${i}`,data:{id:`first-${i}`,company_id:"1",work_key:"w1",contract_id:"v1",kind:"received",cash_date:"2026-09-17",amount}}))]);
+    await db.query("update operational_imports set row_count=2,source_rows=2,total=110,source_total=110 where id=$1",[run]);
+    assert.equal((await db.query<{ready:boolean}>("select prepare_initial_operational_publication($1,1) ready",[run])).rows[0].ready,false);
+    await assert.rejects(()=>db.query("select publish_operational_import($1,2,110)",[run]),/initial_activation_pending/);
+    await assert.rejects(()=>db.query("select save_collection_case($1,$2)",[{...data,version:1,promise_amount:40,receipt_entry_id:"first-0"},admin]),/receipt_invalid/);
+    await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:viewer,role:"authenticated"})]);
+    await db.exec("set role authenticated");
+    try { assert.equal((await db.query("select id from operational_cash_entries where kind='received' and active")).rows.length,0); }
+    finally { await db.exec("reset role"); }
+    await db.query("select prepare_initial_operational_publication($1,1)",[run]);
+    assert.equal((await db.query<{ready:boolean}>("select prepare_initial_operational_publication($1,1) ready",[run])).rows[0].ready,true);
+    await db.query("select publish_operational_import($1,2,110)",[run]);
+    await db.exec("set role authenticated");
+    try { assert.equal((await db.query("select id from operational_cash_entries where kind='received' and active")).rows.length,2); }
+    finally { await db.exec("reset role"); }
+  });
 });
