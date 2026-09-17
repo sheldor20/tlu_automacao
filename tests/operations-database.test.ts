@@ -18,6 +18,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917134314_operations_import_timeout.sql",
     "20260917134801_operations_batched_ingestion.sql",
     "20260917135639_operations_collection_classification.sql",
+    "20260917140638_operations_compact_ingestion.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
@@ -78,16 +79,28 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
       await db.exec("reset role");
     }
   });
-  await t.test("prioriza atrasos pelo histórico sem inventar situação jurídica", async()=>{
-    await db.exec("insert into operational_cash_entries(id,company_id,work_key,contract_id,kind,cash_date,amount) values('late','1','w1','v1','receivable',current_date-2,100); update operational_cash_entries set cash_date=current_date-1 where id='r1';");
-    try {
-      const row=await db.query<{collection_group:string}>("select collection_group from collection_worklist where id='v1'");
-      assert.equal(row.rows[0].collection_group,'easy');
-      assert.equal((await db.query("select * from collection_cases")).rows.length,0);
-    } finally {
-      await db.exec("delete from operational_cash_entries where id='late'; update operational_cash_entries set cash_date='2026-09-17' where id='r1';");
-    }
-  });
+  await t.test(
+    "prioriza atrasos pelo histórico sem inventar situação jurídica",
+    async () => {
+      await db.exec(
+        "insert into operational_cash_entries(id,company_id,work_key,contract_id,kind,cash_date,amount) values('late','1','w1','v1','receivable',current_date-2,100); update operational_cash_entries set cash_date=current_date-1 where id='r1';",
+      );
+      try {
+        const row = await db.query<{ collection_group: string }>(
+          "select collection_group from collection_worklist where id='v1'",
+        );
+        assert.equal(row.rows[0].collection_group, "easy");
+        assert.equal(
+          (await db.query("select * from collection_cases")).rows.length,
+          0,
+        );
+      } finally {
+        await db.exec(
+          "delete from operational_cash_entries where id='late'; update operational_cash_entries set cash_date='2026-09-17' where id='r1';",
+        );
+      }
+    },
+  );
   const data = {
     contract_id: "v1",
     version: 0,
@@ -168,10 +181,25 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
         ).rows[0].active,
         true,
       );
+      await db.query("delete from operational_import_rows where run_id=$1", [
+        r,
+      ]);
       await db.query("select stage_operational_entries($1,$2)", [
         r,
         [{ entity: "entries", id: entry.id, data: entry }],
       ]);
+      await db.query("select stage_operational_entries($1,$2)", [
+        r,
+        [{ entity: "entries", id: entry.id, data: entry }],
+      ]);
+      const audit = await db.query<{ data: Record<string, unknown> }>(
+        "select data from operational_import_rows where run_id=$1 and entity='entries'",
+        [r],
+      );
+      assert.deepEqual(audit.rows[0].data, {
+        kind: "payable",
+        amount: 200.123456,
+      });
       await db.query("select publish_operational_import($1,1,200.123456)", [r]);
       assert.equal(
         (
