@@ -68,16 +68,6 @@ export async function syncQlikOperations(kind: OperationalKind) {
         }
         total += mapped.total;
         if (entries.length) {
-          const saved = await retryImportWrite(() =>
-            db.from("operational_import_rows").upsert(
-              entries.map((e) => ({ ...e, run_id: run })),
-              { onConflict: "run_id,entity,id" },
-            ),
-          );
-          if (saved.error)
-            throw new Error(
-              "Falha ao preparar parcelas: " + saved.error.message,
-            );
           const staged = await retryImportWrite(() =>
             db.rpc("stage_operational_entries", {
               p_run: run,
@@ -154,7 +144,8 @@ export async function syncQlikOperations(kind: OperationalKind) {
             error: message,
             finished_at: new Date().toISOString(),
           })
-          .eq("id", run),
+          .eq("id", run)
+          .eq("status", "running"),
       ),
       retryImportWrite(() =>
         db
