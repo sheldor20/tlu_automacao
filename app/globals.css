@@ -397,6 +397,13 @@ h1, h2, h3, p { margin-top: 0; }
 .icon-button { flex: none; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--muted); display: grid; place-items: center; }
 .icon-button:hover { background: var(--sage-100); color: var(--moss-800); }
 .dialog-body { padding: 24px 25px 27px; }
+.page-action .button.today-idea-trigger { width: auto; padding: 0 18px; font-size: 13px; }
+.dialog-panel.today-idea-dialog { margin: auto; padding: 0; border: 0; border-radius: 22px; color: var(--ink); max-width: calc(100% - 32px); text-align: left; }
+.today-idea-dialog::backdrop { background: rgba(19,27,21,.5); backdrop-filter: blur(7px); }
+.today-idea-dialog .dialog-head p { font-size: 14px; line-height: 1.6; }
+.today-idea-form { display: grid; gap: 18px; }
+.today-idea-form textarea { min-height: 160px; max-height: 45svh; font-size: 16px; line-height: 1.5; }
+.today-idea-form > .field-error { margin: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); align-items: start; column-gap: 22px; row-gap: 20px; }
 .form-span-2 { grid-column: span 2; }
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; padding-top: 7px; }

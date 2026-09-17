@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, EmptyState, KpiCard, PageIntro, StatusPill, Toast } from "@/components/ui";
+import { TodayIdeaButton } from "@/components/today-idea-button";
 import { dateBr, todayIso } from "@/lib/format";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { friendlyError, getSupabase } from "@/lib/supabase";
@@ -171,7 +172,7 @@ export default function TodayPage() {
         eyebrow="Centro operacional"
         title="Hoje"
         description={`Tarefas e alertas de ${selectedUser?.full_name || selectedUser?.email || "seu usuário"}.`}
-        action={<div className="page-action-group">{visibleUsers.length > 1 ? <select value={selectedUserId} onChange={(event) => void loadData(event.target.value)} aria-label="Selecionar visão do usuário">{visibleUsers.map((user) => <option key={user.user_id} value={user.user_id}>{user.is_self ? "Minha visão" : user.full_name || user.email}</option>)}</select> : null}<Button variant="secondary" onClick={() => void loadData(selectedUserId)} disabled={loading}><RefreshCw size={17} /> Atualizar</Button></div>}
+        action={<div className="page-action-group">{visibleUsers.length > 1 ? <select value={selectedUserId} onChange={(event) => void loadData(event.target.value)} aria-label="Selecionar visão do usuário">{visibleUsers.map((user) => <option key={user.user_id} value={user.user_id}>{user.is_self ? "Minha visão" : user.full_name || user.email}</option>)}</select> : null}<Button variant="secondary" onClick={() => void loadData(selectedUserId)} disabled={loading}><RefreshCw size={17} /> Atualizar</Button><TodayIdeaButton /></div>}
       />
 
       {hasProjectAccess ? <section className="kpi-grid today-kpis">

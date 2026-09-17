@@ -61,6 +61,16 @@ desfazem a resolução. A lista de resolvidos mostra as ocorrências ainda vigen
 banco. O teste `tests/today-alert-resolution-database.test.ts` cobre persistência,
 reabertura, idempotência, novas ocorrências e tentativas de acesso indevido.
 
+## Ideias no HOJE
+
+O botão **Enviar ideia** abre um campo de texto para sugestões de melhoria do
+TLU Space, da rotina do time e de automação. A tabela `improvement_ideas` guarda
+a mensagem, o usuário conectado e a data do envio. Usuários ativos podem enviar
+e ler suas próprias ideias; administradores podem consultar todas no banco.
+
+Aplique `supabase/migrations/20260917122124_today_improvement_ideas.sql` antes
+de publicar a interface. Não são necessárias novas variáveis de ambiente.
+
 ## Desenvolvimento
 
 ```bash
