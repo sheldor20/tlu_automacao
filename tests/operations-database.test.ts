@@ -25,6 +25,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917151438_operations_read_performance.sql",
     "20260917162639_operations_initial_activation.sql",
     "20260917163239_operations_collection_index.sql",
+    "20260917164123_operations_overdue_dates.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
