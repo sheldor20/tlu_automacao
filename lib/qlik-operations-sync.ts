@@ -70,9 +70,9 @@ export async function syncQlikOperations(kind: OperationalKind) {
     );
     return { rows: Number(r[0].rows), total: Number(r[0].total) };
   };
-  const initial = await progress();
-  let count = initial.rows,
-    total = initial.total,
+  let initial = { rows: 0, total: 0 };
+  let count = 0,
+    total = 0,
     sourceRows: number | null = info.source_rows,
     sourceTotal: number | null =
       info.source_total === null ? null : Number(info.source_total),
@@ -127,6 +127,9 @@ export async function syncQlikOperations(kind: OperationalKind) {
     catalog.set(key, record);
   };
   try {
+    initial = await progress();
+    count = initial.rows;
+    total = initial.total;
     await checked(
       db
         .from("data_connections")
