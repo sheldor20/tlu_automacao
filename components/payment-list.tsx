@@ -12,13 +12,13 @@ import {
   type PaymentRequest,
 } from "@/lib/payment-requests";
 
-export function PaymentList() {
+export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" | "management" }) {
   const loadSequence = useRef(0);
   const [rows, setRows] = useState<PaymentRequest[]>([]),
     [count, setCount] = useState(0),
     [page, setPage] = useState(0);
   const [manager, setManager] = useState(false),
-    [scope, setScope] = useState("mine");
+    [scope, setScope] = useState(initialScope);
   const [status, setStatus] = useState(""),
     [type, setType] = useState(""),
     [company, setCompany] = useState("");
