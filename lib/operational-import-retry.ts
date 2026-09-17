@@ -12,7 +12,7 @@ export async function retryImportWrite<T extends DatabaseResult>(
       !result.error ||
       attempt >= 4 ||
       !(
-        /^(PGRST00[0-3]|40001|40P01|53\d\d\d|57P0[1-3]|08\d\d\d)$/.test(
+        /^(PGRST00[0-3]|40001|40P01|55P03|53\d\d\d|57P0[1-3]|08\d\d\d)$/.test(
           result.error.code || "",
         ) ||
         /schema cache|connection|fetch failed|network|temporarily unavailable/i.test(

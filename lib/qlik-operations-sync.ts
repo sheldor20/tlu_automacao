@@ -31,6 +31,9 @@ export async function syncQlikOperations(kind: OperationalKind) {
   const run = lock.data as string;
   const catalog = new Map<string, ImportRecord>();
   const seen = new Set<string>();
+  // Read source pages concurrently, but serialize relational writes so pages
+  // sharing the same customer or contract cannot wait on each other's inserts.
+  let pageQueue: Promise<void> = Promise.resolve();
   let count = 0,
     total = 0,
     sourceTotal: number | null = null;
@@ -42,43 +45,47 @@ export async function syncQlikOperations(kind: OperationalKind) {
     await readOperationalQlik(
       kind === "catalog" ? catalogSpecs : [operationalSpec(kind)],
       false,
-      async (cube) => {
-        const mapped = mapOperationalPage(cube, kind);
-        const entries: ImportRecord[] = [];
-        if (cube.key === kind) sourceTotal = cube.total ?? null;
-        for (const record of mapped.records) {
-          if (record.entity === "entries") {
-            if (seen.has(record.id))
-              throw new Error("Parcela repetida na extração.");
-            seen.add(record.id);
-            entries.push(record);
-            count++;
-          } else {
-            const key = record.entity + ":" + record.id;
-            const prior = catalog.get(key);
-            if (
-              prior &&
-              JSON.stringify(prior.data) !== JSON.stringify(record.data)
-            )
-              throw new Error(
-                "Identificação ambígua na origem: " + record.entity,
-              );
-            catalog.set(key, record);
+      (cube) => {
+        const next = pageQueue.then(async () => {
+          const mapped = mapOperationalPage(cube, kind);
+          const entries: ImportRecord[] = [];
+          if (cube.key === kind) sourceTotal = cube.total ?? null;
+          for (const record of mapped.records) {
+            if (record.entity === "entries") {
+              if (seen.has(record.id))
+                throw new Error("Parcela repetida na extração.");
+              seen.add(record.id);
+              entries.push(record);
+              count++;
+            } else {
+              const key = record.entity + ":" + record.id;
+              const prior = catalog.get(key);
+              if (
+                prior &&
+                JSON.stringify(prior.data) !== JSON.stringify(record.data)
+              )
+                throw new Error(
+                  "Identificação ambígua na origem: " + record.entity,
+                );
+              catalog.set(key, record);
+            }
           }
-        }
-        total += mapped.total;
-        if (entries.length) {
-          const staged = await retryImportWrite(() =>
-            db.rpc("stage_operational_entries", {
-              p_run: run,
-              p_rows: mapped.records,
-            }),
-          );
-          if (staged.error)
-            throw new Error(
-              "Falha ao preparar página financeira: " + staged.error.message,
+          total += mapped.total;
+          if (entries.length) {
+            const staged = await retryImportWrite(() =>
+              db.rpc("stage_operational_entries", {
+                p_run: run,
+                p_rows: mapped.records,
+              }),
             );
-        }
+            if (staged.error)
+              throw new Error(
+                "Falha ao preparar página financeira: " + staged.error.message,
+              );
+          }
+        });
+        pageQueue = next;
+        return next;
       },
     );
     if (
