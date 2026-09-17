@@ -1,4 +1,5 @@
 "use client";
+import { ConstructionFinance } from "@/components/construction-finance";
 
 import { Button, Dialog, EmptyState, Field, KpiCard, ProgressBar, StatusPill, Toast } from "@/components/ui";
 import { DetailTabs } from "@/components/detail-tabs";
@@ -541,6 +542,7 @@ export default function WorkDetailPage() {
       </section>
 
       <DetailTabs tabs={workTabs} active={activeTab} onChange={setActiveTab} />
+      {activeTab === "financeiro" || activeTab === "resumo" ? <ConstructionFinance id={construction.id} progress={Number(construction.progress_percent||0)}/> : null}
 
       {activeTab === "resumo" ? <section className="content-card detail-tab-panel">
         <div className="content-card-head"><div><h2>Dados gerais</h2><p>Informações principais, prazo, responsável e orçamento previsto</p></div>{construction.source_business_id ? <StatusPill tone="info">Origem: Novo negócio</StatusPill> : <StatusPill tone="neutral">Obra avulsa</StatusPill>}</div>

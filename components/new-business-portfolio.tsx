@@ -40,9 +40,11 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { QlikWorkSelect } from "./qlik-work-select";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type BusinessForm = {
+  qlik_work_key: string;
   project_id: string;
   name: string;
   property_registration: string;
@@ -54,6 +56,7 @@ type BusinessForm = {
 };
 
 const emptyForm: BusinessForm = {
+  qlik_work_key: "",
   project_id: "",
   name: "",
   property_registration: "",
@@ -186,6 +189,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
     setEditing(business);
     setForm({
       project_id: business.project_id || "",
+      qlik_work_key: business.qlik_work_key || "",
       name: business.name,
       property_registration: business.property_registration || "",
       start_date: business.start_date,
@@ -239,6 +243,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
     }
 
     const payload = {
+      qlik_work_key: form.qlik_work_key || null,
       project_id: form.project_id,
       property_registration: form.property_registration.trim() || null,
       start_date: editing ? form.start_date : todayIso(),
@@ -473,6 +478,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
               <span className="field-empty-hint">Nenhum projeto elegível. <Link href="/projetos">Crie um projeto primeiro.</Link></span>
             ) : null}
           </Field>
+          <QlikWorkSelect value={form.qlik_work_key} onChange={qlik_work_key=>setForm({...form,qlik_work_key})}/>
           <Field label="Nome do negócio">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={Boolean(editing)} maxLength={140} required />
           </Field>

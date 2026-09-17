@@ -193,6 +193,7 @@ const paymentFieldsSchema = z
     requester_phone: text(40).default(""),
     company_key: required(500),
     project_name: text(300).default(""),
+    qlik_work_key: text(500).nullable().optional(),
     title: required(180),
     description: required(8000),
     amount: money.nullable().default(null),

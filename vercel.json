@@ -47,6 +47,26 @@
     {
       "path": "/api/cron/qlik/rental-receipts",
       "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=catalog",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=receivable",
+      "schedule": "10 8 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=payable",
+      "schedule": "20 8 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=received",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=paid",
+      "schedule": "40 8 * * *"
     }
   ]
 }

@@ -1614,7 +1614,7 @@ async function readQlikEngineMetrics(
 
 let chromiumPathPromise: Promise<string> | undefined;
 
-async function launchBrowser(): Promise<Browser> {
+async function launchBrowser(protocolTimeout = 180_000): Promise<Browser> {
   chromium.setGraphicsMode = false;
   // Concurrent indicator jobs must not unpack the same executable twice.
   if (!process.env.CHROME_EXECUTABLE_PATH && !chromiumPathPromise) {
@@ -1626,6 +1626,7 @@ async function launchBrowser(): Promise<Browser> {
   const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromiumPathPromise;
   if (!executablePath) throw new Error("Chromium: o executável não foi localizado no ambiente do servidor.");
   return puppeteer.launch({
+    protocolTimeout,
     args: await puppeteer.defaultArgs({ args: [...chromium.args, "--lang=pt-BR"], headless: "shell" }),
     defaultViewport: {
       deviceScaleFactor: 1,
@@ -1766,5 +1767,29 @@ export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions, se
     return snapshots;
   } finally {
     if (!sessionBrowser) await browser.close();
+  }
+}
+
+/** Isolated, read-only connection used by the operational Qlik catalog. */
+export async function withQlikOperationalPage<T>(entryUrl: string, read: (page: Page, socketUrl: string, appId: string) => Promise<T>): Promise<T> {
+  const username = process.env.QLIK_USERNAME, password = process.env.QLIK_PASSWORD;
+  if (!username || !password || username.includes("[SENSITIVE]") || password.includes("[SENSITIVE]")) throw new Error("Credenciais do Qlik indisponíveis.");
+  const browser = await launchBrowser(750_000);
+  let observer: Awaited<ReturnType<typeof observeNativeQlikSocket>> | undefined;
+  try {
+    const page = await browser.newPage();
+    const appId = extractQlikAppId(entryUrl);
+    observer = await observeNativeQlikSocket(page, appId);
+    await page.goto(entryUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    await authenticateIfNeeded(page, { username, password });
+    try { await page.waitForFunction(() => !window.location.hostname.startsWith('login.') && /\/sense\/app\//i.test(window.location.pathname), { timeout: 30_000 }); }
+    catch { await authenticateIfNeeded(page,{username,password}); await page.waitForFunction(() => !window.location.hostname.startsWith('login.') && /\/sense\/app\//i.test(window.location.pathname), {timeout:30_000}); }
+    let nativeUrl: string;
+    try { nativeUrl = await observer.waitForAuthenticatedUrl(60_000); }
+    catch (error) { throw new Error(`${error instanceof Error ? error.message : 'Falha Qlik'} ${await loginSurfaceSummaryText(page)}`); }
+    return await read(page, isolatedQlikAppWebSocketUrl(nativeUrl, appId, `operations-${crypto.randomUUID()}`), appId);
+  } finally {
+    await observer?.stop();
+    await browser.close();
   }
 }

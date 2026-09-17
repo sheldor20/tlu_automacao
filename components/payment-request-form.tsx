@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { CheckCircle2, Plus, Trash2, Send } from "lucide-react";
+import { QlikWorkSelect } from "./qlik-work-select";
 import { Button, Field } from "@/components/ui";
 import { getSupabase } from "@/lib/supabase";
 import {
@@ -33,6 +34,8 @@ export function PaymentRequestForm({
   onSaved?: () => void;
   onCancel?: () => void;
 }) {
+  const [companyKey, setCompanyKey] = useState(initialRequest?.company_key || "");
+  const [workKey, setWorkKey] = useState(initialRequest?.qlik_work_key || "");
   const [type, setType] = useState<PaymentType>(initialRequest?.type || "service");
   const [companies, setCompanies] = useState<Company[]>([]),
     [companyDate, setCompanyDate] = useState("");
@@ -198,7 +201,8 @@ export function PaymentRequestForm({
         requester_email: s("requester_email"),
         requester_phone: s("requester_phone"),
         company_key: s("company_key"),
-        project_name: s("project_name"),
+        project_name: initialRequest?.project_name || "",
+        qlik_work_key: workKey || null,
         title: s("title"),
         description: s("description"),
         amount: type === "materials" || type === "termination"
@@ -387,7 +391,7 @@ export function PaymentRequestForm({
                 : undefined
             }
           >
-            <select name="company_key" required defaultValue={initialRequest?.company_key || ""}>
+            <select name="company_key" required value={companyKey} onChange={e=>{setCompanyKey(e.target.value);setWorkKey("");}}>
               <option value="">Selecione a empresa</option>
               {availableCompanies.map((c) => (
                 <option key={c.company_key} value={c.company_key}>
@@ -396,9 +400,7 @@ export function PaymentRequestForm({
               ))}
             </select>
           </Field>
-          <Field label="Obra / empreendimento">
-            <input name="project_name" defaultValue={initialRequest?.project_name ?? ""} maxLength={300} />
-          </Field>
+          <QlikWorkSelect value={workKey} onChange={setWorkKey} companyKey={companyKey} />
           <Field label="Data desejada de pagamento *">
             <input name="due_date" defaultValue={initialRequest?.due_date.slice(0, 10) ?? ""} type="date" required />
           </Field>
