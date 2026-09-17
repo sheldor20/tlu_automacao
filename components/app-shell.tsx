@@ -25,6 +25,8 @@ import {
   TrendingUp,
   Workflow,
   Wallet,
+  Users,
+  HandCoins,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -38,6 +40,9 @@ const departmentLinks: Array<{
   label: string;
   icon: typeof TrendingUp;
 }> = [
+  { slug: "financeiro", href: "/financeiro", label: "Financeiro", icon: Wallet },
+  { slug: "clientes", href: "/clientes", label: "Clientes", icon: Users },
+  { slug: "cobranca", href: "/cobranca", label: "Cobrança", icon: HandCoins },
   { slug: "novos-negocios", href: "/novos-negocios", label: "Novos negócios", icon: TrendingUp },
   { slug: "obras", href: "/obras", label: "Obras", icon: Building2 },
   { slug: "projetos", href: "/projetos", label: "Projetos", icon: FolderKanban },
@@ -321,6 +326,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
             if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
+            if (slug === "financeiro") return <div className="nav-group" key={href}><Link href="/financeiro/caixa-projetado" className={pathname.startsWith(href) ? "nav-link active" : "nav-link"}><Icon size={19}/><span>Financeiro</span></Link><div className="nav-submenu"><Link href="/financeiro/caixa-projetado" className={pathname.startsWith(href) ? "nav-sublink active" : "nav-sublink"}><ChartNoAxesCombined size={15}/><span>Caixa projetado</span></Link></div></div>;
             if (slug === "novos-negocios") {
               const businessAreaActive = pathname.startsWith("/novos-negocios") || (allowedDepartments.includes("obras") && pathname.startsWith("/obras"));
               return <div className="nav-group" key={href}>

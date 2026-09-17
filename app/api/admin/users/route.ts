@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from "@supabase/supabase
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "governanca", "alugueis", "processos", "pauta-ra", "indicadores"]);
+const departmentSchema = z.enum(["novos-negocios", "obras", "projetos", "governanca", "alugueis", "processos", "pauta-ra", "indicadores", "financeiro", "clientes", "cobranca"]);
 const indicatorAreaSchema = z.enum([
   "empresa",
   "juridico-vendas-cobranca",
@@ -25,7 +25,7 @@ const createUserSchema = z.object({
   password: z.string().min(8).max(72),
   active: z.boolean().default(true),
   is_admin: z.boolean().default(false),
-  departments: z.array(departmentSchema).max(8),
+  departments: z.array(departmentSchema).max(11),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
@@ -42,7 +42,7 @@ const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(140),
   active: z.boolean(),
   is_admin: z.boolean(),
-  departments: z.array(departmentSchema).max(8),
+  departments: z.array(departmentSchema).max(11),
   indicator_areas: z.array(indicatorAreaSchema).max(6).default([]),
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,

@@ -13,6 +13,7 @@ export type BusinessStage =
 export type BusinessPortfolioSection = "prospeccao" | "esteira_negocios" | "landing_bank";
 
 export type Business = {
+  qlik_work_key?: string | null;
   id: string;
   project_id: string | null;
   name: string;
@@ -59,6 +60,7 @@ export type StageHistory = {
 };
 
 export type Construction = {
+  qlik_work_key?: string | null;
   id: string;
   source_business_id: string | null;
   source_project_id: string | null;
@@ -158,7 +160,7 @@ export type TodayVisibleUser = Pick<UserProfile, "user_id" | "full_name" | "emai
   is_self: boolean;
 };
 
-export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "governanca" | "alugueis" | "processos" | "pauta-ra" | "indicadores";
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "governanca" | "alugueis" | "processos" | "pauta-ra" | "indicadores" | "financeiro" | "clientes" | "cobranca";
 
 export type Department = {
   slug: DepartmentSlug;

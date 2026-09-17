@@ -1,0 +1,1 @@
+do $$ begin execute replace(pg_get_functiondef('public.publish_operational_import(uuid,integer,numeric)'::regprocedure),'update public.qlik_works set active=false;','update public.qlik_works set active=false where active;'); end $$;
