@@ -49,6 +49,7 @@ export async function syncQlikOperations(kind: OperationalKind) {
         const next = pageQueue.then(async () => {
           const mapped = mapOperationalPage(cube, kind);
           const entries: ImportRecord[] = [];
+          const pageCatalog = new Map<string, ImportRecord>();
           if (cube.key === kind) sourceTotal = cube.total ?? null;
           for (const record of mapped.records) {
             if (record.entity === "entries") {
@@ -68,20 +69,25 @@ export async function syncQlikOperations(kind: OperationalKind) {
                   "Identificação ambígua na origem: " + record.entity,
                 );
               catalog.set(key, record);
+              pageCatalog.set(key, record);
             }
           }
           total += mapped.total;
           if (entries.length) {
-            const staged = await retryImportWrite(() =>
-              db.rpc("stage_operational_entries", {
-                p_run: run,
-                p_rows: mapped.records,
-              }),
-            );
-            if (staged.error)
-              throw new Error(
-                "Falha ao preparar página financeira: " + staged.error.message,
+            const records = [...pageCatalog.values(), ...entries];
+            for (let offset = 0; offset < records.length; offset += 5000) {
+              const staged = await retryImportWrite(() =>
+                db.rpc("stage_operational_entries", {
+                  p_run: run,
+                  p_rows: records.slice(offset, offset + 5000),
+                }),
               );
+              if (staged.error)
+                throw new Error(
+                  "Falha ao preparar página financeira: " +
+                    staged.error.message,
+                );
+            }
           }
         });
         pageQueue = next;
