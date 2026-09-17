@@ -21,18 +21,21 @@ export type QlikCube = {
 };
 export const OPERATIONAL_QLIK_URL =
   "https://terralotusurbanismo.us.qlikcloud.com/sense/app/e3d13862-ec1f-4332-8a5b-df4c7b93fa7c/sheet/32a488c2-14d8-4bde-ba4f-35211d75376b/state/analysis";
+export const CLIENT_STATUS_QLIK_URL =
+  "https://terralotusurbanismo.us.qlikcloud.com/sense/app/465cc478-f1b4-4969-b057-d80a623b6de8/sheet/cdc4d2c1-2344-49c8-a279-2b390061fa06/state/analysis";
 
 export async function readOperationalQlik(
   specs: QlikCubeSpec[] = [],
   inspect = false,
   onPage?: (cube: QlikCube) => Promise<void>,
+  source: "finance" | "sales" = "finance",
 ) {
   return withQlikOperationalPage(
-    OPERATIONAL_QLIK_URL,
+    source === "sales" ? CLIENT_STATUS_QLIK_URL : OPERATIONAL_QLIK_URL,
     async (page, socketUrl, appId) => {
       if (onPage) await page.exposeFunction("operationalRows", onPage);
       return page.evaluate(
-        async ({ socketUrl, appId, specs, inspect, stream }) => {
+        async ({ socketUrl, appId, specs, inspect, stream, source }) => {
           type Result = Record<string, unknown>;
           const socket = new WebSocket(socketUrl);
           const pending = new Map<
@@ -108,10 +111,12 @@ export async function readOperationalQlik(
                 "Não foi possível identificar a versão da origem Qlik.",
               );
             await call(doc, "ClearAll", { qLockedAlso: true });
-            for (const [name, value] of [
-              ["vQtdDias", 99999999],
-              ["vDesembolsoFinanceiro", "Normal"],
-            ] as const) {
+            for (const [name, value] of source === "finance"
+              ? ([
+                  ["vQtdDias", 99999999],
+                  ["vDesembolsoFinanceiro", "Normal"],
+                ] as const)
+              : []) {
               const variable = handle(
                 await call(doc, "GetVariableByName", { qName: name }),
               );
@@ -296,7 +301,7 @@ export async function readOperationalQlik(
             socket.close();
           }
         },
-        { socketUrl, appId, specs, inspect, stream: !!onPage },
+        { socketUrl, appId, specs, inspect, stream: !!onPage, source },
       );
     },
   );

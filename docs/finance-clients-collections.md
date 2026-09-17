@@ -22,6 +22,10 @@ Na primeira carga de cada origem, a ativação avança em lotes com um ponto de 
 
 O Qlik financeiro não fornece, nesta integração, telefones/e-mails, documentos, processos judiciais ou acordos detalhados. Esses acompanhamentos são próprios do Space. A carteira é classificada pelo histórico financeiro, preservando a situação jurídica como desconhecida até ser preenchida pela equipe. Casos registrados como judiciais ou suspensos ficam em grupo próprio.
 
+A carteira de Clientes apresenta Situação financeira, Registro e Escritura. Os dados de escrituração vêm do aplicativo de Vendas do Qlik (`465cc478-f1b4-4969-b057-d80a623b6de8`), pelo ID de venda, com validação dos IDs de empresa e obra. “Registrado” na origem corresponde à escritura concluída e ao registro concluído; “Escriturado” e autorização emitida mantêm o registro pendente. Campos ausentes permanecem “Não informado”. Os status também aparecem na ficha de cada contrato, inclusive quando o cliente tem mais de uma unidade.
+
+Parcelas positivas vencidas tornam o contrato inadimplente; parcelas que vencem hoje ainda são adimplentes. Créditos não ocultam parcelas vencidas. Quitação exige “Quitada” no Qlik e ausência de saldo em aberto. Valores sem vencimento, fonte financeira ainda não publicada ou contratos sem informação suficiente ficam “A confirmar”. No resumo do cliente, um atraso prevalece; contratos cancelados são desconsiderados, e só se exibe “Quitado” quando todos os demais contratos estão quitados. Sem contratos válidos, não se presume quitação.
+
 ## Acesso e manutenção
 
 Administração controla os departamentos Financeiro, Clientes e Cobrança. As novas permissões não são concedidas automaticamente a todos. Escritas operacionais passam por rotas autenticadas com verificação de perfil/nível; tabelas de importação são exclusivas do servidor. Documentos não são públicos.
@@ -29,6 +33,8 @@ Administração controla os departamentos Financeiro, Clientes e Cobrança. As n
 A sincronização diária começa às 08:00, 08:10, 08:20, 08:30 e 08:40 UTC: catálogo, contas a receber, contas a pagar, recebimentos e pagamentos. Cargas grandes avançam em etapas de até 100 mil linhas. A próxima etapa é chamada após a resposta; um cron de recuperação a cada 15 minutos retoma etapas pendentes ou interrompidas. O bloqueio impede gravações simultâneas da mesma origem. Versão do aplicativo, quantidade e total são conferidos durante a retomada, e a publicação exige o conjunto completo. A rota exige CRON_SECRET. As tabelas data_connections e operational_imports registram execução, origem, quantidade, total e falhas.
 
 O navegador necessário à extração está incluído explicitamente no pacote da rota. A função de publicação tem limite próprio de execução, conforme a [documentação do Supabase](https://supabase.com/docs/guides/database/postgres/timeouts), preservando os limites das consultas comuns.
+
+A situação dos contratos e a escrituração são atualizadas diariamente às 08:50 UTC pela rota `/api/cron/qlik/client-status`, protegida por CRON_SECRET. A leitura confere a versão do aplicativo, a quantidade de linhas e possíveis conflitos por contrato antes de substituir o retrato anterior em uma transação. A conexão `qlik-client-status` e seu histórico permitem acompanhar pausas, atualização e falhas. O navegador mostra a data da última carga e alerta para dados desatualizados. A consulta de situação financeira agrega apenas os contratos dos clientes da página, sem carregar a carteira financeira inteira.
 
 ## Validação
 

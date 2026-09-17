@@ -8,7 +8,7 @@ export async function GET(request: Request) {
       "cobranca",
       "obras",
     ]);
-    const [connection, runs] = await Promise.all([
+    const [connection, runs, clientStatus] = await Promise.all([
       checked(
         service
           .from("data_connections")
@@ -23,6 +23,13 @@ export async function GET(request: Request) {
           .order("started_at", { ascending: false })
           .limit(50),
       ),
+      checked(
+        service
+          .from("data_connections")
+          .select("active,last_success_at,last_error_at")
+          .eq("slug", "qlik-client-status")
+          .single(),
+      ),
     ]);
     const sources = Object.fromEntries(
       ["catalog", "receivable", "payable", "received", "paid"].map((kind) => [
@@ -33,6 +40,14 @@ export async function GET(request: Request) {
         },
       ]),
     );
+    sources.client_status = {
+      at: clientStatus.last_success_at,
+      status: clientStatus.last_error_at
+        ? "error"
+        : clientStatus.last_success_at
+          ? "success"
+          : "pending",
+    };
     return paymentJson({
       active: connection.active,
       checked_at: new Date().toISOString(),

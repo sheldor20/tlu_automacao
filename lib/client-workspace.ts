@@ -27,7 +27,35 @@ export type ClientContract = {
   last_receipt?: string | null;
   collection_group?: import("./operational-finance").CollectionGroup;
   promise_overdue?: boolean;
+  financial_status?: ClientFinancialStatus;
+  receivable_amount?: number;
+  deed_status?: string | null;
+  registration_status?: string | null;
+  status_synced_at?: string | null;
+  sale_status?: string | null;
 };
+export type ClientFinancialStatus = "current" | "overdue" | "paid" | "unknown";
+export const CLIENT_FINANCIAL_LABELS: Record<ClientFinancialStatus, string> = {
+  current: "Adimplente",
+  overdue: "Inadimplente",
+  paid: "Quitado",
+  unknown: "A confirmar",
+};
+export function clientFinancialStatus(
+  allContracts: Pick<ClientContract, "financial_status" | "sale_status">[],
+): ClientFinancialStatus {
+  const contracts = allContracts.filter((c) => c.sale_status !== "Cancelado");
+  if (contracts.some((c) => c.financial_status === "overdue")) return "overdue";
+  if (
+    !contracts.length ||
+    contracts.some(
+      (c) => !c.financial_status || c.financial_status === "unknown",
+    )
+  )
+    return "unknown";
+  if (contracts.some((c) => c.financial_status === "current")) return "current";
+  return "paid";
+}
 export type ClientEvent = {
   id: string;
   client_id: string;

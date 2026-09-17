@@ -134,6 +134,25 @@
 .ops-positive {
   color: #26734c;
 }
+.ops-client-status {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: #59645c;
+  background: #edf0ec;
+}
+.ops-client-status-current { color: #256044; background: #e9f3ec; }
+.ops-client-status-overdue { color: #963f32; background: #fff0ed; }
+.ops-client-status-paid { color: #285b75; background: #e9f2f8; }
+.ops-property-status + .ops-property-status { margin-top: 12px; }
+.ops-contract-status { margin-top: 10px; }
+.ops-property-details { margin: 12px 0; font-size: 13px; }
+.ops-property-details > div { margin-top: 8px; }
+.ops-property-details dt { color: #647267; font-size: 11px; }
+.ops-property-details dd { margin: 3px 0 0; }
 .ops-empty {
   padding: 48px 24px;
   text-align: center;

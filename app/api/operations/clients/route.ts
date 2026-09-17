@@ -43,8 +43,8 @@ export async function GET(request: Request) {
     const clients = list.clients,
       contracts = list.contracts;
     const contractIds = contracts.map((c: { id: string }) => c.id);
-    const [entries, cases, events, companies, works, users] = await Promise.all(
-      [
+    const [entries, cases, events, companies, works, users, statuses] =
+      await Promise.all([
         clientId && contractIds.length
           ? allRows(db, "operational_cash_entries", "*", {
               active: true,
@@ -73,12 +73,23 @@ export async function GET(request: Request) {
             .is("deleted_at", null)
             .order("full_name"),
         ),
-      ],
-    );
+        clients.length
+          ? checked(
+              db.rpc("client_status_summary", {
+                p_client_ids: clients.map((c: { id: string }) => c.id),
+              }),
+            )
+          : Promise.resolve([]),
+      ]);
     return paymentJson({
       total: list.total,
       clients,
-      contracts,
+      contracts: contracts.map((c: { id: string }) => ({
+        ...c,
+        ...statuses.find(
+          (s: { contract_id: string }) => s.contract_id === c.id,
+        ),
+      })),
       entries,
       cases,
       events,

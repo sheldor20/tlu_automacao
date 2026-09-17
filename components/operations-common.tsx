@@ -123,7 +123,7 @@ export function OperationsEmpty({ text }: { text: string }) {
 export function OperationsDataStatus({
   sources,
 }: {
-  sources: Array<"catalog" | "receivable" | "payable" | "received" | "paid">;
+  sources: Array<"catalog" | "receivable" | "payable" | "received" | "paid" | "client_status">;
 }) {
   const o = useOperations<{
     active: boolean;
@@ -137,6 +137,7 @@ export function OperationsDataStatus({
     payable: "contas a pagar",
     received: "recebimentos",
     paid: "pagamentos",
+    client_status: "situação dos contratos e escrituração",
   };
   const pending = sources.filter((k) => !o.data!.sources[k]?.at),
     failed = sources.filter((k) => o.data!.sources[k]?.status === "error");
