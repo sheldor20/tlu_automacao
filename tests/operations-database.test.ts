@@ -19,6 +19,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917134801_operations_batched_ingestion.sql",
     "20260917135639_operations_collection_classification.sql",
     "20260917140638_operations_compact_ingestion.sql",
+    "20260917143529_operations_resumable_imports.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
@@ -99,6 +100,67 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
           "delete from operational_cash_entries where id='late'; update operational_cash_entries set cash_date='2026-09-17' where id='r1';",
         );
       }
+    },
+  );
+  await t.test(
+    "retoma a mesma preparação e impede duas etapas simultâneas",
+    async () => {
+      const run = (
+        await db.query<{ id: string }>(
+          "select begin_operational_import('received') as id",
+        )
+      ).rows[0].id;
+      await assert.rejects(
+        () => db.query("select begin_operational_import('received')"),
+        /import_busy/,
+      );
+      const entry = {
+        id: "resume-entry",
+        company_id: "1",
+        work_key: "w1",
+        contract_id: "v1",
+        kind: "received",
+        amount: 12.345678,
+        description: "Parcela",
+      };
+      await db.query("select stage_operational_entries($1,$2)", [
+        run,
+        [{ entity: "entries", id: entry.id, data: entry }],
+      ]);
+      await db.query(
+        "update operational_imports set continuation_ready=true where id=$1",
+        [run],
+      );
+      const resumed = (
+        await db.query<{ id: string }>(
+          "select begin_operational_import('received') as id",
+        )
+      ).rows[0].id;
+      assert.equal(resumed, run);
+      const progress = (
+        await db.query<{ rows: number; total: string }>(
+          "select * from operational_import_progress($1)",
+          [run],
+        )
+      ).rows[0];
+      assert.equal(Number(progress.rows), 1);
+      assert.equal(progress.total, "12.345678");
+      await db.query(
+        "update operational_imports set lease_started_at=now()-interval '16 minutes' where id=$1",
+        [run],
+      );
+      assert.equal(
+        (
+          await db.query<{ id: string }>(
+            "select begin_operational_import('received') as id",
+          )
+        ).rows[0].id,
+        run,
+      );
+      await db.query(
+        "update operational_imports set status='error' where id=$1",
+        [run],
+      );
     },
   );
   const data = {

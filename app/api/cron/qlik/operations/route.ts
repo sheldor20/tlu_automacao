@@ -1,8 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { readOperationalQlik } from "@/lib/qlik-operational";
-import { syncQlikOperations } from "@/lib/qlik-operations-sync";
+import {
+  syncQlikOperations,
+  nextOperationalImport,
+} from "@/lib/qlik-operations-sync";
 export const maxDuration = 800;
 export async function GET(request: Request) {
   const provided = Buffer.from(request.headers.get("authorization") || "");
@@ -33,10 +36,39 @@ export async function GET(request: Request) {
         headers: { "Cache-Control": "no-store" },
       });
     }
-    const kind = z
-      .enum(["catalog", "receivable", "received", "payable", "paid"])
+    const requested = z
+      .enum([
+        "catalog",
+        "receivable",
+        "received",
+        "payable",
+        "paid",
+        "continue",
+      ])
       .parse(url.searchParams.get("kind") || "catalog");
-    return syncQlikOperations(kind);
+    const kind =
+      requested === "continue" ? await nextOperationalImport() : requested;
+    if (!kind) return NextResponse.json({ ok: true, idle: true });
+    const response = await syncQlikOperations(kind);
+    const result = await response.clone().json();
+    if (
+      (result.partial || result.retry) &&
+      process.env.VERCEL_ENV === "production"
+    ) {
+      after(async () => {
+        const continuation = await fetch(
+          `https://www.terralotus.space/api/cron/qlik/operations?kind=${kind}`,
+          { headers: { authorization: `Bearer ${secret}` }, cache: "no-store" },
+        );
+        if (!continuation.ok && continuation.status !== 409)
+          console.error(
+            "Continuação Qlik pendente; será retomada pelo cron.",
+            kind,
+            continuation.status,
+          );
+      });
+    }
+    return response;
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Falha na leitura." },

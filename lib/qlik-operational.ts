@@ -6,6 +6,8 @@ export type QlikCubeSpec = {
   objectId?: string;
   measureId?: string;
   limit?: number;
+  offset?: number;
+  rowBudget?: number;
 };
 export type QlikCell = { text: string; number: number | null };
 export type QlikCube = {
@@ -15,6 +17,7 @@ export type QlikCube = {
   totalRows: number;
   properties?: unknown;
   total?: number | null;
+  revision?: string;
 };
 export const OPERATIONAL_QLIK_URL =
   "https://terralotusurbanismo.us.qlikcloud.com/sense/app/e3d13862-ec1f-4332-8a5b-df4c7b93fa7c/sheet/32a488c2-14d8-4bde-ba4f-35211d75376b/state/analysis";
@@ -96,6 +99,14 @@ export async function readOperationalQlik(
               };
             });
             const doc = handle(await call(-1, "OpenDoc", { qDocName: appId }));
+            const appLayout = (await call(doc, "GetAppLayout")).qLayout as {
+              qLastReloadTime?: string;
+            };
+            const revision = appLayout.qLastReloadTime;
+            if (!revision || !Number.isFinite(Date.parse(revision)))
+              throw new Error(
+                "Não foi possível identificar a versão da origem Qlik.",
+              );
             await call(doc, "ClearAll", { qLockedAlso: true });
             for (const [name, value] of [
               ["vQtdDias", 99999999],
@@ -134,6 +145,7 @@ export async function readOperationalQlik(
               totalRows: number;
               properties?: unknown;
               total?: number | null;
+              revision?: string;
             }> = [];
             for (const spec of specs) {
               const h = spec.objectId
@@ -181,6 +193,8 @@ export async function readOperationalQlik(
               const total = spec.limit
                 ? Math.min(spec.limit, cube.qSize.qcy)
                 : cube.qSize.qcy;
+              const offset = spec.offset || 0;
+              const end = Math.min(total, offset + (spec.rowBudget || total));
               if (total > 1000000)
                 throw new Error(
                   "A extração excedeu o limite de 1 milhão de linhas.",
@@ -192,10 +206,10 @@ export async function readOperationalQlik(
                 ...cube.qDimensionInfo,
                 ...cube.qMeasureInfo,
               ].map((c) => c.qFallbackTitle);
-              for (let batch = 0; batch < total; batch += height * 4) {
+              for (let batch = offset; batch < end; batch += height * 4) {
                 const pages = await Promise.all(
                   Array.from({ length: 4 }, (_, i) => batch + i * height)
-                    .filter((top) => top < total)
+                    .filter((top) => top < end)
                     .map(async (top) => {
                       const data = await call(h, "GetHyperCubeData", {
                         qPath: "/qHyperCubeDef",
@@ -204,7 +218,7 @@ export async function readOperationalQlik(
                             qTop: top,
                             qLeft: 0,
                             qWidth: cube.qSize.qcx,
-                            qHeight: Math.min(height, total - top),
+                            qHeight: Math.min(height, end - top),
                           },
                         ],
                       });
@@ -215,7 +229,7 @@ export async function readOperationalQlik(
                           >;
                         }>
                       )[0].qMatrix;
-                      if (matrix.length !== Math.min(height, total - top))
+                      if (matrix.length !== Math.min(height, end - top))
                         throw new Error("Extração Qlik incompleta.");
                       const pageRows = matrix.map((row) =>
                         row.map((c) => ({
@@ -242,6 +256,7 @@ export async function readOperationalQlik(
                     rows: pageRows,
                     totalRows: cube.qSize.qcy,
                     total: cube.qGrandTotalRow?.[0]?.qNum ?? null,
+                    revision,
                   });
                 else rows.push(...pageRows);
               }
@@ -253,6 +268,7 @@ export async function readOperationalQlik(
                 rows,
                 totalRows: cube.qSize.qcy,
                 total: cube.qGrandTotalRow?.[0]?.qNum ?? null,
+                revision,
                 ...(inspect && spec.measureId
                   ? {
                       measureProperties: await call(
@@ -270,6 +286,11 @@ export async function readOperationalQlik(
                   : {}),
               });
             }
+            const finalLayout = (await call(doc, "GetAppLayout")).qLayout as {
+              qLastReloadTime?: string;
+            };
+            if (finalLayout.qLastReloadTime !== revision)
+              throw new Error("qlik_source_changed");
             return { fields, cubes };
           } finally {
             socket.close();
