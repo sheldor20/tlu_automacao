@@ -27,6 +27,8 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917163239_operations_collection_index.sql",
     "20260917164123_operations_overdue_dates.sql",
     "20260917174235_cash_projection_covering_index.sql",
+    "20260917174951_client_financial_and_property_status.sql",
+    "20260917175343_client_status_snapshot_replace.sql",
   ])
     await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111",
@@ -337,6 +339,42 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
       );
     },
   );
+  await t.test("situação financeira não confunde ausência de parcelas com quitação e respeita acesso", async () => {
+    await db.exec("insert into operational_publications(kind) values('receivable') on conflict do nothing; insert into client_accounts(id,name) values('status-client','Teste de situação')");
+    for (const id of ['late','today','paid','unknown','undated','cancelled'])
+      await db.query("insert into client_contracts(id,client_id,company_id,work_key,contract_number) values($1,'status-client','1','w1',$1)",[id]);
+    await db.exec(`insert into operational_cash_entries(id,company_id,contract_id,kind,cash_date,amount,active) values
+      ('status-late','1','late','receivable',(now() at time zone 'America/Sao_Paulo')::date-1,100,true),
+      ('status-credit','1','late','receivable',(now() at time zone 'America/Sao_Paulo')::date-1,-100,true),
+      ('status-today','1','today','receivable',(now() at time zone 'America/Sao_Paulo')::date,100,true),
+      ('status-paid-old','1','paid','receivable',current_date-10,100,false),
+      ('status-undated','1','undated','receivable',null,100,true)`);
+    const rows = ['late','today','paid','undated','cancelled'].map(id=>({contract_id:id,company_id:'1',work_key:'w1',paid_off:id!=='cancelled',sale_status:id==='cancelled'?'Cancelado':'Quitada',deed_status:'Escriturada',registration_status:'Registrado'}));
+    await db.query("select publish_client_property_statuses($1,now())",[JSON.stringify(rows)]);
+    const result=(await db.query<{contract_id:string,financial_status:string}>("select * from client_status_summary(array['status-client'])")).rows;
+    assert.deepEqual(Object.fromEntries(result.map(r=>[r.contract_id,r.financial_status])),{late:'overdue',today:'current',paid:'paid',unknown:'unknown',undated:'unknown',cancelled:'unknown'});
+    await assert.rejects(()=>db.query("select publish_client_property_statuses($1,now())",[JSON.stringify([{...rows[0],company_id:'2'}])]),/identity_mismatch/);
+    await assert.rejects(()=>db.query("select publish_client_property_statuses($1,now())",[JSON.stringify([rows[0],rows[0]])]),/invalid_status_keys/);
+    await assert.rejects(()=>db.query("select publish_client_property_statuses($1,'2000-01-01')",[JSON.stringify(rows)]),/stale_status_import/);
+    assert.equal((await db.query("select * from client_property_statuses")).rows.length,5);
+    await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:viewer,role:'authenticated'})]);
+    await db.exec("set role authenticated");
+    try {
+      assert.equal((await db.query("select * from client_status_summary(array['status-client'])")).rows.length,6);
+      await assert.rejects(()=>db.query("select publish_client_property_statuses($1,now())",[JSON.stringify(rows)]),/permission denied/);
+    } finally { await db.exec("reset role"); }
+    await db.query("delete from profile_departments where user_id=$1",[viewer]);
+    await db.exec("set role authenticated");
+    try {
+      assert.equal((await db.query("select * from client_status_summary(array['status-client'])")).rows.length,0);
+      assert.equal((await db.query("select * from client_property_statuses")).rows.length,0);
+    } finally { await db.exec("reset role"); }
+    await db.query("insert into profile_departments(user_id,department_slug) values($1,'clientes')",[viewer]);
+    await db.exec("delete from operational_publications where kind='receivable'");
+    const unpublished=(await db.query<{financial_status:string}>("select * from client_status_summary(array['status-client'])")).rows;
+    assert.ok(unpublished.every(r=>r.financial_status==='unknown'));
+    await db.exec("insert into operational_publications(kind) values('receivable')");
+  });
   await t.test("preparação inicial retomável só fica visível após publicar tudo", async () => {
     await db.exec("delete from operational_publications where kind='received'");
     const run = (await db.query<{id:string}>("select begin_operational_import('received') id")).rows[0].id;

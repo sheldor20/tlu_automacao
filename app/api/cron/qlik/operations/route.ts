@@ -32,9 +32,15 @@ export async function GET(request: Request) {
         )
         .max(20)
         .parse(JSON.parse(url.searchParams.get("specs") || "[]"));
-      return NextResponse.json(await readOperationalQlik(specs, true), {
-        headers: { "Cache-Control": "no-store" },
-      });
+      const source = z
+        .enum(["finance", "sales"])
+        .parse(url.searchParams.get("source") || "finance");
+      return NextResponse.json(
+        await readOperationalQlik(specs, true, undefined, source),
+        {
+          headers: { "Cache-Control": "no-store" },
+        },
+      );
     }
     const requested = z
       .enum([

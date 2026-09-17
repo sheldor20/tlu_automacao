@@ -14,8 +14,11 @@ import {
 import {
   EVENT_LABELS,
   EVENT_STATUSES,
+  CLIENT_FINANCIAL_LABELS,
+  clientFinancialStatus,
   type ClientWorkspaceData,
   type ClientEvent,
+  type ClientFinancialStatus,
 } from "@/lib/client-workspace";
 import { localToday } from "@/lib/operational-finance";
 import { paymentFetch } from "@/lib/payment-client";
@@ -30,6 +33,13 @@ const TABS = [
   ["contact", "Atendimentos"],
   ["regularization", "Regularização"],
 ];
+function FinancialBadge({ status }: { status: ClientFinancialStatus }) {
+  return (
+    <span className={`ops-client-status ops-client-status-${status}`}>
+      {CLIENT_FINANCIAL_LABELS[status]}
+    </span>
+  );
+}
 export function ClientsWorkspace() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -151,7 +161,9 @@ export function ClientsWorkspace() {
           </Button>
         ) : null}
       </OperationsHeader>
-      <OperationsDataStatus sources={["receivable", "received", "catalog"]} />
+      <OperationsDataStatus
+        sources={["receivable", "received", "catalog", "client_status"]}
+      />
       <OperationsError message={o.error} />
       {!client ? (
         <>
@@ -176,50 +188,96 @@ export function ClientsWorkspace() {
                     <tr>
                       <th>Cliente</th>
                       <th>Contratos e unidades</th>
+                      <th>Situação financeira</th>
+                      <th>Registro</th>
+                      <th>Escritura</th>
                       <th>Contato</th>
                       <th>Atualização</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((c) => (
-                      <tr key={c.id}>
-                        <td>
-                          <button
-                            className="ops-text-button"
-                            onClick={() => {
-                              setClientId(c.id);
-                              setTab("all");
-                            }}
-                          >
-                            {c.name}
-                          </button>
-                          <small>ID {c.id}</small>
-                        </td>
-                        <td>
-                          {d?.contracts
-                            .filter((k) => k.client_id === c.id)
-                            .map((k) => (
+                    {visible.map((c) => {
+                      const clientContracts =
+                        d?.contracts.filter((k) => k.client_id === c.id) || [];
+                      const financialStatus =
+                        clientFinancialStatus(clientContracts);
+                      return (
+                        <tr key={c.id}>
+                          <td>
+                            <button
+                              className="ops-text-button"
+                              onClick={() => {
+                                setClientId(c.id);
+                                setTab("all");
+                              }}
+                            >
+                              {c.name}
+                            </button>
+                            <small>ID {c.id}</small>
+                          </td>
+                          <td>
+                            {clientContracts.map((k) => (
                               <div key={k.id}>
                                 {k.contract_number} ·{" "}
                                 {k.block ? `Quadra ${k.block} ` : ""}
                                 {k.lot ? `Lote ${k.lot}` : ""}
                                 <small>
-                                  {d.works.find((w) => w.key === k.work_key)
+                                  {d?.works.find((w) => w.key === k.work_key)
                                     ?.name ||
-                                    d.companies.find(
+                                    d?.companies.find(
                                       (v) => v.id === k.company_id,
                                     )?.name}
                                 </small>
                               </div>
                             ))}
-                        </td>
-                        <td>
-                          {c.phone || "Telefone não informado"}
-                          <small>{c.email}</small>
-                        </td>
-                        <td>{day(c.synchronized_at)}</td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>
+                            <FinancialBadge status={financialStatus} />
+                            {financialStatus === "overdue" ? (
+                              <small>
+                                {money(
+                                  clientContracts.reduce(
+                                    (sum, k) =>
+                                      sum + Number(k.overdue_amount || 0),
+                                    0,
+                                  ),
+                                )}{" "}
+                                em atraso
+                              </small>
+                            ) : null}
+                            {financialStatus === "unknown" ? (
+                              <small>Situação ainda não confirmada</small>
+                            ) : null}
+                          </td>
+                          {(
+                            ["registration_status", "deed_status"] as const
+                          ).map((field) => (
+                            <td key={field}>
+                              {clientContracts.length
+                                ? clientContracts.map((k) => (
+                                    <div
+                                      className="ops-property-status"
+                                      key={k.id}
+                                    >
+                                      <span>{k[field] || "Não informado"}</span>
+                                      {clientContracts.length > 1 ? (
+                                        <small>
+                                          Contrato {k.contract_number}
+                                        </small>
+                                      ) : null}
+                                    </div>
+                                  ))
+                                : "Não informado"}
+                            </td>
+                          ))}
+                          <td>
+                            {c.phone || "Telefone não informado"}
+                            <small>{c.email}</small>
+                          </td>
+                          <td>{day(c.synchronized_at)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -323,14 +381,32 @@ export function ClientsWorkspace() {
               .map((c) => (
                 <div className="ops-contract" key={c.id}>
                   <strong>Contrato {c.contract_number}</strong>
+                  <div className="ops-contract-status">
+                    <FinancialBadge status={c.financial_status || "unknown"} />
+                  </div>
                   <p>
                     {d?.works.find((w) => w.key === c.work_key)?.name ||
                       "Obra não vinculada"}
                   </p>
                   <small>
                     Quadra {c.block || "—"} · Lote {c.lot || "—"} ·{" "}
-                    {c.status || "Situação não informada"}
+                    {c.sale_status || c.status || "Situação não informada"}
                   </small>
+                  <dl className="ops-property-details">
+                    <div>
+                      <dt>Registro</dt>
+                      <dd>{c.registration_status || "Não informado"}</dd>
+                    </div>
+                    <div>
+                      <dt>Escritura</dt>
+                      <dd>{c.deed_status || "Não informado"}</dd>
+                    </div>
+                  </dl>
+                  {c.status_synced_at ? (
+                    <small>
+                      Escrituração atualizada em {day(c.status_synced_at)}
+                    </small>
+                  ) : null}
                 </div>
               ))}
           </div>
