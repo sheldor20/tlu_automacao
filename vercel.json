@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/cron/daily-digest",
+      "schedule": "45 10 * * 1-5"
+    },
+    {
+      "path": "/api/cron/daily-digest/retry",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/payment-emails",
       "schedule": "*/5 * * * *"
     },
