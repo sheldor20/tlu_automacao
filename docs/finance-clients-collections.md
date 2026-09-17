@@ -22,7 +22,7 @@ O Qlik financeiro não fornece, nesta integração, telefones/e-mails, documento
 
 Administração controla os departamentos Financeiro, Clientes e Cobrança. As novas permissões não são concedidas automaticamente a todos. Escritas operacionais passam por rotas autenticadas com verificação de perfil/nível; tabelas de importação são exclusivas do servidor. Documentos não são públicos.
 
-A sincronização diária ocorre em cinco etapas, às 08:00, 08:10, 08:20, 08:30 e 08:40 UTC: catálogo, contas a receber, contas a pagar, recebimentos e pagamentos. A rota de cron exige CRON_SECRET. As tabelas data_connections e operational_imports registram execução, origem, quantidade, total e falhas.
+A sincronização diária começa às 08:00, 08:10, 08:20, 08:30 e 08:40 UTC: catálogo, contas a receber, contas a pagar, recebimentos e pagamentos. Cargas grandes avançam em etapas de até 100 mil linhas. A próxima etapa é chamada após a resposta; um cron de recuperação a cada 15 minutos retoma etapas pendentes ou interrompidas. O bloqueio impede gravações simultâneas da mesma origem. Versão do aplicativo, quantidade e total são conferidos durante a retomada, e a publicação exige o conjunto completo. A rota exige CRON_SECRET. As tabelas data_connections e operational_imports registram execução, origem, quantidade, total e falhas.
 
 O navegador necessário à extração está incluído explicitamente no pacote da rota. A função de publicação tem limite próprio de execução, conforme a [documentação do Supabase](https://supabase.com/docs/guides/database/postgres/timeouts), preservando os limites das consultas comuns.
 

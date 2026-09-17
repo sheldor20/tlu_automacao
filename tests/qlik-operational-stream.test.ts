@@ -16,6 +16,8 @@ test("Qlik stream combines source pages without losing, duplicating or reorderin
     },
   }).outputText;
   const browserWindow: Record<string, unknown> = {};
+  let changeSource = false,
+    appLayouts = 0;
   class Socket {
     onopen?: () => void;
     onmessage?: (event: { data: string }) => void;
@@ -32,6 +34,15 @@ test("Qlik stream combines source pages without losing, duplicating or reorderin
         )
       )
         result = { qReturn: { qHandle: 1 } };
+      else if (request.method === "GetAppLayout")
+        result = {
+          qLayout: {
+            qLastReloadTime:
+              changeSource && ++appLayouts % 2 === 0
+                ? "2026-09-17T09:00:00Z"
+                : "2026-09-17T08:00:00Z",
+          },
+        };
       else if (request.method === "GetLayout")
         result = {
           qLayout: {
@@ -118,5 +129,35 @@ test("Qlik stream combines source pages without losing, duplicating or reorderin
   assert.deepEqual(
     ids,
     Array.from({ length: 5000 }, (_, i) => i),
+  );
+  const resumed: number[] = [];
+  await read(
+    [
+      {
+        key: "received",
+        fields: [],
+        measureId: "measure",
+        offset: 3076,
+        rowBudget: 1000,
+      },
+    ],
+    false,
+    async (cube) => {
+      resumed.push(...cube.rows.map((r) => r[0].number));
+    },
+  );
+  assert.deepEqual(
+    resumed,
+    Array.from({ length: 1000 }, (_, i) => 3076 + i),
+  );
+  changeSource = true;
+  await assert.rejects(
+    () =>
+      read(
+        [{ key: "received", fields: [], measureId: "measure", rowBudget: 100 }],
+        false,
+        async () => {},
+      ),
+    /qlik_source_changed/,
   );
 });

@@ -67,6 +67,10 @@
     {
       "path": "/api/cron/qlik/operations?kind=paid",
       "schedule": "40 8 * * *"
+    },
+    {
+      "path": "/api/cron/qlik/operations?kind=continue",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

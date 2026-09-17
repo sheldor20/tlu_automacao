@@ -14,6 +14,39 @@ export const catalogSpecs: QlikCubeSpec[] = [
     fields: ["%IdEmpresa", "%IdObra", "Cód Unidade Negócio", "Unidade Negócio"],
   },
 ];
+export function operationalPeopleSpec(
+  kind: Exclude<OperationalKind, "catalog">,
+): QlikCubeSpec {
+  return {
+    key: "people",
+    measureId: OPERATIONAL_MEASURES[kind],
+    fields: [
+      "%IdEmpresa",
+      "%IdObra",
+      "%IdEmitente",
+      "%IdVenda",
+      "Nr Venda",
+      "Unidade",
+      "Nome Emitente",
+    ],
+  };
+}
+export function mapOperationalPeople(cube: QlikCube): ImportRecord[] {
+  const rows = cube.rows.map((row) => [
+    ...row.slice(0, 4),
+    { text: "catalog", number: null },
+    { text: "", number: null },
+    ...row.slice(4, 7),
+    { text: "", number: null },
+    { text: "", number: null },
+    { text: "", number: null },
+    row[7],
+  ]);
+  return mapOperationalPage(
+    { ...cube, key: "received", rows },
+    "received",
+  ).records.filter((r) => r.entity !== "entries");
+}
 export function operationalSpec(
   kind: Exclude<OperationalKind, "catalog">,
 ): QlikCubeSpec {
