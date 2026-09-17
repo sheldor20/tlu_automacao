@@ -187,26 +187,16 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
     else setLoading(true);
     setError("");
 
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) {
-      setError("Sua sessão expirou. Entre novamente.");
+    const { data: access, error: accessError } = await supabase.rpc("current_user_app_access");
+    if (accessError || !access?.profile?.active) {
+      setError(accessError ? friendlyError(accessError) : "Sua sessão expirou. Entre novamente.");
       setLoading(false);
       setRefreshing(false);
       return;
     }
-    const [profileResult, accessResult] = await Promise.all([
-      supabase.from("profiles").select("is_admin").eq("user_id", authData.user.id).single(),
-      supabase.from("profile_indicator_areas").select("area").eq("user_id", authData.user.id),
-    ]);
-    if (profileResult.error || accessResult.error) {
-      setError(friendlyError(profileResult.error || accessResult.error));
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-    const permittedAreas = profileResult.data?.is_admin
+    const permittedAreas: ManagementAreaSlug[] = access.profile.is_admin
       ? MANAGEMENT_AREAS.map((item) => item.slug)
-      : (accessResult.data || []).map((item) => item.area as ManagementAreaSlug);
+      : access.indicator_areas;
     setAuthorizedAreas(permittedAreas);
     if (!permittedAreas.includes(area)) {
       setError("Esta visão de Indicadores não está liberada para o seu usuário.");

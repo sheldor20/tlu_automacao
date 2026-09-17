@@ -451,3 +451,20 @@ os registros não são editáveis pela API. Downloads usam links temporários.
 
 Os testes em `tests/task-activity.test.ts` cobrem formato e tamanho, registros
 vazios, autoria, acesso indevido, bloqueios por perfil e preservação do histórico.
+
+## Carregamento e navegação
+
+A migration `20260917120504_today_dashboard_performance.sql` deve ser aplicada
+antes de publicar esta interface. O Hoje usa `today_dashboard` para buscar, em
+uma única chamada, as permissões atualizadas, pessoas visíveis, tarefas da pessoa
+selecionada e alertas. As tarefas são filtradas no banco e retornam somente os
+campos exibidos, incluindo atribuições por subtarefa.
+
+O menu e os Indicadores usam `current_user_app_access` para reunir as leituras
+de perfil, departamentos e visões permitidas. As duas funções executam com RLS
+do usuário; não há cache persistente de permissões. Eventos de foco e visibilidade
+simultâneos são agrupados, e consultas de atualização não se sobrepõem.
+
+`tests/today-dashboard-performance.test.ts` verifica usuário, administrador,
+líder, atribuição por subtarefa, resolução e revogação de acesso com as migrations
+reais. `tests/refresh-scheduler.test.ts` verifica a deduplicação e cancelamento.

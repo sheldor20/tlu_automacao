@@ -1,5 +1,6 @@
 "use client";
 
+import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
 import { BUSINESS_PORTFOLIO_SECTIONS, MANAGEMENT_AREAS } from "@/lib/constants";
@@ -29,7 +30,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 const departmentLinks: Array<{
   slug: DepartmentSlug;
@@ -81,12 +82,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     : businessAreaPathActive;
   const [todayAlertCount, setTodayAlertCount] = useState(0);
 
-  const loadTodayAlertCount = useCallback(async () => {
-    if (!supabase) return;
-    const { data, error } = await supabase.rpc("current_user_today_alert_count");
-    setTodayAlertCount(error ? 0 : Math.max(0, Number(data) || 0));
-  }, [supabase]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("terra-lotus-sidebar-collapsed") === "true"), 0);
     return () => window.clearTimeout(timer);
@@ -122,7 +117,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase || loading) return;
-    const refreshCount = () => void loadTodayAlertCount();
+    let active = true;
+    const scheduler = createRefreshScheduler(async () => {
+      try {
+        const { data, error } = await supabase.rpc("current_user_today_alert_count");
+        if (active) setTodayAlertCount(error ? 0 : Math.max(0, Number(data) || 0));
+      } catch {
+        if (active) setTodayAlertCount(0);
+      }
+    });
+    const refreshCount = scheduler.schedule;
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") refreshCount();
     };
@@ -131,11 +135,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("today-alert-count-changed", refreshCount);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
+      active = false;
+      scheduler.dispose();
       window.removeEventListener("focus", refreshCount);
       window.removeEventListener("today-alert-count-changed", refreshCount);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [loading, loadTodayAlertCount, pathname, supabase]);
+  }, [loading, pathname, supabase]);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
@@ -156,27 +162,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         router.replace("/login");
       } else {
         const user = data.session.user;
-        const [profileResult, departmentResult, indicatorAreaResult] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("full_name,email,active,is_admin")
-            .eq("user_id", user.id)
-            .single(),
-          supabase
-            .from("profile_departments")
-            .select("department_slug")
-            .eq("user_id", user.id),
-          supabase
-            .from("profile_indicator_areas")
-            .select("area")
-            .eq("user_id", user.id),
-        ]);
+        const { data: access, error } = await supabase.rpc("current_user_app_access");
         if (!active) return;
-        if (profileResult.error || departmentResult.error || indicatorAreaResult.error || !profileResult.data) {
-          setAccessError("Não foi possível carregar as permissões. Confirme se a migration mais recente foi executada no Supabase.");
+        if (error || !access?.profile) {
+          setAccessError("Não foi possível carregar as permissões. Tente atualizar a página.");
           setLoading(false);
           return;
         }
+        const profileResult = { data: access.profile as { full_name: string | null; email: string | null; active: boolean; is_admin: boolean } };
+        setAccessError("");
         if (!profileResult.data.active) {
           await supabase.auth.signOut();
           router.replace("/login");
@@ -186,10 +180,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         const administrator = Boolean(profileResult.data.is_admin);
         const assigned = administrator
           ? departmentLinks.map((link) => link.slug)
-          : (departmentResult.data || []).map((item) => item.department_slug as DepartmentSlug);
+          : access.departments as DepartmentSlug[];
         const indicatorAreas = administrator
           ? MANAGEMENT_AREAS.map((area) => area.slug)
-          : (indicatorAreaResult.data || []).map((item) => item.area as ManagementAreaSlug);
+          : access.indicator_areas as ManagementAreaSlug[];
         const visibleLinks = departmentLinks.filter((link) => assigned.includes(link.slug));
 
         setEmail(profileResult.data.email || user.email || "Usuário");
