@@ -14,6 +14,8 @@ O aplicativo financeiro do Qlik fornece IDs de empresa, obra, emitente, venda e 
 
 A extração utiliza as medidas oficiais já existentes no Qlik, com as mesmas variáveis de desembolso e período. Datas: recebimentos usam Período; pagamentos usam Data Baixa; contas a pagar usam Data Vencimento; contas a receber usam Data Prorrogação Vencimento. A data original também é preservada. CAP é categoria de custo, não uma etapa física automática.
 
+Quando o Qlik desloca uma parcela vencida para a data financeira de hoje, o Space mantém seu vencimento real para cobrança e a separa da previsão de entradas. Ajustes de datas futuras permanecem preservados.
+
 Cada carga é preparada em páginas, confere quantidade e total e publica o conjunto financeiro em transação. Falhas preservam a carga financeira anterior. Os valores da origem são armazenados com seis casas decimais para preservar rateios; a interface apresenta reais e centavos. Vínculos de solicitações e compromissos evitam repetição de despesas.
 
 Na primeira carga de cada origem, a ativação avança em lotes com um ponto de retomada. As regras de acesso mantêm esses lançamentos ocultos até a publicação completa; a confirmação de promessas também exige a origem publicada. A conferência final libera o conjunto de uma vez. As consultas verificam as permissões por consulta e usam um índice próprio para os resumos dos contratos.

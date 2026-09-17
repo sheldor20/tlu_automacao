@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { localToday } from "./operational-finance.ts";
 import type { QlikCell, QlikCubeSpec, QlikCube } from "./qlik-operational";
 export const OPERATIONAL_MEASURES = {
   received: "818299db-48eb-4571-9af5-bf7122a22b5b",
@@ -96,7 +97,7 @@ export type ImportRecord = {
   id: string;
   data: Record<string, unknown>;
 };
-export function mapOperationalPage(cube: QlikCube, kind: OperationalKind) {
+export function mapOperationalPage(cube: QlikCube, kind: OperationalKind, today = localToday()) {
   const records: ImportRecord[] = [];
   let total = 0;
   for (const row of cube.rows) {
@@ -195,7 +196,9 @@ export function mapOperationalPage(cube: QlikCube, kind: OperationalKind) {
         contract_id: contractId,
         kind,
         title_key: title.split("|").slice(1).join("|"),
-        cash_date: cashDate,
+        cash_date: kind === "receivable" && due && due < today && cashDate === today
+          ? due
+          : cashDate,
         original_due_date: due,
         amount,
         description: [qlikText(row[5]), category].filter(Boolean).join(" · "),

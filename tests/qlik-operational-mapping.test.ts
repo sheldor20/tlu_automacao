@@ -62,3 +62,12 @@ test("datas duais e rateios financeiros preservam precisão e vínculos", () => 
   assert.equal(entry.data.stage_name, null);
   assert.equal(entry.data.source_category, "Principal");
 });
+test("vencidos trazidos para hoje ficam fora da previsão; datas futuras ajustadas são preservadas", () => {
+  const row = cells(["1","1|001","42","v1","Receber|1","1","1","Lote","Cliente","17/09/2026","01/09/2026","Principal",100]);
+  const cube = {key:"receivable",headers:[],totalRows:1,rows:[row]};
+  const mapped = mapOperationalPage(cube,"receivable","2026-09-17");
+  assert.equal(mapped.records.find(r=>r.entity==="entries")!.data.cash_date,"2026-09-01");
+  row[9] = {text:"12/10/2026",number:null};
+  row[10] = {text:"10/10/2026",number:null};
+  assert.equal(mapOperationalPage(cube,"receivable","2026-09-17").records.find(r=>r.entity==="entries")!.data.cash_date,"2026-10-12");
+});
