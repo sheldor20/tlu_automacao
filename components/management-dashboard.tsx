@@ -5,7 +5,7 @@ import { VgvProjectionPanel } from "@/components/vgv-projection-panel";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
-import { sumMetricSeries } from "@/lib/management-metrics";
+import { companyMonthSnapshot, sumMetricSeries } from "@/lib/management-metrics";
 import { monthsThroughLastClosed, previousClosedMonth } from "@/lib/management-period";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
@@ -498,7 +498,7 @@ type MetricViewProps = {
   months: Array<{ key: string; label: string; isCurrent: boolean }>;
 };
 
-function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
+function CompanyView({ metricValueForMonth, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
   const revenueSeries = seriesFor("receita_consolidada");
   const expenseSeries = seriesFor("despesa_consolidada");
   const sumSeries = (series: Array<number | null>) => {
@@ -507,14 +507,10 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
   };
   const revenue = sumSeries(revenueSeries);
   const expense = sumSeries(expenseSeries);
-  const reportedResult = metricValue("resultado_gerencial");
-  const latestRevenue = metricValue("receita_consolidada");
-  const latestExpense = metricValue("despesa_consolidada");
-  const result = reportedResult ?? (latestRevenue !== null && latestExpense !== null ? latestRevenue - latestExpense : null);
   const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
-  const previousRevenue = previousMonth ? metricValueForMonth("receita_consolidada", previousMonth.key) : null;
-  const previousExpense = previousMonth ? metricValueForMonth("despesa_consolidada", previousMonth.key) : null;
-  const previousResult = previousMonth ? metricValueForMonth("resultado_gerencial", previousMonth.key) ?? (previousRevenue !== null && previousExpense !== null ? previousRevenue - previousExpense : null) : null;
+  const closedMonthLabel = `${previousMonth.label}.${previousMonth.key.slice(0, 4)}`;
+  const { revenue: previousRevenue, expense: previousExpense, reportedResult, result, cash, availableCash, rentalCash } = companyMonthSnapshot(previousMonth.key, metricValueForMonth);
+  const previousResult = result;
   const closedMonths = monthsThroughLastClosed(months);
   const chartMonths = closedMonths.length ? closedMonths : [previousMonth];
   const chartRevenue = chartMonths.map((month) => metricValueForMonth("receita_consolidada", month.key));
@@ -526,37 +522,37 @@ function CompanyView({ metricValue, metricValueForMonth, metricHelper, seriesFor
     return reported ?? (revenueValue !== null && expenseValue !== null ? revenueValue - expenseValue : null);
   });
   const chartCash = chartMonths.map((month) => metricValueForMonth("valor_caixa", month.key));
-  const cash = metricValue("valor_caixa");
-  const availableCash = metricValue("caixa_disponivel");
-  const rentalCash = cash !== null && availableCash !== null ? cash - availableCash : null;
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
         <KpiCard label="Receita consolidada" value={revenue === null ? "—" : currency(revenue, true)} helper="acumulado no ano vigente" icon={<BadgeDollarSign size={17} />} />
         <KpiCard label="Despesas consolidadas" value={expense === null ? "—" : currency(expense, true)} helper="acumulado no ano vigente" icon={<WalletCards size={17} />} />
-        <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={reportedResult === null && result !== null ? "calculado por receita menos despesas" : metricHelper("resultado_gerencial")} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
+        <KpiCard label="Resultado gerencial" value={result === null ? "—" : currency(result, true)} helper={`competência ${closedMonthLabel}${result === null ? " · aguardando fechamento" : reportedResult === null ? " · calculado por receita menos despesas" : ""}`} tone={result !== null && result >= 0 ? "success" : result === null ? "default" : "warning"} icon={<BarChart3 size={17} />} />
         <KpiCard
           label="Valor total em caixa"
           value={cash === null ? "—" : currency(cash)}
-          helper={cash === null || rentalCash === null || availableCash === null
-            ? "aguardando o saldo da conta de aluguéis para calcular o disponível"
-            : <span className="management-cash-helper">
-                <span>Disponível para uso: <strong>{currency(availableCash)}</strong></span>
-                <span>{currency(cash)} total − {currency(rentalCash)} aluguéis · {metricHelper("valor_caixa")}</span>
-              </span>}
+          helper={<span className="management-cash-helper">
+            <span>posição em {closedMonthLabel}</span>
+            {cash === null ? <span>aguardando o saldo de caixa do fechamento</span>
+              : rentalCash === null || availableCash === null ? <span>aguardando o saldo da conta de aluguéis para calcular o disponível</span>
+              : <>
+                  <span>Disponível para uso: <strong>{currency(availableCash)}</strong></span>
+                  <span>{currency(cash)} total − {currency(rentalCash)} aluguéis</span>
+                </>}
+          </span>}
           icon={<Landmark size={17} />}
           className="management-kpi-full-money management-cash-total-card"
         />
       </section>
       <section className="management-closed-month-summary">
-        <div><span>Fechamento · {previousMonth?.label || "mês anterior"}</span><strong>Resultado do mês anterior</strong></div>
+        <div><span>Fechamento · {closedMonthLabel}</span><strong>Resultado do mês anterior</strong></div>
         <article><span>Receita</span><strong>{previousRevenue === null ? "—" : currency(previousRevenue)}</strong></article>
         <article><span>Despesa</span><strong>{previousExpense === null ? "—" : currency(previousExpense)}</strong></article>
         <article className={previousResult !== null && previousResult < 0 ? "negative" : "positive"}><span>Resultado</span><strong>{previousResult === null ? "—" : currency(previousResult)}</strong></article>
       </section>
       <section className="management-two-columns">
-        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Histórico até {previousMonth.label}</span><h2>Receitas e despesas</h2><p>Todos os meses até o último fechamento.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: chartRevenue }, { label: "Despesas", color: "#b3875b", values: chartExpenses }]} /></article>
-        <article className="management-panel"><div className="management-panel-head"><div><span>Histórico até {previousMonth.label}</span><h2>Resultado gerencial e caixa</h2><p>Todos os meses até o último fechamento.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Resultado", color: "#405343", values: chartResult }, { label: "Caixa", color: "#8aa083", values: chartCash }]} /></article>
+        <article className="management-panel management-panel-wide"><div className="management-panel-head"><div><span>Histórico até {closedMonthLabel}</span><h2>Receitas e despesas</h2><p>Todos os meses até o último fechamento.</p></div></div><GroupedBarChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Receitas", color: "#405343", values: chartRevenue }, { label: "Despesas", color: "#b3875b", values: chartExpenses }]} /></article>
+        <article className="management-panel"><div className="management-panel-head"><div><span>Histórico até {closedMonthLabel}</span><h2>Resultado gerencial e caixa</h2><p>Todos os meses até o último fechamento.</p></div></div><TrendChart labels={chartMonths.map((month) => month.label)} series={[{ label: "Resultado", color: "#405343", values: chartResult }, { label: "Caixa", color: "#8aa083", values: chartCash }]} /></article>
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Composição</span><h2>Receitas por plano de contas</h2></div></div><BreakdownList items={revenueBreakdown} emptyLabel="As contas de receita aparecerão após a primeira carga." /></article>
