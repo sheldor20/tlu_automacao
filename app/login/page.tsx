@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     supabase?.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/novos-negocios");
+      if (data.session) router.replace(new URLSearchParams(window.location.search).get("next") === "/planejador-orcamentario" ? "/planejador-orcamentario" : "/novos-negocios");
     });
   }, [router, supabase]);
 
@@ -39,7 +39,7 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    router.replace("/novos-negocios");
+    router.replace(new URLSearchParams(window.location.search).get("next") === "/planejador-orcamentario" ? "/planejador-orcamentario" : "/novos-negocios");
     router.refresh();
   }
 
