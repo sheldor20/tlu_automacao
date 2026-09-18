@@ -20,15 +20,30 @@ import {
   type CollectionCase,
   type CollectionGroup,
 } from "@/lib/operational-finance";
+import {
+  collectionFilterKey,
+  normalizeCollectionQuery,
+  summarizeCollectionGroups,
+  type CollectionGroupTotal,
+} from "@/lib/collection-totals";
+import { CollectionsSummary } from "./collections-summary";
+
 export function CollectionsWorkspace() {
   const [group, setGroup] = useState<CollectionGroup | "all">("all");
   const [query, setQuery] = useState("");
   const [company, setCompany] = useState("");
   const [page, setPage] = useState(0);
-  const o = useOperations<ClientWorkspaceData>(
+  const o = useOperations<ClientWorkspaceData & {
+    selectionTotals: CollectionGroupTotal[];
+    selectionScope: string;
+  }>(
     `/api/operations/collections?page=${page}&q=${encodeURIComponent(query)}&group=${group}&company=${encodeURIComponent(company)}`,
   );
   const d = o.data;
+  const totalsReady = !!d && !o.loading && !o.error &&
+    d.selectionScope === collectionFilterKey(query, company);
+  const selectedTotal = summarizeCollectionGroups(d?.selectionTotals, group);
+  const allOverdueTotal = summarizeCollectionGroups(d?.selectionTotals, "all");
   const [editing, setEditing] = useState<ClientContract | null>(null);
   const [legal, setLegal] = useState("unknown");
   const today = localToday();
@@ -147,7 +162,7 @@ export function CollectionsWorkspace() {
           </strong>
         </div>
       </div>
-      <div className="ops-tabs" role="tablist" aria-label="Grupos de cobrança">
+      <div className="ops-tabs collections-group-tabs" role="tablist" aria-label="Grupos de cobrança">
         <button
           role="tab"
           aria-selected={group === "all"}
@@ -156,24 +171,28 @@ export function CollectionsWorkspace() {
             setPage(0);
           }}
         >
-          Todos os atrasos
+          <span>Todos os atrasos ({totalsReady ? allOverdueTotal.contracts.toLocaleString("pt-BR") : "—"})</span>
+          <small>{totalsReady ? money(allOverdueTotal.amount) : "—"}</small>
         </button>
         {Object.entries(COLLECTION_GROUPS)
           .filter(([key]) => key !== "review")
-          .map(([key, label]) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={group === key}
-              onClick={() => {
-                setGroup(key as CollectionGroup);
-                setPage(0);
-              }}
-            >
-              {label} (
-              {totalGroup([key]).reduce((s, t) => s + Number(t.contracts), 0)})
-            </button>
-          ))}
+          .map(([key, label]) => {
+            const total = summarizeCollectionGroups(d?.selectionTotals, key);
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={group === key}
+                onClick={() => {
+                  setGroup(key as CollectionGroup);
+                  setPage(0);
+                }}
+              >
+                <span>{label} ({totalsReady ? total.contracts.toLocaleString("pt-BR") : "—"})</span>
+                <small>{totalsReady ? money(total.amount) : "—"}</small>
+              </button>
+            );
+          })}
       </div>
       <div className="ops-filters">
         <input
@@ -201,6 +220,13 @@ export function CollectionsWorkspace() {
           ))}
         </select>
       </div>
+      <CollectionsSummary
+        label={group === "all" ? "Todos os atrasos" : COLLECTION_GROUPS[group]}
+        summary={selectedTotal}
+        ready={totalsReady}
+        error={!!o.error}
+        filtered={!!(company || normalizeCollectionQuery(query))}
+      />
       <div className="ops-notice">
         “Parcelas esquecidas” reúne contratos com até duas parcelas vencidas e
         pagamentos posteriores. A prioridade acompanha o histórico financeiro;
@@ -399,7 +425,7 @@ export function CollectionsWorkspace() {
           </Field>
           <Field
             label="Baixa que confirma o recebimento"
-            hint="Obrigatória ao confirmar recebimento; deve comprovar o valor prometido."
+            hint="Obrigatória ao confirmar recebimento; deve comprovar o valor da promessa."
           >
             <select
               name="receipt_entry_id"

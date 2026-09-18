@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { operationsAccess, allRows, checked } from "@/lib/operations-server";
 import {
+  collectionFilterKey,
+  normalizeCollectionQuery,
+} from "@/lib/collection-totals";
+import {
   paymentBody,
   paymentFailure,
   paymentJson,
@@ -18,11 +22,10 @@ export async function GET(request: Request) {
       .min(0)
       .max(100000)
       .parse(params.get("page") || 0);
-    const query = z
-      .string()
-      .max(200)
-      .parse(params.get("q") || "")
-      .replace(/[^\p{L}\p{N} .-]/gu, "");
+    const query = normalizeCollectionQuery(
+      z.string().max(200).parse(params.get("q") || ""),
+    );
+    const company = z.string().max(200).parse(params.get("company") || "");
     const group = z
       .enum([
         "all",
@@ -42,7 +45,7 @@ export async function GET(request: Request) {
       .range(page * 25, page * 25 + 24);
     if (group === "all") q = q.neq("collection_group", "current");
     else q = q.eq("collection_group", group);
-    if (params.get("company")) q = q.eq("company_id", params.get("company"));
+    if (company) q = q.eq("company_id", company);
     if (query)
       q = q.or(
         `client_name.ilike.*${query}*,contract_number.ilike.*${query}*,lot.ilike.*${query}*`,
@@ -57,7 +60,17 @@ export async function GET(request: Request) {
       phone: c.phone,
       email: c.email,
     }));
-    const [cases, companies, works, users, totals] = await Promise.all([
+    // Aggregate before pagination. Reuse this result for global KPIs when unfiltered.
+    const selectionTotalsQuery = checked(
+      db.rpc("collection_worklist_filtered_totals", {
+        p_company: company,
+        p_query: query,
+      }),
+    );
+    const totalsQuery = company || query
+      ? checked(db.rpc("collection_worklist_totals"))
+      : selectionTotalsQuery;
+    const [cases, companies, works, users, totals, selectionTotals] = await Promise.all([
       ids.length
         ? checked(
             db.from("collection_cases").select("*").in("contract_id", ids),
@@ -73,7 +86,8 @@ export async function GET(request: Request) {
           .is("deleted_at", null)
           .order("full_name"),
       ),
-      checked(db.rpc("collection_worklist_totals")),
+      totalsQuery,
+      selectionTotalsQuery,
     ]);
     return paymentJson({
       clients,
@@ -81,6 +95,8 @@ export async function GET(request: Request) {
       entries: [],
       total: result.count || 0,
       totals,
+      selectionTotals,
+      selectionScope: collectionFilterKey(query, company),
       cases,
       companies,
       works,
