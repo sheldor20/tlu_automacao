@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     ]);
     const date = new URL(request.url).searchParams.get("date") || localToday();
     z.iso.date().parse(date);
+    const referenceMonth = date.slice(0, 7) + "-01";
     const [
       companies,
       catalog,
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
       works,
       payments,
       connection,
+      qlikBank,
     ] = await Promise.all([
       allRows(db, "qlik_companies"),
       allRows(db, "qlik_works"),
@@ -55,7 +57,43 @@ export async function GET(request: Request) {
           .eq("slug", "qlik-operations")
           .maybeSingle(),
       ),
+      checked(
+        service
+          .from("management_indicator_values")
+          .select("value,reference_month,updated_at,metadata")
+          .eq("area", "empresa")
+          .eq("metric_key", "valor_caixa")
+          .eq("dimension_key", "total")
+          .lte("reference_month", referenceMonth)
+          .order("reference_month", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ),
     ]);
+    let bankBalance = null;
+    if (qlikBank?.value !== null && qlikBank?.value !== undefined && Number.isFinite(Number(qlikBank.value))) {
+      const metadata = qlikBank.metadata && typeof qlikBank.metadata === "object" && !Array.isArray(qlikBank.metadata)
+        ? qlikBank.metadata as Record<string, unknown>
+        : {};
+      const selections = metadata.selections && typeof metadata.selections === "object" && !Array.isArray(metadata.selections)
+        ? metadata.selections as Record<string, unknown>
+        : {};
+      const synchronizedAt = typeof metadata.synchronized_at === "string"
+        ? metadata.synchronized_at
+        : qlikBank.updated_at;
+      const referenceDate = typeof selections.reference_date === "string"
+        ? selections.reference_date
+        : qlikBank.reference_month;
+      bankBalance = {
+        amount: Number(qlikBank.value),
+        as_of: date,
+        company_id: "",
+        synchronized_at: synchronizedAt,
+        account_count: 1,
+        source: "Qlik DFC",
+        stale: referenceDate < date,
+      };
+    }
     return paymentJson({
       companies,
       catalog,
@@ -66,6 +104,7 @@ export async function GET(request: Request) {
       works,
       payments,
       connection,
+      bankBalance,
       canWrite,
     });
   } catch (e) {

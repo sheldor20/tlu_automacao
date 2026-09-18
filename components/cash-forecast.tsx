@@ -122,7 +122,7 @@ export function CashForecast() {
         loading={o.loading || bank.loading}
         onRefresh={() => { setBankRefresh(Date.now()); void o.reload(); }}
       >
-        {d?.canWrite && !bankBalance && !bank.loading ? (
+        {d?.canWrite && !bankBalance && !o.loading ? (
           <Button variant="secondary" onClick={() => setBalanceOpen(true)}>Informar saldo manual</Button>
         ) : null}
       </OperationsHeader>
@@ -149,13 +149,13 @@ export function CashForecast() {
             </div>
           ) : calculation.opening !== null ? (
             <div className="ops-notice">Projeção usando saldo manual de {day(date)}. O saldo do Qlik terá prioridade quando estiver disponível.</div>
-          ) : !bank.loading ? (
+          ) : !o.loading ? (
             <div className="ops-notice">Saldo bancário indisponível para esta seleção. Entradas e saídas permanecem disponíveis; nenhum saldo foi estimado.</div>
           ) : null}
           <div className="ops-kpis">
             <div className="ops-kpi">
               <span>{bankBalance ? "Saldo em banco" : calculation.opening !== null ? "Saldo inicial manual" : "Saldo em banco"}</span>
-              <strong>{calculation.opening === null ? (bank.loading ? "Consultando…" : "Indisponível") : money(calculation.opening)}</strong>
+              <strong>{calculation.opening === null ? (o.loading ? "Consultando…" : "Indisponível") : money(calculation.opening)}</strong>
               <small>{bankBalance ? "Qlik DFC" : "Saldo inicial"} · {day(date)}</small>
             </div>
             <div className="ops-kpi"><span>Entradas previstas</span><strong>{money(totalIn)}</strong><small>13 semanas</small></div>
