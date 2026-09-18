@@ -63,7 +63,8 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
   const [details, setDetails] = useState<ClubOffer | null>(null);
-  const [coupon, setCoupon] = useState<ClubVoucher | null>(null);\n  const [credentials, setCredentials] = useState<ClubMember | null>(null);
+  const [coupon, setCoupon] = useState<ClubVoucher | null>(null);
+  const [credentials, setCredentials] = useState<ClubMember | null>(null);
   const [code, setCode] = useState('');
   const [verified, setVerified] = useState<ClubVoucher | null>(null);
   const [memberKind, setMemberKind] = useState<'partner' | 'client'>('partner');
