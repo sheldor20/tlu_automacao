@@ -1,0 +1,36 @@
+.ops-client-status-no_balance,
+.ops-client-status-no_contract,
+.ops-client-status-cancelled {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.ops-client-status-cancelled_balance,
+.ops-client-status-review {
+  color: #9a3412;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+.ops-client-status-no_balance,
+.ops-client-status-no_contract,
+.ops-client-status-cancelled,
+.ops-client-status-cancelled_balance,
+.ops-client-status-review {
+  white-space: normal;
+  line-height: 1.35;
+  max-width: 100%;
+}
+.client-status-legend {
+  margin-top: 1rem;
+  padding: .75rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: .75rem;
+  background: #fff;
+  color: #334155;
+  font-size: .875rem;
+}
+.client-status-legend summary { cursor: pointer; font-weight: 600; }
+.client-status-legend dl { margin: 1rem 0 0; }
+.client-status-legend dl > div + div { margin-top: .75rem; }
+.client-status-legend dt { font-weight: 600; }
+.client-status-legend dd { margin: .25rem 0 0; line-height: 1.5; }

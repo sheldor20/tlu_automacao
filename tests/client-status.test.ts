@@ -41,7 +41,7 @@ test("situação do cliente considera todos os contratos e prioriza atraso", () 
     ]),
     "unknown",
   );
-  assert.equal(clientFinancialStatus([]), "unknown");
+  assert.equal(clientFinancialStatus([]), "no_contract");
   assert.equal(
     clientFinancialStatus([
       { financial_status: "paid" },

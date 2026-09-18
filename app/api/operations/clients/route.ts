@@ -75,7 +75,7 @@ export async function GET(request: Request) {
         ),
         clients.length
           ? checked(
-              db.rpc("client_status_summary", {
+              db.rpc("client_status_summary_v2", {
                 p_client_ids: clients.map((c: { id: string }) => c.id),
               }),
             )
