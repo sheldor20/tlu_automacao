@@ -1,5 +1,6 @@
 "use client";
 
+import { ClientsNavigation } from "./clients-navigation";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
@@ -185,6 +186,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         const profileResult = { data: access.profile as { full_name: string | null; email: string | null; active: boolean; is_admin: boolean } };
         setAccessError("");
         if (!profileResult.data.active) {
+          // External club profiles intentionally have no internal access.
+          // Support auth links that fall back to the existing site/login route.
+          try {
+            const club = await fetch("/api/club?me=1", {
+              headers: { Authorization: `Bearer ${data.session.access_token}` },
+              cache: "no-store",
+            });
+            if (!active) return;
+            if (club.ok) {
+              router.replace("/clube-tlu");
+              return;
+            }
+          } catch { /* Keep the existing deny-by-default internal access behavior. */ }
           await supabase.auth.signOut();
           router.replace("/login");
           return;
@@ -333,6 +347,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Wallet size={19} /><span>Pagamentos</span>
           </Link>
           {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
+            if (slug === "clientes") return <ClientsNavigation key={href} pathname={pathname} onNavigate={() => setMobileMenu(false)} />;
             if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
             if (slug === "financeiro") {
               return <div className="nav-group" key={href}>
