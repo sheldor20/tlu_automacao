@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Copy, Mail, Plus, RefreshCw, Search, Store, Ticket, X } from 'lucide-react';
+import { CheckCircle2, Copy, KeyRound, Plus, RefreshCw, Search, Store, Ticket, X } from 'lucide-react';
 import { Button, Field } from './ui';
 import { clubFetch } from '@/lib/club-client';
 import {
@@ -63,7 +63,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
   const [details, setDetails] = useState<ClubOffer | null>(null);
-  const [coupon, setCoupon] = useState<ClubVoucher | null>(null);
+  const [coupon, setCoupon] = useState<ClubVoucher | null>(null);\n  const [credentials, setCredentials] = useState<ClubMember | null>(null);
   const [code, setCode] = useState('');
   const [verified, setVerified] = useState<ClubVoucher | null>(null);
   const [memberKind, setMemberKind] = useState<'partner' | 'client'>('partner');
@@ -164,7 +164,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
         client_id: memberKind === 'client' ? clientId : null };
     }
     const result = await command(editor.kind, payload);
-    if (result) { setEditor(null); setNotice(editor.kind === 'member' ? 'Acesso cadastrado. Use “Enviar acesso” para mandar o convite.' : 'Alterações salvas.'); await load(); }
+    if (result) { setEditor(null); setNotice(editor.kind === 'member' ? 'Usuário cadastrado. Agora defina a senha de acesso.' : 'Alterações salvas.'); await load(); }
   }
   async function findClients() {
     setClientSearchBusy(true); setError('');
@@ -179,10 +179,14 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
     if (!window.confirm(`${member.active ? 'Desativar' : 'Reativar'} o acesso de ${member.email}?`)) return;
     if (await command('member', { id: member.id, active: !member.active })) { setNotice('Acesso atualizado.'); await load(); }
   }
-  async function invite(member: ClubMember) {
-    if (!window.confirm(`Enviar o link de acesso para ${member.email}?`)) return;
-    const result = await command<{ message: string }>('invite', { id: member.id });
-    if (result) setNotice(result.message);
+  async function saveCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!credentials) return;
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get('password') || '');
+    if (password !== String(form.get('confirmation') || '')) { setError('As senhas não coincidem.'); return; }
+    const result = await command<{ message: string }>('credentials', { id: credentials.id, password });
+    if (result) { setCredentials(null); setNotice(result.message); await load(); }
   }
   async function check(event: FormEvent) {
     event.preventDefault(); setVerified(null);
@@ -201,7 +205,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
     ...(staff ? [['partners', 'Parceiros'] as [ClubTab, string]] : []),
     ['vouchers', role === 'client' ? 'Meus cupons' : 'Retiradas e uso'],
     ...(canRedeem ? [['redeem', 'Validar cupom'] as [ClubTab, string]] : []),
-    ...(manager ? [['members', 'Acessos'] as [ClubTab, string]] : []),
+    ...(manager ? [['members', 'Usuários do clube'] as [ClubTab, string]] : []),
   ];
   const statuses = tab === 'offers' ? ['active', 'scheduled', 'draft', 'paused', 'expired']
     : tab === 'vouchers' ? ['available', 'used', 'expired'] : ['active', 'inactive'];
@@ -251,7 +255,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
         {!data.items.length ? <div className={s.empty}><Ticket size={30} /><h2>Nenhum registro nesta seleção</h2>
           <p>{tab === 'offers' ? role === 'client' ? 'Novos benefícios aparecerão aqui quando forem publicados.' : 'Cadastre um desconto ou ajuste os filtros.'
             : tab === 'vouchers' ? 'As retiradas aparecem aqui assim que os clientes gerarem seus cupons.'
-            : tab === 'members' ? 'Cadastre o e-mail e vincule a um parceiro ou cliente. Depois, envie o acesso.' : 'Comece cadastrando os estabelecimentos participantes.'}</p></div> : null}
+            : tab === 'members' ? 'Cadastre o e-mail e vincule a um parceiro ou cliente. Depois, defina a senha.' : 'Comece cadastrando os estabelecimentos participantes.'}</p></div> : null}
         {tab === 'offers' ? <div className={s.grid}>{(data.items as ClubOffer[]).map(offer => {
           const soldOut = offer.max_issues !== null && offer.issued_count >= offer.max_issues;
           const limitReached = offer.own_count >= offer.per_client_limit;
@@ -287,8 +291,8 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
         </article>)}</div> : null}
         {tab === 'members' ? <div className={s.grid}>{(data.items as ClubMember[]).map(m => <article key={m.id} className={s.card}>
           <div className={s.cardTop}><span>{CLUB_LABELS[m.kind]}</span><Badge status={m.active ? 'active' : 'inactive'} /></div>
-          <h3>{m.owner_name}</h3><p>{m.email}</p><div className={s.actions}>
-            <Button disabled={busy || !m.active} onClick={() => void invite(m)}><Mail size={16} />Enviar acesso</Button>
+          <h3>{m.owner_name}</h3><p>{m.email}</p><p className={s.hint}>{m.password_ready ? 'Login e senha configurados' : 'Aguardando definição de senha'}{m.last_login_at ? <><br />Último acesso: {date(m.last_login_at)}</> : null}</p><div className={s.actions}>
+            <Button disabled={busy || !m.active} onClick={() => { setCredentials(m); setError(''); }}><KeyRound size={16} />{m.password_ready ? 'Redefinir senha' : 'Definir senha'}</Button>
             <Button variant="secondary" disabled={busy} onClick={() => void toggleMember(m)}>{m.active ? 'Desativar' : 'Reativar'}</Button>
           </div></article>)}</div> : null}
         {(page > 0 || data.total > data.page_size) ? <div className={s.pagination}>
@@ -348,7 +352,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
               <Button type="button" variant="secondary" disabled={clientQuery.trim().length < 2 || clientSearchBusy} onClick={() => void findClients()}>{clientSearchBusy ? 'Buscando…' : 'Buscar'}</Button></div></Field>
               <Field label="Cliente da carteira"><select value={clientId} onChange={event => setClientId(event.target.value)} required>
                 <option value="">Selecione o cliente encontrado</option>{clientOptions.map(c => <option key={c.id} value={c.id}>{c.name} · {c.id}</option>)}</select></Field></>}
-          <Field label="E-mail de acesso" hint="Após salvar, clique em Enviar acesso. Só esse e-mail poderá entrar neste ambiente."><input name="email" type="email" autoComplete="off" maxLength={254} required /></Field>
+          <Field label="E-mail de acesso" hint="Após salvar, defina a senha. Só esse usuário poderá entrar neste ambiente."><input name="email" type="email" autoComplete="off" maxLength={254} required /></Field>
           <p className={s.hint}>O parceiro vê somente os próprios descontos e cupons. O cliente vê os benefícios publicados e os próprios cupons.</p>
         </>}
         <footer className={s.actions}><Button type="button" variant="secondary" disabled={busy} onClick={() => setEditor(null)}>Cancelar</Button>
@@ -364,6 +368,16 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
         {role === 'client' ? <Button disabled={busy || details.own_count >= details.per_client_limit || (details.max_issues !== null && details.issued_count >= details.max_issues)}
           loading={busy} onClick={() => void claim(details)}>Aceitar regras e retirar cupom</Button> : null}
       </div>
+    </ClubModal> : null}
+    {credentials ? <ClubModal title={credentials.password_ready ? "Redefinir senha" : "Definir senha de acesso"} onClose={() => setCredentials(null)} busy={busy}>
+      <form className={s.form} onSubmit={saveCredentials}>
+        <p><strong>{credentials.owner_name}</strong><br />{credentials.email}</p>
+        <p className={s.hint}>Esta senha é exclusiva do portal Clube TLU. O perfil será identificado automaticamente como {CLUB_LABELS[credentials.kind]}.</p>
+        <Field label="Senha"><input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required autoFocus /></Field>
+        <Field label="Confirmar senha"><input name="confirmation" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></Field>
+        {error ? <p role="alert" className={s.error}>{error}</p> : null}
+        <footer className={s.actions}><Button type="button" variant="secondary" disabled={busy} onClick={() => setCredentials(null)}>Cancelar</Button><Button type="submit" loading={busy}>Salvar login e senha</Button></footer>
+      </form>
     </ClubModal> : null}
     {coupon ? <ClubModal title="Detalhes do cupom" onClose={() => setCoupon(null)}><CouponDetails coupon={coupon} onCopy={copy} />
       {notice ? <p role="status" className={s.notice}>{notice}</p> : null}
