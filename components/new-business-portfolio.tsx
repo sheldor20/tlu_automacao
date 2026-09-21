@@ -13,6 +13,8 @@ import {
 import { BusinessBudgetCurve } from "@/components/business-budget-curve";
 import { ListToolbar } from "@/components/list-toolbar";
 import { PlanDocumentManager } from "@/components/plan-document-manager";
+import { BusinessDetail } from "@/components/business-detail";
+import { suggestRegistrationNumber, validateRegistryFile, validateAreaImage } from "@/lib/business-registry";
 import { BusinessFileManager } from "@/components/business-file-manager";
 import {
   BUSINESS_PORTFOLIO_SECTIONS,
@@ -22,7 +24,7 @@ import {
 } from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
 import { extractKmzCenter, googleMapsUrl, kmzStoragePath } from "@/lib/kmz";
-import { friendlyError, getSupabase } from "@/lib/supabase";
+import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { Business, BusinessPortfolioSection, BusinessStage, Project, StageHistory } from "@/lib/types";
 import {
   Archive,
@@ -32,6 +34,9 @@ import {
   Clock3,
   CalendarRange,
   ExternalLink,
+  FileText,
+  Eye,
+  ImagePlus,
   MapPin,
   Map as MapIcon,
   Paperclip,
@@ -43,7 +48,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { QlikWorkSelect } from "./qlik-work-select";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type BusinessForm = {
   qlik_work_key: string;
@@ -55,6 +60,8 @@ type BusinessForm = {
   notes: string;
   stage: BusinessStage;
   kmz_file: File | null;
+  registration_file: File | null;
+  area_image: File | null;
 };
 
 const emptyForm: BusinessForm = {
@@ -67,6 +74,8 @@ const emptyForm: BusinessForm = {
   notes: "",
   stage: "prospeccao",
   kmz_file: null,
+  registration_file: null,
+  area_image: null,
 };
 
 type BusinessFilter = "current" | "archived";
@@ -85,6 +94,10 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailBusiness, setDetailBusiness] = useState<Business | null>(null);
+  const [readingRegistry, setReadingRegistry] = useState(false);
+  const [registryHint, setRegistryHint] = useState("");
+  const registryReadId = useRef(0);
   const [editing, setEditing] = useState<Business | null>(null);
   const [actionBusiness, setActionBusiness] = useState<Business | null>(null);
   const [planBusiness, setPlanBusiness] = useState<Business | null>(null);
@@ -183,12 +196,18 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
   }, [currentBusinesses, currentHistory, sectionStages]);
 
   function openNew() {
+    registryReadId.current++;
+    setReadingRegistry(false);
+    setRegistryHint("");
     setEditing(null);
     setForm({ ...emptyForm, stage: sectionStageKeys[0] });
     setDialogOpen(true);
   }
 
   function openEdit(business: Business) {
+    registryReadId.current++;
+    setReadingRegistry(false);
+    setRegistryHint("");
     setEditing(business);
     setForm({
       project_id: business.project_id || "",
@@ -200,86 +219,97 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       notes: business.notes || "",
       stage: business.stage,
       kmz_file: null,
+      registration_file: null,
+      area_image: null,
     });
     setDialogOpen(true);
   }
 
+  async function selectRegistry(file: File | null) {
+    const readId = ++registryReadId.current;
+    setForm((current) => ({ ...current, registration_file: null }));
+    setRegistryHint("");
+    setReadingRegistry(Boolean(file));
+    if (!file) return;
+    try {
+      await validateRegistryFile(file);
+      if (readId !== registryReadId.current) return;
+      setForm((current) => ({ ...current, registration_file: file }));
+      const suggestion = await suggestRegistrationNumber(file);
+      if (readId !== registryReadId.current) return;
+      setForm((current) => ({ ...current, property_registration: current.property_registration || suggestion.number || "" }));
+      setRegistryHint(suggestion.number
+        ? `Número sugerido ${suggestion.source === "pdf" ? "pelo PDF" : "pelo nome do arquivo"}: ${suggestion.number}. Confira o número da matrícula antes de salvar.`
+        : "Não foi possível identificar o número. Digite a matrícula no campo abaixo.");
+    } catch (error) {
+      if (readId === registryReadId.current) setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      if (readId === registryReadId.current) setReadingRegistry(false);
+    }
+  }
+
   async function saveBusiness(event: FormEvent) {
     event.preventDefault();
-    if (!supabase) return;
-    if (!editing && !form.kmz_file) {
-      return setToast({ message: "Selecione o arquivo KMZ com a localização da área.", type: "error" });
-    }
-    if (form.kmz_file && !form.kmz_file.name.toLocaleLowerCase().endsWith(".kmz")) {
-      return setToast({ message: "A localização deve ser enviada em um arquivo .kmz.", type: "error" });
-    }
-    if (form.kmz_file && form.kmz_file.size > 20 * 1024 * 1024) {
-      return setToast({ message: "O arquivo KMZ deve ter até 20 MB.", type: "error" });
+    if (!supabase || readingRegistry || saving) return;
+    if (!editing && !form.kmz_file) return setToast({ message: "Selecione o arquivo KMZ com a localização da área.", type: "error" });
+    if ((form.registration_file || editing?.registration_file_path) && !form.property_registration.trim()) {
+      return setToast({ message: "Informe o número da matrícula para registrar o PDF.", type: "error" });
     }
     setSaving(true);
     const businessId = editing?.id || crypto.randomUUID();
-    let uploadedLocationPath: string | null = null;
-    let locationPayload: Partial<Pick<Business, "latitude" | "longitude" | "location_file_path" | "location_file_name">> = {};
-
-    if (form.kmz_file) {
-      try {
-        const coordinates = await extractKmzCenter(form.kmz_file);
-        uploadedLocationPath = kmzStoragePath(businessId, form.kmz_file.name);
-        const kmzUploadBody = new Blob([form.kmz_file], { type: "application/vnd.google-earth.kmz" });
-        const upload = await supabase.storage.from("business-locations").upload(uploadedLocationPath, kmzUploadBody, {
-          contentType: "application/vnd.google-earth.kmz",
-          upsert: false,
-        });
+    const uploaded: { bucket: string; path: string }[] = [];
+    const replaced: { bucket: string; path: string }[] = [];
+    try {
+      if (form.registration_file) await validateRegistryFile(form.registration_file);
+      if (form.area_image) await validateAreaImage(form.area_image);
+      const documents: Partial<Business> = {};
+      if (form.kmz_file) {
+        if (!/\.kmz$/i.test(form.kmz_file.name) || form.kmz_file.size > 20 * 1024 * 1024) throw new Error("O KMZ deve ser válido e ter até 20 MB.");
+        Object.assign(documents, await extractKmzCenter(form.kmz_file));
+        const path = kmzStoragePath(businessId, form.kmz_file.name);
+        const upload = await supabase.storage.from("business-locations").upload(path, new Blob([form.kmz_file], { type: "application/vnd.google-earth.kmz" }), { contentType: "application/vnd.google-earth.kmz", upsert: false });
         if (upload.error) throw upload.error;
-        locationPayload = {
-          ...coordinates,
-          location_file_path: uploadedLocationPath,
-          location_file_name: form.kmz_file.name.slice(0, 240),
-        };
-      } catch (error) {
-        setSaving(false);
-        const message = error instanceof Error && error.message.startsWith("kmz_")
-          ? "O KMZ não contém uma localização válida. Exporte novamente a área pelo Google Earth."
-          : friendlyError(error);
-        return setToast({ message, type: "error" });
+        uploaded.push({ bucket: "business-locations", path });
+        documents.location_file_path = path;
+        documents.location_file_name = form.kmz_file.name.slice(0, 240);
+        if (editing?.location_file_path) replaced.push({ bucket: "business-locations", path: editing.location_file_path });
       }
-    }
-
-    const payload = {
-      qlik_work_key: form.qlik_work_key || null,
-      project_id: form.project_id,
-      property_registration: form.property_registration.trim() || null,
-      start_date: editing ? form.start_date : todayIso(),
-      potential_vgv: Number(form.potential_vgv || 0),
-      notes: form.notes.trim() || null,
-      stage: form.stage,
-      ...locationPayload,
-    };
-
-    const result = editing
-      ? await supabase.from("businesses").update(payload).eq("id", editing.id)
-      : await supabase.from("businesses").insert({
-          ...payload,
-          id: businessId,
-          name: form.name.trim(),
-          address: "Área definida pelo arquivo KMZ",
-          city: "Área mapeada",
-          state: "PR",
-        });
-
-    if (result.error) {
-      if (uploadedLocationPath) await supabase.storage.from("business-locations").remove([uploadedLocationPath]);
-      setToast({ message: friendlyError(result.error), type: "error" });
+      for (const kind of ["registration", "area"] as const) {
+        const file = kind === "registration" ? form.registration_file : form.area_image;
+        if (!file) continue;
+        const path = storagePath(businessId, file.name, kind === "registration" ? "matricula" : "area");
+        const mime = kind === "registration" ? "application/pdf" : /\.png$/i.test(file.name) ? "image/png" : /\.webp$/i.test(file.name) ? "image/webp" : "image/jpeg";
+        const upload = await supabase.storage.from("business-documents").upload(path, new Blob([file], { type: mime }), { contentType: mime, upsert: false });
+        if (upload.error) throw upload.error;
+        uploaded.push({ bucket: "business-documents", path });
+        if (kind === "registration") {
+          documents.registration_file_path = path;
+          documents.registration_file_name = file.name.slice(0, 240);
+          if (editing?.registration_file_path) replaced.push({ bucket: "business-documents", path: editing.registration_file_path });
+        } else {
+          documents.area_image_path = path;
+          documents.area_image_name = file.name.slice(0, 240);
+          if (editing?.area_image_path) replaced.push({ bucket: "business-documents", path: editing.area_image_path });
+        }
+      }
+      const payload = {
+        qlik_work_key: form.qlik_work_key || null, project_id: form.project_id,
+        property_registration: form.property_registration.trim() || null,
+        start_date: editing ? form.start_date : todayIso(), potential_vgv: Number(form.potential_vgv || 0),
+        notes: form.notes.trim() || null, stage: form.stage, ...documents,
+      };
+      const result = editing
+        ? await supabase.from("businesses").update(payload).eq("id", editing.id).select("id").single()
+        : await supabase.from("businesses").insert({ ...payload, id: businessId, name: form.name.trim(), address: "Área definida pelo arquivo KMZ", city: "Área mapeada", state: "PR" }).select("id").single();
+      if (result.error) throw result.error;
+    } catch (error) {
+      await Promise.allSettled(uploaded.map((item) => supabase.storage.from(item.bucket).remove([item.path])));
+      setToast({ message: error instanceof Error && error.message.startsWith("kmz_") ? "O KMZ não contém uma localização válida." : friendlyError(error), type: "error" });
       setSaving(false);
       return;
     }
-    if (uploadedLocationPath && editing?.location_file_path && editing.location_file_path !== uploadedLocationPath) {
-      await supabase.storage.from("business-locations").remove([editing.location_file_path]);
-    }
-    setToast({
-      message: editing ? "Negócio atualizado com sucesso." : "Novo negócio adicionado ao funil.",
-      type: "success",
-    });
+    await Promise.allSettled(replaced.map((item) => supabase.storage.from(item.bucket).remove([item.path])));
+    setToast({ message: editing ? "Negócio atualizado com sucesso." : "Novo negócio adicionado ao funil.", type: "success" });
     setDialogOpen(false);
     setSaving(false);
     await loadData();
@@ -387,7 +417,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                 </div>
                 <div className="stage-projects">
                   {stage.items.slice(0, 3).map((business) => (
-                    <button key={business.id} onClick={() => openEdit(business)}>
+                    <button key={business.id} onClick={() => setDetailBusiness(business)}>
                       <span>{business.name}</span>
                       <small>{business.location_file_name || business.city || "Local a definir"}</small>
                     </button>
@@ -435,7 +465,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                   const stage = BUSINESS_STAGES.find((item) => item.key === business.stage);
                   return (
                     <tr key={business.id} className={Number(business.days_in_stage || 0) >= 30 ? "exception-row" : ""}>
-                      <td><strong>{business.name}</strong><small>Matrícula: {business.property_registration || "não informada"}</small><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : Number(business.days_in_stage || 0) >= 30 ? `${business.days_in_stage} dias sem avançar` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
+                      <td><button type="button" className="business-name-button" onClick={() => setDetailBusiness(business)}>{business.name}</button><small>Matrícula: {business.property_registration || "não informada"}</small><small>{business.archived_at ? `Arquivado em ${dateBr(business.archived_at)}` : Number(business.days_in_stage || 0) >= 30 ? `${business.days_in_stage} dias sem avançar` : `Atualizado em ${dateBr(business.updated_at)}`}</small></td>
                       <td className="business-project-cell"><strong>{business.project?.name || "Vínculo pendente"}</strong><small>{business.project?.owner_name || (business.project ? "Projeto relacionado" : "Registro anterior à nova regra")}</small></td>
                       <td>{business.archived_at ? <StatusPill tone={business.stage === "obra" ? "success" : "neutral"}>{stage?.shortLabel}</StatusPill> : <select className="quick-select" value={business.stage} onChange={(event) => void quickStageChange(business, event.target.value as BusinessStage)} aria-label={`Fase de ${business.name}`}>{BUSINESS_STAGES.map((option) => <option key={option.key} value={option.key}>{option.shortLabel}</option>)}</select>}</td>
                       <td><strong>{currency(business.potential_vgv)}</strong></td>
@@ -445,7 +475,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
                           <MapPin size={14} /> <span>{business.location_file_name || "Ver no Google Maps"}</span> <ExternalLink size={12} />
                         </a>
                       </td>
-                      <td><div className="table-actions">{business.archived_at ? null : <><button className="table-action" onClick={() => setCurveBusiness(business)} aria-label={`Curva mensal de ${business.name}`} title="VGV e investimento mensal"><CalendarRange size={16} /></button><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
+                      <td><div className="table-actions"><button className="table-action" onClick={() => setDetailBusiness(business)} aria-label={`Abrir ${business.name}`} title="Visão geral e relatório PDF"><Eye size={16} /></button>{business.archived_at ? null : <><button className="table-action" onClick={() => setCurveBusiness(business)} aria-label={`Curva mensal de ${business.name}`} title="VGV e investimento mensal"><CalendarRange size={16} /></button><button className="table-action" onClick={() => setFileBusiness(business)} aria-label={`Arquivos de ${business.name}`} title="Imagens, PDFs e vídeos"><Paperclip size={16} /></button><button className="table-action" onClick={() => setPlanBusiness(business)} aria-label={`Plantas de ${business.name}`} title="Plantas técnicas"><MapIcon size={16} /></button><button className="table-action" onClick={() => openEdit(business)} aria-label={`Editar ${business.name}`} title="Editar negócio"><Pencil size={16} /></button></>}<button className="table-action" onClick={() => business.archived_at ? void archiveBusiness(business) : requestAction(business, "archive")} aria-label={business.archived_at ? `Restaurar ${business.name}` : `Arquivar ${business.name}`} title={business.archived_at ? "Restaurar negócio" : "Arquivar negócio"}>{business.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button>{allowDelete ? <button className="table-action danger" onClick={() => requestAction(business, "delete")} aria-label={`Excluir ${business.name}`} title="Excluir área"><Trash2 size={16} /></button> : null}</div></td>
                     </tr>
                   );
                 })}
@@ -455,10 +485,11 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
         )}
       </section>
 
+      {detailBusiness ? <BusinessDetail business={detailBusiness} onClose={() => setDetailBusiness(null)} onEdit={() => { setDetailBusiness(null); openEdit(detailBusiness); }} onFiles={() => { setDetailBusiness(null); setFileBusiness(detailBusiness); }} /> : null}
       {curveBusiness ? <BusinessBudgetCurve business={curveBusiness} onClose={() => setCurveBusiness(null)} onSaved={() => void loadData()} /> : null}
       <Dialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => { if (!saving) { registryReadId.current++; setDialogOpen(false); } }}
         title={editing ? "Atualizar negócio" : "Novo negócio"}
         description={editing ? "Atualize os dados e, se necessário, substitua o KMZ da área." : `Cadastre uma área em ${sectionInfo.label} com sua localização em KMZ.`}
         wide
@@ -486,8 +517,14 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
           <Field label="Nome do negócio">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={Boolean(editing)} maxLength={140} required />
           </Field>
-          <Field label="Matrícula do imóvel" hint="Opcional. Informe o número registrado no Cartório de Registro de Imóveis.">
-            <input value={form.property_registration} onChange={(event) => setForm({ ...form, property_registration: event.target.value })} maxLength={120} placeholder="Ex.: 12.345" />
+          <Field label="PDF da matrícula" hint={registryHint || "Até 20 MB. O número será sugerido quando identificado; confira antes de salvar."} className="form-span-2">
+            <label className="file-drop business-kmz-drop">
+              <FileText size={20} /><span>{readingRegistry ? "Lendo matrícula…" : form.registration_file?.name || editing?.registration_file_name || "Selecionar PDF da matrícula"}</span>
+              <input aria-label="PDF da matrícula" type="file" accept=".pdf,application/pdf" disabled={saving} onChange={(event) => void selectRegistry(event.target.files?.[0] || null)} />
+            </label>
+          </Field>
+          <Field label="Número da matrícula" hint="Confira o número registrado no Cartório de Registro de Imóveis.">
+            <input value={form.property_registration} onChange={(event) => setForm({ ...form, property_registration: event.target.value })} required={Boolean(form.registration_file || editing?.registration_file_path)} maxLength={120} placeholder="Ex.: 112.755" />
           </Field>
           {editing ? <Field label="Data de início">
             <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required />
@@ -509,13 +546,18 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
               <input type="file" accept=".kmz,application/vnd.google-earth.kmz" onChange={(event) => setForm({ ...form, kmz_file: event.target.files?.[0] || null })} required={!editing?.location_file_path} />
             </label>
           </Field>
-          {editing ? <>
-          <Field label="Observações" hint="Informações rápidas para contextualizar a oportunidade." className="form-span-2">
+          <Field label="Imagem da área (Google Maps/Earth)" hint="PNG, JPG ou WebP, até 20 MB. Preserve a identificação do Google e os créditos da imagem. Esta imagem será incluída no relatório." className="form-span-2">
+            <label className="file-drop business-kmz-drop">
+              <ImagePlus size={20} /><span>{form.area_image?.name || editing?.area_image_name || "Selecionar imagem da área"}</span>
+              <input aria-label="Imagem da área" type="file" accept=".png,.jpg,.jpeg,.webp" onChange={(event) => setForm({ ...form, area_image: event.target.files?.[0] || null })} />
+            </label>
+          </Field>
+          <Field label="Descrição e observações" hint="Informações rápidas para contextualizar a oportunidade." className="form-span-2">
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={2000} />
-          </Field></> : null}
+          </Field>
           <div className="form-actions">
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button type="submit" loading={saving} disabled={!form.project_id || (!editing && !form.kmz_file)}>{editing ? "Salvar alterações" : "Criar negócio"}</Button>
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => { registryReadId.current++; setDialogOpen(false); }}>Cancelar</Button>
+            <Button type="submit" loading={saving} disabled={readingRegistry || !form.project_id || (!editing && !form.kmz_file)}>{editing ? "Salvar alterações" : "Criar negócio"}</Button>
           </div>
         </form>
       </Dialog>

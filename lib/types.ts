@@ -18,6 +18,10 @@ export type Business = {
   project_id: string | null;
   name: string;
   property_registration: string | null;
+  registration_file_path?: string | null;
+  registration_file_name?: string | null;
+  area_image_path?: string | null;
+  area_image_name?: string | null;
   start_date: string;
   stage: BusinessStage;
   address: string;
