@@ -5,7 +5,7 @@ import { VgvProjectionPanel } from "@/components/vgv-projection-panel";
 import { Button, KpiCard, ProgressBar, StatusPill } from "@/components/ui";
 import { BUSINESS_STAGES, MANAGEMENT_AREAS } from "@/lib/constants";
 import { currency } from "@/lib/format";
-import { companyMonthSnapshot, sumMetricSeries } from "@/lib/management-metrics";
+import { companyMonthSnapshot, latestCompanyCashSnapshot, sumMetricSeries } from "@/lib/management-metrics";
 import { monthsThroughLastClosed, previousClosedMonth } from "@/lib/management-period";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import type {
@@ -108,6 +108,7 @@ const validAreas = new Set(managementAreas.map((area) => area.slug));
 const monthFormatter = new Intl.DateTimeFormat("pt-BR", { month: "short" });
 const competenceFormatter = new Intl.DateTimeFormat("pt-BR", { month: "short", year: "numeric" });
 const referenceDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const cashSyncFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
 function monthDate(key: string) {
   return new Date(`${key.slice(0, 10)}T12:00:00`);
@@ -477,7 +478,7 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
         <section className="management-loading"><RefreshCw size={22} className="spin" /><span>Montando a visão gerencial…</span></section>
       ) : (
         <>
-          {area === "empresa" ? <CompanyView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
+          {area === "empresa" ? <CompanyView cashSnapshot={latestCompanyCashSnapshot(areaValues)} metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} revenueBreakdown={latestBreakdown("receita_plano_contas")} expenseBreakdown={latestBreakdown("despesa_plano_contas")} /> : null}
           {area === "juridico-vendas-cobranca" ? <LegalSalesView delinquencyInitial={latestMetric("inadimplencia_total")?.metadata?.delinquency_initial} metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} metricHelperForMonth={metricHelperForMonth} seriesFor={seriesFor} months={months} /> : null}
           {area === "rh-marketing-clientes" ? <PeopleClientsView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} rentals={rentalSnapshot} /> : null}
           {area === "financas-compras" ? <FinancePurchasingView metricValue={metricValue} metricValueForMonth={metricValueForMonth} metricHelper={metricHelper} seriesFor={seriesFor} months={months} /> : null}
@@ -498,7 +499,7 @@ type MetricViewProps = {
   months: Array<{ key: string; label: string; isCurrent: boolean }>;
 };
 
-function CompanyView({ metricValueForMonth, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
+function CompanyView({ cashSnapshot, metricValueForMonth, seriesFor, months, revenueBreakdown, expenseBreakdown }: MetricViewProps & { cashSnapshot: ReturnType<typeof latestCompanyCashSnapshot>; revenueBreakdown: Array<{ label: string; value: number }>; expenseBreakdown: Array<{ label: string; value: number }> }) {
   const revenueSeries = seriesFor("receita_consolidada");
   const expenseSeries = seriesFor("despesa_consolidada");
   const sumSeries = (series: Array<number | null>) => {
@@ -509,7 +510,13 @@ function CompanyView({ metricValueForMonth, seriesFor, months, revenueBreakdown,
   const expense = sumSeries(expenseSeries);
   const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
   const closedMonthLabel = `${previousMonth.label}.${previousMonth.key.slice(0, 4)}`;
-  const { revenue: previousRevenue, expense: previousExpense, reportedResult, result, cash, availableCash, rentalCash } = companyMonthSnapshot(previousMonth.key, metricValueForMonth);
+  const { revenue: previousRevenue, expense: previousExpense, reportedResult, result } = companyMonthSnapshot(previousMonth.key, metricValueForMonth);
+  const { cash, availableCash, rentalCash, referenceDate, referenceMonth, synchronizedAt } = cashSnapshot;
+  const cashPosition = referenceDate
+    ? `posição em ${referenceDateFormatter.format(monthDate(referenceDate))}`
+    : referenceMonth ? `referência ${competenceFormatter.format(monthDate(referenceMonth))}` : null;
+  const cashUpdatedAt = synchronizedAt && Number.isFinite(Date.parse(synchronizedAt))
+    ? cashSyncFormatter.format(new Date(synchronizedAt)) : null;
   const previousResult = result;
   const closedMonths = monthsThroughLastClosed(months);
   const chartMonths = closedMonths.length ? closedMonths : [previousMonth];
@@ -532,13 +539,14 @@ function CompanyView({ metricValueForMonth, seriesFor, months, revenueBreakdown,
           label="Valor total em caixa"
           value={cash === null ? "—" : currency(cash)}
           helper={<span className="management-cash-helper">
-            <span>posição em {closedMonthLabel}</span>
-            {cash === null ? <span>aguardando o saldo de caixa do fechamento</span>
+            <span>{cashPosition || "Saldo atual"}</span>
+            {cash === null ? <span>aguardando a atualização do saldo de caixa</span>
               : rentalCash === null || availableCash === null ? <span>aguardando o saldo da conta de aluguéis para calcular o disponível</span>
               : <>
                   <span>Disponível para uso: <strong>{currency(availableCash)}</strong></span>
                   <span>{currency(cash)} total − {currency(rentalCash)} aluguéis</span>
                 </>}
+            {cashUpdatedAt ? <span>Atualizado em {cashUpdatedAt}</span> : null}
           </span>}
           icon={<Landmark size={17} />}
           className="management-kpi-full-money management-cash-total-card"
