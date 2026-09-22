@@ -5,15 +5,22 @@ export function sumMetricSeries(values: Array<number | null>) {
   return available.length ? available.reduce((sum, value) => sum + value, 0) : null;
 }
 
-export function latestCompanyCashSnapshot(values: ManagementIndicatorValue[]) {
-  const totals = values.filter((item) => item.area === "empresa" && item.dimension_key === "total");
+export function latestCompanyCashSnapshot(values: ManagementIndicatorValue[], currentReferenceMonth: string) {
+  const totals = values.filter((item) => item.area === "empresa" && item.dimension_key === "total"
+    && item.reference_month <= currentReferenceMonth);
   const cashMetric = totals
     .filter((item) => item.metric_key === "valor_caixa")
     .sort((a, b) => b.reference_month.localeCompare(a.reference_month) || b.updated_at.localeCompare(a.updated_at))[0];
+  const [year, month] = currentReferenceMonth.split("-").map(Number);
+  const previousReferenceMonth = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10);
   const availableMetric = cashMetric ? totals.find((item) => (
     item.metric_key === "caixa_disponivel"
     && item.reference_month === cashMetric.reference_month
     && item.metadata.synchronized_at === cashMetric.metadata.synchronized_at
+    // The open month's available cash must deduct the last closed rental
+    // balance, including December in January. Do not display a wrong pairing.
+    && (cashMetric.reference_month !== currentReferenceMonth
+      || (item.metadata.selections as Record<string, unknown> | undefined)?.saldo_conta_alugueis_competência === previousReferenceMonth)
   )) : undefined;
   const cash = cashMetric?.value ?? null;
   const availableCash = availableMetric?.value ?? null;
