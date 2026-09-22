@@ -351,6 +351,11 @@ indicador, percorre de janeiro ao mês vigente e grava:
 Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
 resultado gerencial continua mensal e é calculado por receita menos despesa. A
 posição de caixa preserva no metadado a última data encontrada no mês.
+O card **Valor total em caixa** usa a posição mais recente carregada, incluindo
+o mês em andamento, e acompanha as atualizações da base em tempo real. Exibe
+a data da posição e o horário da sincronização, respeitando a atualização da
+fonte Qlik. O disponível usa a mesma competência e sincronização do saldo
+total; resultado gerencial e gráficos históricos continuam no último fechamento.
 
 O saldo de aluguéis vem da tabela **Composição Saldo Inicial | Contas** do
 DFC (objeto `883da608-a05c-442b-9304-c5bb1d8eaa5e`). A leitura seleciona
