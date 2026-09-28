@@ -10,7 +10,7 @@ export const DEPARTMENTS: Department[] = [
   { slug: "governanca", name: "Governança", position: 4 },
   { slug: "alugueis", name: "Aluguéis", position: 5 },
   { slug: "processos", name: "Processos", position: 6 },
-  { slug: "pauta-ra", name: "Pauta e RA", position: 7 },
+  { slug: "pauta-ra", name: "Reuniões TLU", position: 7 },
   { slug: "indicadores", name: "Indicadores", position: 8 },
 ];
 

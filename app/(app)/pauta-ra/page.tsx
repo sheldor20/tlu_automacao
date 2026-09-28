@@ -1,25 +1,31 @@
 "use client";
 
+import { MeetingRecordEditor } from "@/components/meeting-record-editor";
+import { MeetingMinutes } from "@/components/meeting-minutes";
+import { MEETING_RITES, MEETING_TYPES, defaultRiteDate, type MeetingType, type MeetingTypeMember, type MeetingRecord } from "@/lib/meeting-rites";
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { dateBr, todayIso } from "@/lib/format";
 import { parseInitialAgendaTopics } from "@/lib/ra";
 import { friendlyError, getSupabase } from "@/lib/supabase";
-import type { Project, ProjectTask, RaAgendaItem, RaAgendaSection, RaDecision, RaItemKind, RaMeeting, RaMeetingProject, RaParticipant, UserProfile } from "@/lib/types";
-import { Archive, ArchiveRestore, ArrowRight, CalendarDays, Check, ClipboardList, FileText, FolderKanban, ListPlus, Mail, Pencil, Play, Plus, Save, Trash2, Users } from "lucide-react";
+import type { Project, ProjectTask, RaAgendaItem, RaAgendaSection, RaDecision, RaItemKind, RaMeeting, RaMeetingProject, RaParticipant, ProfileReportingLine, UserProfile } from "@/lib/types";
+import { Archive, ArchiveRestore, ArrowRight, CalendarDays, Check, ClipboardList, LockKeyhole, FolderKanban, ListPlus, Mail, Pencil, Play, Plus, Save, Trash2, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-const statusLabel = { rascunho: "Em preparação", em_andamento: "RA em andamento", encerrada: "Encerrada" } as const;
+const statusLabel = { rascunho: "Em preparação", em_andamento: "Em andamento", encerrada: "Encerrada" } as const;
 const kindLabel: Record<RaItemKind, string> = { topico: "Tópico", acao: "Ação", definicao: "A definir" };
 
-function defaultMeetingDate() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+function initialMeetingForm(type: MeetingType = "RA", participantIds: string[] = []) {
+  return { meeting_type: type, title: `${type} · ${MEETING_RITES[type].name}`, scheduled_at: defaultRiteDate(type), participant_ids: participantIds, report_user_id: "", project_ids: [] as string[], initial_topics: MEETING_RITES[type].topics.join("\n") };
 }
 
 export default function RaPage() {
   const supabase = getSupabase();
   const [meetings, setMeetings] = useState<RaMeeting[]>([]);
+  const [typeMembers, setTypeMembers] = useState<MeetingTypeMember[]>([]);
+  const [reportingLines, setReportingLines] = useState<ProfileReportingLine[]>([]);
+  const [typeFilter, setTypeFilter] = useState<MeetingType | "all">("all");
+  const [recordDrafts, setRecordDrafts] = useState<Record<string, MeetingRecord>>({});
+  const [recordDirty, setRecordDirty] = useState(false);
   const [participants, setParticipants] = useState<RaParticipant[]>([]);
   const [meetingProjects, setMeetingProjects] = useState<RaMeetingProject[]>([]);
   const [sections, setSections] = useState<RaAgendaSection[]>([]);
@@ -47,7 +53,7 @@ export default function RaPage() {
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const [decisionDrafts, setDecisionDrafts] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [meetingForm, setMeetingForm] = useState({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [] as string[], project_ids: [] as string[], initial_topics: "" });
+  const [meetingForm, setMeetingForm] = useState(initialMeetingForm());
   const [sectionForm, setSectionForm] = useState({ title: "", project_id: "" });
   const [itemForm, setItemForm] = useState({ content: "", kind: "topico" as RaItemKind, owner_user_id: "", due_date: "", project_id: "" });
   const [itemEditContent, setItemEditContent] = useState("");
@@ -60,7 +66,7 @@ export default function RaPage() {
     const meetingQuery = showArchived
       ? supabase.from("ra_meetings").select("*").not("archived_at", "is", null).order("scheduled_at", { ascending: false })
       : supabase.from("ra_meetings").select("*").is("archived_at", null).order("scheduled_at", { ascending: false });
-    const [meetingResult, participantResult, selectedProjectResult, sectionResult, itemResult, decisionResult, projectResult, taskResult, userResult, manageResult] = await Promise.all([
+    const [meetingResult, participantResult, selectedProjectResult, sectionResult, itemResult, decisionResult, projectResult, taskResult, userResult, manageResult, membersResult, reportingResult] = await Promise.all([
       meetingQuery,
       supabase.from("ra_participants").select("*"),
       supabase.from("ra_meeting_projects").select("*"),
@@ -71,11 +77,15 @@ export default function RaPage() {
       supabase.from("project_tasks").select("*").neq("status", "concluida").order("due_date"),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).order("full_name"),
       supabase.rpc("can_manage_ra"),
+      supabase.from("ra_meeting_type_members").select("*"),
+      supabase.from("profile_reporting_lines").select("report_user_id,leader_user_id"),
     ]);
-    const error = meetingResult.error || participantResult.error || selectedProjectResult.error || sectionResult.error || itemResult.error || decisionResult.error || projectResult.error || taskResult.error || userResult.error || manageResult.error;
+    const error = meetingResult.error || participantResult.error || selectedProjectResult.error || sectionResult.error || itemResult.error || decisionResult.error || projectResult.error || taskResult.error || userResult.error || manageResult.error || membersResult.error || reportingResult.error;
     if (error) setToast({ message: friendlyError(error), type: "error" });
     const nextMeetings = (meetingResult.data || []) as RaMeeting[];
     setMeetings(nextMeetings);
+    setTypeMembers((membersResult.data || []) as MeetingTypeMember[]);
+    setReportingLines((reportingResult.data || []) as ProfileReportingLine[]);
     setParticipants((participantResult.data || []) as RaParticipant[]);
     setMeetingProjects((selectedProjectResult.data || []) as RaMeetingProject[]);
     setSections((sectionResult.data || []) as RaAgendaSection[]);
@@ -92,8 +102,13 @@ export default function RaPage() {
 
   useEffect(() => { const timer = window.setTimeout(() => void loadData(), 0); return () => window.clearTimeout(timer); }, [loadData]);
 
-  const selected = meetings.find((meeting) => meeting.id === selectedId) || null;
-  const canManageSelected = Boolean(selected && canManage && (selected.leader_user_id === currentUserId || users.find((user) => user.user_id === currentUserId)?.is_admin));
+  const isAdmin = Boolean(users.find(user => user.user_id === currentUserId)?.is_admin);
+  const accessibleTypes = MEETING_TYPES.filter(type => type === "1:1" || isAdmin || typeMembers.some(member => member.meeting_type === type && member.user_id === currentUserId));
+  const directReports = reportingLines.filter(line => line.leader_user_id === currentUserId).map(line => line.report_user_id);
+  const creatableTypes = accessibleTypes.filter(type => type !== "1:1" || directReports.some(id => users.some(user => user.user_id === id)));
+  const visibleMeetings = meetings.filter(meeting => typeFilter === "all" || meeting.meeting_type === typeFilter);
+  const selected = visibleMeetings.find((meeting) => meeting.id === selectedId) || null;
+  const canManageSelected = Boolean(selected && (selected.leader_user_id === currentUserId || isAdmin));
   const canOperateSelected = Boolean(canManageSelected && !selected?.archived_at);
   const canEditDecisions = canOperateSelected && selected?.status !== "encerrada";
   const selectedParticipants = participants.filter((participant) => participant.meeting_id === selectedId);
@@ -116,39 +131,18 @@ export default function RaPage() {
     if (initialTopics.some((topic) => topic.length < 2)) return setToast({ message: "Cada tópico inicial deve ter pelo menos 2 caracteres.", type: "error" });
     if (initialTopics.some((topic) => topic.length > 2000)) return setToast({ message: "Cada tópico inicial deve ter no máximo 2.000 caracteres.", type: "error" });
     setSaving(true);
-    const result = await supabase.from("ra_meetings").insert({ title: meetingForm.title.trim(), scheduled_at: new Date(meetingForm.scheduled_at).toISOString(), leader_user_id: currentUserId }).select("id").single();
+    const result = await supabase.rpc("create_tlu_meeting", {
+      p_type: meetingForm.meeting_type, p_title: meetingForm.title.trim(),
+      p_scheduled_at: new Date(meetingForm.scheduled_at).toISOString(), p_leader_id: currentUserId,
+      p_report_id: meetingForm.meeting_type === "1:1" ? meetingForm.report_user_id : null,
+      p_participant_ids: meetingForm.participant_ids, p_project_ids: meetingForm.project_ids, p_topics: initialTopics,
+    });
     if (result.error || !result.data) { setSaving(false); return setToast({ message: friendlyError(result.error), type: "error" }); }
-    const meetingId = result.data.id;
-    const participantIds = [...new Set([currentUserId, ...meetingForm.participant_ids])];
-    const sectionRows = [
-      ...(initialTopics.length ? [{ meeting_id: meetingId, project_id: null, title: "Assuntos gerais", position: 0 }] : []),
-      ...meetingForm.project_ids.map((project_id, position) => ({ meeting_id: meetingId, project_id, title: projectName(project_id), position: position + (initialTopics.length ? 1 : 0) })),
-    ];
-    const [participantResult, projectResult, sectionResult] = await Promise.all([
-      supabase.from("ra_participants").insert(participantIds.map((user_id) => ({ meeting_id: meetingId, user_id }))),
-      meetingForm.project_ids.length ? supabase.from("ra_meeting_projects").insert(meetingForm.project_ids.map((project_id) => ({ meeting_id: meetingId, project_id }))) : Promise.resolve({ error: null }),
-      sectionRows.length ? supabase.from("ra_agenda_sections").insert(sectionRows).select("id,project_id,position") : Promise.resolve({ data: [], error: null }),
-    ]);
-    const writeError = participantResult.error || projectResult.error || sectionResult.error;
-    if (writeError) {
-      await supabase.from("ra_meetings").delete().eq("id", meetingId);
-      setSaving(false);
-      return setToast({ message: `Não foi possível criar a pauta: ${friendlyError(writeError)}`, type: "error" });
-    }
-    if (initialTopics.length) {
-      const generalSection = sectionResult.data?.find((section) => section.project_id === null);
-      const topicResult = generalSection
-        ? await supabase.from("ra_agenda_items").insert(initialTopics.map((content, position) => ({ section_id: generalSection.id, content, kind: "topico", position })))
-        : { error: new Error("Bloco de assuntos gerais não encontrado.") };
-      if (topicResult.error) {
-        await supabase.from("ra_meetings").delete().eq("id", meetingId);
-        setSaving(false);
-        return setToast({ message: `Não foi possível salvar os tópicos iniciais: ${friendlyError(topicResult.error)}`, type: "error" });
-      }
-    }
+    const meetingId = result.data as string;
     setSaving(false);
     setMeetingDialog(false);
-    setMeetingForm({ title: "RA semanal", scheduled_at: defaultMeetingDate(), participant_ids: [], project_ids: [], initial_topics: "" });
+    setMeetingForm(initialMeetingForm());
+    setTypeFilter("all");
     setSelectedId(meetingId);
     setToast({ message: "Pauta criada para preparação.", type: "success" });
     await loadData();
@@ -215,13 +209,13 @@ export default function RaPage() {
 
   function openTaskDialog(item: RaAgendaItem) {
     setTaskItem(item);
-    setTaskForm({ owner_user_id: item.owner_user_id || "", due_date: item.due_date || "", project_id: item.project_id || "" });
+    setTaskForm({ owner_user_id: item.owner_user_id || "", due_date: item.due_date || "", project_id: selected?.meeting_type === "1:1" ? "" : item.project_id || "" });
   }
 
   async function performTaskConversion(item: RaAgendaItem, ownerUserId: string, dueDate: string, projectId: string) {
     if (!supabase) return;
     setSaving(true);
-    const { error } = await supabase.rpc("convert_ra_item_to_task", { p_item_id: item.id, p_assignee_user_id: ownerUserId, p_due_date: dueDate, p_project_id: projectId || null });
+    const { error } = await supabase.rpc("convert_ra_item_to_task", { p_item_id: item.id, p_assignee_user_id: ownerUserId, p_due_date: dueDate, p_project_id: selected?.meeting_type === "1:1" ? null : projectId || null });
     setSaving(false);
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setTaskItem(null);
@@ -303,28 +297,35 @@ export default function RaPage() {
   }
 
   async function closeMeeting(resend = false) {
-    if (!supabase || !selected) return;
+    if (!supabase || !selected || saving) return;
+    if (recordDirty) return setToast({ message: "Salve o registro do encontro antes de finalizar a reunião.", type: "error" });
     setSaving(true);
-    const { data } = await supabase.auth.getSession();
-    const response = await fetch(`/api/ra/${selected.id}/close${resend ? "?resend=true" : ""}`, { method: "POST", headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
-    const result = await response.json().catch(() => ({}));
-    setSaving(false);
-    if (!response.ok) return setToast({ message: result.error || "Não foi possível encerrar a RA.", type: "error" });
-    const message = result.emailSent
-      ? `${resend ? "ATA reenviada" : "RA encerrada, ATA salva e enviada"} para ${result.recipientCount} destinatário(s).${result.emailWarning ? ` ${result.emailWarning}` : ""}`
-      : `${resend ? "A ATA continua salva, mas o reenvio falhou." : "RA encerrada e ATA salva."} ${result.emailWarning || "O e-mail não foi enviado."}`;
-    setToast({ message, type: result.emailSent || !resend ? "success" : "error" }); await loadData();
+    try {
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/ra/${selected.id}/close${resend ? "?resend=true" : ""}`, { method: "POST", headers: { Authorization: `Bearer ${data.session?.access_token || ""}` } });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return setToast({ message: result.error || "Não foi possível finalizar a reunião.", type: "error" });
+      const message = result.emailSent
+        ? `${resend ? "ATA reenviada" : "Reunião finalizada, ATA salva e enviada"} para ${result.recipientCount} destinatário(s).${result.emailWarning ? ` ${result.emailWarning}` : ""}`
+        : `${resend ? "A ATA continua salva, mas o reenvio falhou." : "Reunião finalizada e ATA salva."} ${result.emailWarning || "O e-mail não foi enviado."}`;
+      setToast({ message, type: result.emailSent || !resend ? "success" : "error" }); await loadData();
+    } catch (error) {
+      setToast({ message: friendlyError(error), type: "error" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function changeMeetingArchive(meeting: RaMeeting, archive: boolean) {
+    if (recordDirty) return setToast({ message: "Salve o registro antes de arquivar a reunião.", type: "error" });
     if (!supabase || !canManageSelected || selected?.id !== meeting.id) return;
     setSaving(true);
     const { data, error } = await supabase.from("ra_meetings").update({ archived_at: archive ? new Date().toISOString() : null, archived_by: archive ? currentUserId : null }).eq("id", meeting.id).select("id").maybeSingle();
     setSaving(false);
-    if (error || !data) return setToast({ message: error ? friendlyError(error) : "Você não tem permissão para alterar esta RA.", type: "error" });
+    if (error || !data) return setToast({ message: error ? friendlyError(error) : "Você não tem permissão para alterar esta reunião.", type: "error" });
     setMeetingAction(null);
     setSelectedId("");
-    setToast({ message: archive ? "RA arquivada com todo o histórico." : "RA restaurada.", type: "success" });
+    setToast({ message: archive ? "Reunião arquivada com todo o histórico." : "Reunião restaurada.", type: "success" });
     await loadData();
   }
 
@@ -336,24 +337,55 @@ export default function RaPage() {
     if (error) return setToast({ message: friendlyError(error), type: "error" });
     setMeetingAction(null);
     setSelectedId("");
-    setToast({ message: "RA excluída definitivamente. Tarefas já criadas foram preservadas.", type: "success" });
+    setToast({ message: "Reunião excluída definitivamente. Tarefas já criadas foram preservadas.", type: "success" });
     await loadData();
   }
 
+  function chooseMeeting(id: string) {
+    if (recordDirty && !window.confirm("O registro tem alterações não salvas. Deseja descartá-las?")) return;
+    setRecordDirty(false); setRecordDrafts({}); setSelectedId(id);
+  }
+
+  function chooseType(type: MeetingType | "all") {
+    if (recordDirty && !window.confirm("O registro tem alterações não salvas. Deseja descartá-las?")) return;
+    setRecordDirty(false); setRecordDrafts({}); setTypeFilter(type);
+    setSelectedId(meetings.find(meeting => type === "all" || meeting.meeting_type === type)?.id || "");
+  }
+
+  function applyRite(type: MeetingType) {
+    setMeetingForm(initialMeetingForm(type, typeMembers.filter(member => member.meeting_type === type).map(member => member.user_id)));
+  }
+
+  function openMeetingDialog() {
+    if (recordDirty) return setToast({ message: "Salve o registro antes de criar outra reunião.", type: "error" });
+    const type = typeFilter !== "all" && creatableTypes.includes(typeFilter) ? typeFilter : creatableTypes.includes("RA") ? "RA" : creatableTypes[0];
+    if (!type) return;
+    applyRite(type); setMeetingDialog(true);
+  }
+
   return <>
-    <PageIntro eyebrow="Departamento · Pauta e RA" title="Reuniões de alinhamento" description="Prepare a pauta, registre definições e transforme combinados em tarefas." action={canManage ? <Button onClick={() => setMeetingDialog(true)}><Plus size={17} /> Nova RA</Button> : undefined} />
+    <PageIntro eyebrow="Gestão · Ritos da Terra Lótus" title="Reuniões TLU" description="Prepare a pauta, registre decisões e acompanhe os compromissos de cada encontro." action={canManage && creatableTypes.length ? <Button onClick={openMeetingDialog}><Plus size={17} /> Nova reunião</Button> : undefined} />
+    <nav className="tlu-rite-tabs" aria-label="Tipos de reunião">
+      <button type="button" aria-pressed={typeFilter === "all"} className={typeFilter === "all" ? "active" : ""} onClick={() => chooseType("all")}>Todas <span>{meetings.length}</span></button>
+      {accessibleTypes.map(type => <button type="button" key={type} aria-pressed={typeFilter === type} className={typeFilter === type ? "active" : ""} onClick={() => chooseType(type)} title={MEETING_RITES[type].name}>{type === "1:1" ? <LockKeyhole size={14} /> : null}{type} <span>{meetings.filter(meeting => meeting.meeting_type === type).length}</span></button>)}
+    </nav>
+    {typeFilter !== "all" ? <div className="tlu-rite-description"><div><strong>{MEETING_RITES[typeFilter].name}</strong><p>{MEETING_RITES[typeFilter].objective}</p></div><StatusPill tone="info">{MEETING_RITES[typeFilter].cadence}</StatusPill></div> : null}
     {loading ? <div className="list-loading">Carregando reuniões…</div> : <div className="ra-layout">
-      <aside className="content-card ra-meeting-list"><div className="content-card-head"><div><h2>{showArchived ? "RAs arquivadas" : "Reuniões"}</h2><p>{meetings.length} RA(s) {showArchived ? "arquivada(s)" : "visível(is)"}</p></div><Button variant="ghost" onClick={() => setShowArchived((current) => !current)}>{showArchived ? <ClipboardList size={15} /> : <Archive size={15} />}{showArchived ? " Ver ativas" : " Ver arquivadas"}</Button></div>{meetings.length ? meetings.map((meeting) => <button type="button" key={meeting.id} className={selectedId === meeting.id ? "active" : ""} onClick={() => setSelectedId(meeting.id)}><CalendarDays size={17} /><span><strong>{meeting.title}</strong><small>{dateBr(meeting.scheduled_at)} · {userName(meeting.leader_user_id)}</small></span><StatusPill tone={meeting.archived_at ? "neutral" : meeting.status === "encerrada" ? "success" : meeting.status === "em_andamento" ? "warning" : "neutral"}>{meeting.archived_at ? "Arquivada" : statusLabel[meeting.status]}</StatusPill></button>) : <EmptyState icon={showArchived ? <Archive size={22} /> : <ClipboardList size={22} />} title={showArchived ? "Nenhuma RA arquivada" : "Nenhuma RA"} description={showArchived ? "As reuniões arquivadas aparecerão aqui." : "As reuniões em que você participa aparecerão aqui."} />}</aside>
+      <aside className="content-card ra-meeting-list">
+        <div className="content-card-head"><div><h2>{showArchived ? "Arquivadas" : "Reuniões"}</h2><p>{visibleMeetings.length} encontro(s)</p></div><Button variant="ghost" onClick={() => { if (recordDirty) return setToast({ message: "Salve o registro antes de abrir outra lista.", type: "error" }); setShowArchived(current => !current); }}>{showArchived ? <ClipboardList size={15} /> : <Archive size={15} />}{showArchived ? " Ver ativas" : " Arquivadas"}</Button></div>
+        {visibleMeetings.length ? visibleMeetings.map(meeting => <button type="button" key={meeting.id} className={selectedId === meeting.id ? "active" : ""} onClick={() => chooseMeeting(meeting.id)}><CalendarDays size={17} /><span><small className="tlu-rite-label">{meeting.meeting_type}</small><strong>{meeting.title}</strong><small>{dateBr(meeting.scheduled_at)} · {userName(meeting.leader_user_id)}</small></span><StatusPill tone={meeting.archived_at ? "neutral" : meeting.status === "encerrada" ? "success" : meeting.status === "em_andamento" ? "warning" : "neutral"}>{meeting.archived_at ? "Arquivada" : statusLabel[meeting.status]}</StatusPill></button>) : <EmptyState icon={<ClipboardList size={22} />} title="Nenhuma reunião nesta agenda" description={typeFilter === "1:1" ? "Aqui aparecem apenas os seus encontros individuais com seu líder ou seus liderados. O líder agenda o encontro conforme o vínculo definido na Administração." : "As reuniões às quais você tem acesso aparecerão aqui."} />}
+      </aside>
       <main className="ra-main">
         {selected ? <>
-          <section className="content-card ra-header"><div><span className="eyebrow">{selected.archived_at ? `Arquivada · ${statusLabel[selected.status]}` : statusLabel[selected.status]}</span><h2>{selected.title}</h2><p>{dateBr(selected.scheduled_at)} · Líder: {userName(selected.leader_user_id)}</p><div className="ra-participant-chips">{selectedParticipants.map((participant) => <span key={participant.user_id}><Users size={12} /> {userName(participant.user_id)}</span>)}</div></div>{canManageSelected ? <div className="page-action-group">{canOperateSelected && selected.status !== "encerrada" ? <>{selected.status === "rascunho" ? <Button variant="secondary" onClick={() => void startMeeting()}><Play size={15} /> Iniciar RA</Button> : null}<Button onClick={() => void closeMeeting()} loading={saving}><Mail size={15} /> Encerrar e enviar ATA</Button></> : null}{selected.archived_at ? <Button variant="secondary" onClick={() => void changeMeetingArchive(selected, false)} loading={saving}><ArchiveRestore size={15} /> Restaurar</Button> : <Button variant="secondary" onClick={() => setMeetingAction({ kind: "archive", meeting: selected })}><Archive size={15} /> Arquivar</Button>}<Button variant="danger" onClick={() => setMeetingAction({ kind: "delete", meeting: selected })}><Trash2 size={15} /> Excluir</Button></div> : null}</section>
+          <section className="content-card ra-header"><div><span className="eyebrow">{selected.archived_at ? `Arquivada · ${statusLabel[selected.status]}` : statusLabel[selected.status]}</span><h2>{selected.title}</h2><p>{MEETING_RITES[selected.meeting_type].cadence}{selected.meeting_type === "1:1" ? " · Privado: líder e colaborador" : ""}</p><p>{dateBr(selected.scheduled_at)} · Líder: {userName(selected.leader_user_id)}</p><div className="ra-participant-chips">{selectedParticipants.map((participant) => <span key={participant.user_id}><Users size={12} /> {userName(participant.user_id)}</span>)}</div></div>{canManageSelected ? <div className="page-action-group">{canOperateSelected && selected.status !== "encerrada" ? <>{selected.status === "rascunho" ? <Button variant="secondary" onClick={() => void startMeeting()}><Play size={15} /> Iniciar reunião</Button> : null}<Button onClick={() => void closeMeeting()} loading={saving}><Mail size={15} /> Encerrar e enviar ATA</Button></> : null}{selected.archived_at ? <Button variant="secondary" onClick={() => void changeMeetingArchive(selected, false)} loading={saving}><ArchiveRestore size={15} /> Restaurar</Button> : <Button variant="secondary" onClick={() => setMeetingAction({ kind: "archive", meeting: selected })}><Archive size={15} /> Arquivar</Button>}<Button variant="danger" onClick={() => setMeetingAction({ kind: "delete", meeting: selected })}><Trash2 size={15} /> Excluir</Button></div> : null}</section>
 
-          {selected.status === "encerrada" ? <section className="content-card ra-minutes"><div className="content-card-head"><div><h2><FileText size={18} /> ATA da reunião</h2><p>Registro final da reunião</p></div>{canOperateSelected ? <Button variant="secondary" onClick={() => void closeMeeting(true)} loading={saving}><Mail size={15} /> Reenviar ATA</Button> : null}</div><pre>{selected.minutes_text}</pre></section> : <>
+          {selected.status === "encerrada" ? <MeetingMinutes key={selected.id} meeting={selected} canEdit={isAdmin && !selected.archived_at} canResend={canOperateSelected} onResend={() => closeMeeting(true)} onSaved={async () => { setToast({ message: "Ata corrigida. A versão anterior foi preservada no histórico.", type: "success" }); await loadData(); }} onError={message => setToast({ message, type: "error" })} userName={userName} /> : <>
+
             {selectedProjectIds.length ? <section className="content-card ra-project-snapshot"><div className="content-card-head"><div><h2>Projetos para discussão</h2><p>Tarefas abertas e vencidas dos projetos selecionados</p></div></div><div>{selectedProjectIds.map((projectId) => { const tasks = openProjectTasks.filter((task) => task.project_id === projectId); const overdue = tasks.filter((task) => task.due_date < todayIso()); return <article key={projectId}><div><FolderKanban size={17} /><span><strong>{projectName(projectId)}</strong><small>{overdue.length} atrasada(s) · {tasks.length} aberta(s)</small></span></div>{tasks.length ? <ul>{tasks.slice(0, 8).map((task) => <li key={task.id} className={task.due_date < todayIso() ? "danger" : ""}><span>{task.title}</span><small>{task.assignee_name} · {dateBr(task.due_date)}</small></li>)}</ul> : <p>Nenhuma tarefa aberta.</p>}</article>; })}</div></section> : null}
 
             <section className="content-card ra-agenda">
               <div className="content-card-head">
-                <div><h2>Pauta da RA</h2><p>{selected.archived_at ? "Histórico preservado em modo somente leitura" : "Tópicos, ações e itens a definir durante a reunião"}</p></div>
+                <div><h2>Pauta da reunião</h2><p>{selected.archived_at ? "Histórico preservado em modo somente leitura" : "Tópicos, ações e itens a definir durante a reunião"}</p></div>
                 {canOperateSelected ? <Button variant="secondary" onClick={() => setSectionDialog(true)}><ListPlus size={15} /> Novo bloco</Button> : null}
               </div>
               <div className="ra-section-list">
@@ -386,7 +418,7 @@ export default function RaPage() {
                                 <button type="button" className="danger" disabled={saving} aria-label={`Excluir definição: ${decision.decision_text}`} onClick={() => setDeletingDecision(decision)}><Trash2 size={14} /> Excluir</button>
                               </div> : null}
                             </div>)}
-                            {item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space</p> : null}
+                            {item.task_id ? <p><ArrowRight size={13} /> Tarefa criada no TLU Space{selected.meeting_type === "1:1" ? " · acesso restrito à dupla" : ""}</p> : null}
                             {canOperateSelected ? <div className="ra-item-controls">
                               {!item.task_id ? <Button variant="secondary" onClick={() => void convertToTask(item)}><Save size={14} /> Transformar em tarefa</Button> : null}
                               {item.kind === "definicao" || item.kind === "topico" ? <>
@@ -403,16 +435,28 @@ export default function RaPage() {
                 {!selectedSections.length ? <EmptyState icon={<ClipboardList size={22} />} title="Pauta vazia" description="Adicione blocos como projetos, entregas ou assuntos gerais." /> : null}
               </div>
             </section>
+            <MeetingRecordEditor key={selected.id} meeting={selected} editable={canOperateSelected} draft={recordDrafts[selected.id]} onDraftChange={record => setRecordDrafts(current => ({ ...current, [selected.id]: record }))} onDirtyChange={setRecordDirty} onSaved={async () => { setRecordDirty(false); setRecordDrafts({}); setToast({ message: "Registro do encontro salvo.", type: "success" }); await loadData(); }} onError={message => setToast({ message, type: "error" })} />
           </>}
 
-          <section className="content-card ra-decision-catalog"><div className="content-card-head"><div><h2>Catálogo de definições</h2><p>Decisões formalizadas nas reuniões RA</p></div><StatusPill tone={selectedDecisions.length ? "info" : "neutral"}>{selectedDecisions.length} registro(s)</StatusPill></div>{selectedDecisions.length ? <div>{selectedDecisions.map((decision) => <article key={decision.id}><Check size={16} /><span><strong>{decision.title}</strong><p>{decision.decision_text}</p><small>{dateBr(decision.decided_at)}</small></span></article>)}</div> : <div className="mini-empty">Nenhuma definição registrada nesta RA.</div>}</section>
-        </> : <EmptyState icon={<ClipboardList size={22} />} title="Selecione uma RA" description="Escolha uma reunião para preparar ou consultar a pauta." />}
+          <section className="content-card ra-decision-catalog"><div className="content-card-head"><div><h2>Catálogo de definições</h2><p>Decisões formalizadas nos encontros TLU</p></div><StatusPill tone={selectedDecisions.length ? "info" : "neutral"}>{selectedDecisions.length} registro(s)</StatusPill></div>{selectedDecisions.length ? <div>{selectedDecisions.map((decision) => <article key={decision.id}><Check size={16} /><span><strong>{decision.title}</strong><p>{decision.decision_text}</p><small>{dateBr(decision.decided_at)}</small></span></article>)}</div> : <div className="mini-empty">Nenhuma definição registrada nesta reunião.</div>}</section>
+        </> : <EmptyState icon={<ClipboardList size={22} />} title="Selecione uma reunião" description="Escolha uma reunião para preparar ou consultar a pauta." />}
       </main>
     </div>}
 
-    <Dialog open={meetingDialog} onClose={() => setMeetingDialog(false)} title="Nova reunião RA" description="Defina participantes, projetos e os tópicos que entrarão na pauta." wide><form className="form-grid" onSubmit={createMeeting}><Field label="Título"><input value={meetingForm.title} onChange={(event) => setMeetingForm({ ...meetingForm, title: event.target.value })} required maxLength={180} /></Field><Field label="Data e horário"><input type="datetime-local" value={meetingForm.scheduled_at} onChange={(event) => setMeetingForm({ ...meetingForm, scheduled_at: event.target.value })} required /></Field><Field label="Tópicos iniciais" hint="Um tópico por linha; bullets são opcionais." className="form-span-2"><textarea value={meetingForm.initial_topics} onChange={(event) => setMeetingForm({ ...meetingForm, initial_topics: event.target.value })} rows={5} maxLength={12000} placeholder={'• Resultados da semana\n• Pendências e próximos passos'} /></Field><fieldset className="department-access-fieldset form-span-2"><legend>Participantes</legend><div className="ra-choice-grid">{users.filter((user) => user.user_id !== currentUserId).map((user) => <label key={user.user_id} className={meetingForm.participant_ids.includes(user.user_id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.participant_ids.includes(user.user_id)} onChange={() => toggleMeetingChoice("participant_ids", user.user_id)} /><span>{user.full_name || user.email}</span></label>)}</div></fieldset><fieldset className="department-access-fieldset form-span-2"><legend>Projetos ativos para discussão</legend><div className="ra-choice-grid">{projects.map((project) => <label key={project.id} className={meetingForm.project_ids.includes(project.id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.project_ids.includes(project.id)} onChange={() => toggleMeetingChoice("project_ids", project.id)} /><span>{project.name}</span></label>)}</div></fieldset><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMeetingDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar pauta</Button></div></form></Dialog>
+    <Dialog open={meetingDialog} onClose={() => { if (!saving) setMeetingDialog(false); }} title="Nova reunião TLU" description="Escolha o rito para carregar o modelo de pauta e os participantes." wide>
+      <form className="form-grid" onSubmit={createMeeting}>
+        <Field label="Tipo de reunião" className="form-span-2"><select value={meetingForm.meeting_type} onChange={event => applyRite(event.target.value as MeetingType)} disabled={saving}>{creatableTypes.map(type => <option key={type} value={type}>{type} · {MEETING_RITES[type].name}</option>)}</select></Field>
+        <div className="tlu-rite-description form-span-2"><p>{MEETING_RITES[meetingForm.meeting_type].objective}</p><StatusPill tone="info">{MEETING_RITES[meetingForm.meeting_type].cadence}</StatusPill></div>
+        <Field label="Título"><input value={meetingForm.title} onChange={event => setMeetingForm({ ...meetingForm, title: event.target.value })} required minLength={2} maxLength={180} /></Field>
+        <Field label="Data e horário"><input type="datetime-local" value={meetingForm.scheduled_at} onChange={event => setMeetingForm({ ...meetingForm, scheduled_at: event.target.value })} required /></Field>
+        {meetingForm.meeting_type === "1:1" ? <Field label="Colaborador" hint="Somente seus liderados ativos aparecem. O vínculo é configurado na Administração." className="form-span-2"><select value={meetingForm.report_user_id} required onChange={event => setMeetingForm({ ...meetingForm, report_user_id: event.target.value })}><option value="">Selecione o colaborador</option>{users.filter(user => directReports.includes(user.user_id)).map(user => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email}</option>)}</select></Field> : <fieldset className="department-access-fieldset form-span-2"><legend>Participantes sugeridos</legend><p>A lista e o acesso a esta agenda são definidos na Administração. O líder do encontro será incluído automaticamente.</p><div className="ra-choice-grid">{users.filter(user => user.user_id !== currentUserId && typeMembers.some(member => member.meeting_type === meetingForm.meeting_type && member.user_id === user.user_id)).map(user => <label key={user.user_id} className={meetingForm.participant_ids.includes(user.user_id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.participant_ids.includes(user.user_id)} onChange={() => toggleMeetingChoice("participant_ids", user.user_id)} /><span>{user.full_name || user.email}</span></label>)}</div></fieldset>}
+        <Field label="Tópicos iniciais" hint="Modelo do documento de ritos. Ajuste os assuntos deste encontro; um tópico por linha." className="form-span-2"><textarea value={meetingForm.initial_topics} onChange={event => setMeetingForm({ ...meetingForm, initial_topics: event.target.value })} rows={8} maxLength={12000} /></Field>
+        <fieldset className="department-access-fieldset form-span-2"><legend>Projetos ativos para discussão</legend><div className="ra-choice-grid">{projects.map(project => <label key={project.id} className={meetingForm.project_ids.includes(project.id) ? "selected" : ""}><input type="checkbox" checked={meetingForm.project_ids.includes(project.id)} onChange={() => toggleMeetingChoice("project_ids", project.id)} /><span>{project.name}</span></label>)}</div></fieldset>{meetingForm.meeting_type === "1:1" ? <p className="tlu-private-note form-span-2"><LockKeyhole size={17} /> A pauta, o registro, a ata e as tarefas do 1:1 ficam restritos a vocês dois. Tarefas geradas serão avulsas, sem compartilhamento com os projetos.</p> : null}
+        <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setMeetingDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Criar pauta</Button></div>
+      </form>
+    </Dialog>
     <Dialog open={sectionDialog} onClose={() => setSectionDialog(false)} title="Novo bloco da pauta" description="Crie um assunto geral ou vincule o bloco a um projeto."><form className="form-grid" onSubmit={addSection}><Field label="Título"><input value={sectionForm.title} onChange={(event) => setSectionForm({ ...sectionForm, title: event.target.value })} required /></Field><Field label="Projeto" hint="Opcional"><select value={sectionForm.project_id} onChange={(event) => setSectionForm({ ...sectionForm, project_id: event.target.value })}><option value="">Assunto geral</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setSectionDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar bloco</Button></div></form></Dialog>
-    <Dialog open={itemDialog} onClose={() => setItemDialog(false)} title="Adicionar assunto" description="O responsável e o prazo permitirão transformar o item em tarefa."><form className="form-grid" onSubmit={addItem}><Field label="Assunto" className="form-span-2"><textarea value={itemForm.content} onChange={(event) => setItemForm({ ...itemForm, content: event.target.value })} required minLength={2} maxLength={2000} /></Field><Field label="Tipo"><select value={itemForm.kind} onChange={(event) => setItemForm({ ...itemForm, kind: event.target.value as RaItemKind })}><option value="topico">Tópico para discussão</option><option value="acao">Ação a executar</option><option value="definicao">Item a definir</option></select></Field><Field label="Responsável" hint="Opcional"><select value={itemForm.owner_user_id} onChange={(event) => setItemForm({ ...itemForm, owner_user_id: event.target.value })}><option value="">A definir</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo" hint="Opcional"><input type="date" min={todayIso()} value={itemForm.due_date} onChange={(event) => setItemForm({ ...itemForm, due_date: event.target.value })} /></Field><Field label="Projeto" hint="Opcional; vazio cria tarefa avulsa"><select value={itemForm.project_id} onChange={(event) => setItemForm({ ...itemForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setItemDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar assunto</Button></div></form></Dialog>
+    <Dialog open={itemDialog} onClose={() => setItemDialog(false)} title="Adicionar assunto" description="O responsável e o prazo permitirão transformar o item em tarefa."><form className="form-grid" onSubmit={addItem}><Field label="Assunto" className="form-span-2"><textarea value={itemForm.content} onChange={(event) => setItemForm({ ...itemForm, content: event.target.value })} required minLength={2} maxLength={2000} /></Field><Field label="Tipo"><select value={itemForm.kind} onChange={(event) => setItemForm({ ...itemForm, kind: event.target.value as RaItemKind })}><option value="topico">Tópico para discussão</option><option value="acao">Ação a executar</option><option value="definicao">Item a definir</option></select></Field><Field label="Responsável" hint="Opcional"><select value={itemForm.owner_user_id} onChange={(event) => setItemForm({ ...itemForm, owner_user_id: event.target.value })}><option value="">A definir</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo" hint="Opcional"><input type="date" min={todayIso()} value={itemForm.due_date} onChange={(event) => setItemForm({ ...itemForm, due_date: event.target.value })} /></Field><Field label="Projeto" hint={selected?.meeting_type === "1:1" ? "As tarefas do 1:1 são sempre avulsas e privadas." : "Opcional; vazio cria tarefa avulsa"}><select disabled={selected?.meeting_type === "1:1"} value={selected?.meeting_type === "1:1" ? "" : itemForm.project_id} onChange={(event) => setItemForm({ ...itemForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setItemDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Adicionar assunto</Button></div></form></Dialog>
     <Dialog open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Editar assunto" description="Atualize o texto usado na pauta e no catálogo de novas definições.">
       <form className="form-grid" onSubmit={updateItem}>
         <Field label="Assunto"><textarea value={itemEditContent} onChange={(event) => setItemEditContent(event.target.value)} required minLength={2} maxLength={2000} rows={5} /></Field>
@@ -431,9 +475,9 @@ export default function RaPage() {
     <Dialog open={Boolean(deletingDecision)} onClose={() => { if (!saving) setDeletingDecision(null); }} title="Excluir definição?" description="Esta definição será removida da pauta e do catálogo. O assunto e as outras definições serão mantidos.">
       <div className="confirmation-content ra-decision-confirmation"><p>{deletingDecision?.decision_text}</p><div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setDeletingDecision(null)}>Cancelar</Button><Button type="button" variant="danger" loading={saving} onClick={() => void deleteDecision()}><Trash2 size={16} /> Excluir definição</Button></div></div>
     </Dialog>
-    <Dialog open={Boolean(taskItem)} onClose={() => setTaskItem(null)} title="Transformar tópico em tarefa" description="Defina o responsável, o prazo e, se necessário, o projeto."><form className="form-grid" onSubmit={submitTaskConversion}><Field label="Responsável"><select value={taskForm.owner_user_id} onChange={(event) => setTaskForm({ ...taskForm, owner_user_id: event.target.value })} required><option value="">Selecione</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo"><input type="date" min={todayIso()} value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Projeto" hint="Opcional; vazio cria tarefa avulsa" className="form-span-2"><select value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskItem(null)}>Cancelar</Button><Button type="submit" loading={saving}>Criar tarefa</Button></div></form></Dialog>
-    <Dialog open={Boolean(meetingAction)} onClose={() => setMeetingAction(null)} title={meetingAction?.kind === "delete" ? "Excluir RA?" : "Arquivar RA?"} description={meetingAction?.kind === "delete" ? "A exclusão é definitiva e remove a pauta, a ATA, as definições e o histórico de envios. Tarefas já criadas permanecem no sistema." : "A RA ficará somente para consulta, preservando a pauta, a ATA e as definições. Ela poderá ser restaurada depois."}>
-      <div className="confirmation-content"><strong>{meetingAction?.meeting.title}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMeetingAction(null)}>Cancelar</Button>{meetingAction?.kind === "delete" ? <Button type="button" variant="danger" loading={saving} onClick={() => meetingAction && void deleteMeeting(meetingAction.meeting)}><Trash2 size={16} /> Excluir definitivamente</Button> : <Button type="button" loading={saving} onClick={() => meetingAction && void changeMeetingArchive(meetingAction.meeting, true)}><Archive size={16} /> Arquivar RA</Button>}</div></div>
+    <Dialog open={Boolean(taskItem)} onClose={() => setTaskItem(null)} title="Transformar tópico em tarefa" description="Defina o responsável, o prazo e, se necessário, o projeto."><form className="form-grid" onSubmit={submitTaskConversion}><Field label="Responsável"><select value={taskForm.owner_user_id} onChange={(event) => setTaskForm({ ...taskForm, owner_user_id: event.target.value })} required><option value="">Selecione</option>{selectedParticipants.map((participant) => <option key={participant.user_id} value={participant.user_id}>{userName(participant.user_id)}</option>)}</select></Field><Field label="Prazo"><input type="date" min={todayIso()} value={taskForm.due_date} onChange={(event) => setTaskForm({ ...taskForm, due_date: event.target.value })} required /></Field><Field label="Projeto" hint={selected?.meeting_type === "1:1" ? "Tarefa privada, visível somente ao líder e ao colaborador." : "Opcional; vazio cria tarefa avulsa"} className="form-span-2"><select disabled={selected?.meeting_type === "1:1"} value={taskForm.project_id} onChange={(event) => setTaskForm({ ...taskForm, project_id: event.target.value })}><option value="">Tarefa avulsa</option>{selectedProjectIds.map((id) => <option key={id} value={id}>{projectName(id)}</option>)}</select></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setTaskItem(null)}>Cancelar</Button><Button type="submit" loading={saving}>Criar tarefa</Button></div></form></Dialog>
+    <Dialog open={Boolean(meetingAction)} onClose={() => setMeetingAction(null)} title={meetingAction?.kind === "delete" ? "Excluir reunião?" : "Arquivar reunião?"} description={meetingAction?.kind === "delete" ? "A exclusão é definitiva e remove a pauta, a ATA, as definições e o histórico de envios. Tarefas já criadas permanecem no sistema." : "A RA ficará somente para consulta, preservando a pauta, a ATA e as definições. Ela poderá ser restaurada depois."}>
+      <div className="confirmation-content"><strong>{meetingAction?.meeting.title}</strong><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setMeetingAction(null)}>Cancelar</Button>{meetingAction?.kind === "delete" ? <Button type="button" variant="danger" loading={saving} onClick={() => meetingAction && void deleteMeeting(meetingAction.meeting)}><Trash2 size={16} /> Excluir definitivamente</Button> : <Button type="button" loading={saving} onClick={() => meetingAction && void changeMeetingArchive(meetingAction.meeting, true)}><Archive size={16} /> Arquivar reunião</Button>}</div></div>
     </Dialog>
     {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
   </>;

@@ -362,6 +362,12 @@ export type RaMeetingStatus = "rascunho" | "em_andamento" | "encerrada";
 export type RaItemKind = "topico" | "acao" | "definicao";
 
 export type RaMeeting = {
+  meeting_type: import("./meeting-rites").MeetingType;
+  report_user_id: string | null;
+  record_data: import("./meeting-rites").MeetingRecord;
+  minutes_revision: number;
+  minutes_edited_at: string | null;
+  minutes_edited_by: string | null;
   id: string;
   title: string;
   scheduled_at: string;

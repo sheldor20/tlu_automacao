@@ -50,7 +50,7 @@ const departmentLinks: Array<{
   { slug: "governanca", href: "/governanca", label: "Governança", icon: Landmark },
   { slug: "alugueis", href: "/alugueis", label: "Aluguéis", icon: Home },
   { slug: "processos", href: "/processos", label: "Processos", icon: GitBranch },
-  { slug: "pauta-ra", href: "/pauta-ra", label: "Pauta e RA", icon: NotebookTabs },
+  { slug: "pauta-ra", href: "/pauta-ra", label: "Reuniões TLU", icon: NotebookTabs },
   { slug: "indicadores", href: "/indicadores", label: "Indicadores", icon: ChartNoAxesCombined },
 ];
 

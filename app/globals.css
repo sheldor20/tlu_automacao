@@ -2094,3 +2094,30 @@ fieldset.payment-section { padding-top: 18px; }
 .business-report-warnings { background: #fff7df; }
 .business-report-warnings ul { padding-left: 20px; }
 @media (max-width: 540px) { .business-detail-facts { grid-template-columns: 1fr; } .business-detail-toolbar .button { width: 100%; } }
+
+/* Reuniões TLU: shared agenda, rite templates and access settings. */
+.tlu-rite-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+.tlu-rite-tabs button { display: inline-flex; align-items: center; gap: 9px; padding: 10px 16px; border: 1px solid var(--border, #dfe5dc); border-radius: 12px; background: #fff; color: #526056; cursor: pointer; font: inherit; font-weight: 600; }
+.tlu-rite-tabs button.active { background: #233d30; color: #fff; border-color: #233d30; }
+.tlu-rite-tabs button span { font-size: 12px; opacity: .75; }
+.tlu-rite-description { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 20px; background: #eef3ed; border-radius: 14px; margin-bottom: 18px; color: #344f3e; }
+.tlu-rite-description p { margin: 5px 0 0; font-size: 14px; line-height: 1.5; }
+.tlu-rite-label { color: #52694c; font-weight: 700; letter-spacing: .05em; }
+.tlu-meeting-record > form { padding: 20px 22px; }
+.tlu-access-settings { margin-bottom: 24px; }
+.tlu-access-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 20px 22px; }
+.tlu-access-grid > article { padding: 18px; border: 1px solid var(--border, #dfe5dc); border-radius: 16px; }
+.tlu-access-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tlu-access-title > strong { font-size: 20px; color: #2e4935; }
+.tlu-access-grid h3 { font-size: 15px; margin: 12px 0 4px; }
+.tlu-access-grid p { color: #667369; font-size: 13px; }
+.tlu-access-grid .ra-participant-chips { margin: 16px 0; min-height: 48px; }
+.tlu-private-note { display: flex; gap: 12px; align-items: flex-start; background: #f0f4ef; color: #39513e; border-radius: 12px; padding: 16px; line-height: 1.6; font-size: 13px; }
+.tlu-private-note > svg { flex-shrink: 0; margin-top: 3px; }
+.tlu-private-note p { margin: 0; }
+.tlu-access-settings > .tlu-private-note, .tlu-access-note { margin: 0 22px 20px; }
+.tlu-access-note { color: #795a2e; font-size: 13px; line-height: 1.5; }
+.tlu-minutes-history details { padding: 16px 0; border-bottom: 1px solid #e4e8e2; }
+.tlu-minutes-history summary { cursor: pointer; font-size: 14px; }
+.tlu-minutes-history pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: #f7f8f5; padding: 16px; border-radius: 12px; }
+@media (max-width: 760px) { .tlu-access-grid { grid-template-columns: 1fr; } .tlu-rite-description { align-items: flex-start; flex-direction: column; } .tlu-rite-tabs button { padding: 9px 12px; } }

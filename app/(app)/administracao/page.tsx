@@ -1,5 +1,6 @@
 "use client";
 
+import { MeetingAccessSettings } from "@/components/meeting-access-settings";
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
 import { friendlyError, getSupabase } from "@/lib/supabase";
@@ -29,7 +30,7 @@ const emptyForm: AdminForm = {
   password: "",
   active: true,
   is_admin: false,
-  departments: ["novos-negocios"] as DepartmentSlug[],
+  departments: ["novos-negocios", "pauta-ra"] as DepartmentSlug[],
   indicator_areas: [] as ManagementAreaSlug[],
   project_permission: { access_scope: "full", allow_files: true, allow_updates: true },
   process_permission: { can_manage: false },
@@ -214,6 +215,8 @@ export default function AdministrationPage() {
         <article><UserRoundCog size={19} /><div><strong>{metrics.leaders}</strong><span>líderes diretos</span></div></article>
       </section>
 
+      <MeetingAccessSettings users={users} onSaved={loadUsers} />
+
       <section className="content-card admin-users-card">
         <div className="content-card-head"><div><h2>Controle de acesso</h2><p>Administradores veem todos os departamentos; os demais seguem as autorizações abaixo</p></div></div>
         {loading ? (
@@ -252,7 +255,7 @@ export default function AdministrationPage() {
             <label><input type="checkbox" checked={form.is_admin} onChange={(event) => setForm({ ...form, is_admin: event.target.checked })} /><span><strong>Administrador</strong><small>Pode criar usuários e administrar todos os departamentos.</small></span></label>
           </div>
 
-          <Field label="Líder direto" hint="O líder poderá visualizar as tarefas, os projetos e a página Hoje deste usuário." className="form-span-2">
+          <Field label="Líder direto" hint="O líder poderá visualizar as tarefas, os projetos e a página Hoje deste usuário, além de agendar os encontros 1:1 da dupla." className="form-span-2">
             <select value={form.leader_user_id} onChange={(event) => setForm({ ...form, leader_user_id: event.target.value })}>
               <option value="">Sem líder direto</option>
               {users.filter((user) => user.active && user.user_id !== editing?.user_id).map((user) => <option key={user.user_id} value={user.user_id}>{user.full_name || user.email} · {user.email}</option>)}
