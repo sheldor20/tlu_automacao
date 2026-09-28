@@ -12,7 +12,7 @@ test("arquiva RA com autoria e congela as operações do histórico", () => {
   assert.match(migration, /add column if not exists archived_by uuid/);
   assert.match(migration, /create or replace function public\.can_administer_ra_meeting/);
   assert.match(migration, /meeting\.archived_at is null/);
-  assert.match(closeRoute, /Restaure a RA arquivada/);
+  assert.match(closeRoute, /Restaure a reunião arquivada/);
   assert.match(raPage, /canOperateSelected/);
   assert.match(raPage, /Histórico preservado em modo somente leitura/);
 });
@@ -23,14 +23,14 @@ test("separa ativos e arquivados e permite restaurar", () => {
   assert.match(processPage, /Restaurar/);
   assert.match(raPage, /not\("archived_at", "is", null\)/);
   assert.match(raPage, /is\("archived_at", null\)/);
-  assert.match(raPage, /Ver arquivadas/);
+  assert.match(raPage, /Arquivadas/);
 });
 
 test("exige confirmação para exclusão definitiva e preserva tarefas da RA", () => {
   assert.match(processPage, /Excluir processo\?/);
   assert.match(processPage, /business_processes"\)\.delete\(\)/);
   assert.match(processPage, /process-documents"\)\.remove/);
-  assert.match(raPage, /Excluir RA\?/);
+  assert.match(raPage, /Excluir reunião\?/);
   assert.match(raPage, /ra_meetings"\)\.delete\(\)/);
   assert.match(raPage, /Tarefas já criadas permanecem no sistema/);
   assert.doesNotMatch(migration, /delete from public\.project_tasks/);

@@ -1,0 +1,11 @@
+.local/
+.env*
+node_modules/
+.next/
+.git/
+.vercel/
+supabase/.temp/
+*.tsbuildinfo
+*.log
+AGENTS.md
+CLAUDE.md
