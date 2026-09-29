@@ -1,3 +1,4 @@
+import { recordUsage } from "./ai-efficiency.cjs";
 const INSTAGRAM_ORIGIN = "https://www.instagram.com";
 const INSTAGRAM_WEB_APP_ID = "936619743392459";
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -235,6 +236,8 @@ export async function fetchInstagramFollowersFromScreenshot(username = "terralot
     await page.setExtraHTTPHeaders({ "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8" });
     await page.goto(`${INSTAGRAM_ORIGIN}/${encodeURIComponent(username)}/`, { waitUntil: "networkidle2", timeout: 40_000 });
     await new Promise((resolve) => setTimeout(resolve, 2_000));
+    // Read the exact profile count before paying for image interpretation.
+    try { return parseInstagramPublicHtml(await page.content(), username, "browser-dom"); } catch { /* unreadable or gated: use vision */ }
     const screenshot = await page.screenshot({ type: "jpeg", quality: 78, fullPage: false, encoding: "base64" });
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey) {
@@ -250,7 +253,9 @@ export async function fetchInstagramFollowersFromScreenshot(username = "terralot
         signal: AbortSignal.timeout(30_000),
       });
       if (response.ok) {
-        const raw = outputText(await response.json()).trim();
+        const payload = await response.json();
+        await recordUsage({ system: "tlu", operation: "instagram-vision", response: payload });
+        const raw = outputText(payload).trim();
         const numeric = raw.match(/[0-9][0-9.,\s]*(?:mil|mi|k|m)?/i)?.[0];
         if (numeric) return { username, followersCount: normalizeCompactCount(numeric), source: "screenshot-vision" as const };
       }

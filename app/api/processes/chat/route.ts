@@ -1,3 +1,5 @@
+import { openAIFetch } from "@/lib/ai-efficiency.cjs";
+import { processContext, directProcessAnswer } from "@/lib/process-ai-context";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -50,22 +52,24 @@ export async function POST(request: Request) {
 
   const processData = processResult.data as Record<string, unknown>;
   const steps = (stepResult.data || []) as Array<Record<string, unknown>>;
-  const context = { process: processData, steps };
+  const direct = directProcessAnswer(parsed.data.question, processData);
+  if (direct) return NextResponse.json({ answer: direct, usedAi: false });
+  const context = processContext(processData, steps, parsed.data.question);
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
     try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
+      const response = await openAIFetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: process.env.OPENAI_PROCESS_MODEL || "gpt-5.6",
           instructions: "Você é o assistente de processos da Terra Lótus. Responda em português do Brasil, de forma direta, usando exclusivamente o processo fornecido. Cite o nome da regra, política ou etapa usada. Se a resposta não estiver no conteúdo, diga claramente que a informação não está registrada. Nunca invente uma regra.",
-          input: `DÚVIDA: ${parsed.data.question}\n\nPROCESSO: ${JSON.stringify(context).slice(0, 80_000)}`,
+          input: `DÚVIDA: ${parsed.data.question}\n\nPROCESSO: ${JSON.stringify(context)}`,
           max_output_tokens: 1200,
           store: false,
         }),
         signal: AbortSignal.timeout(30_000),
-      });
+      }, { scope: auth.user.id, ownerId: auth.user.id, system: "tlu", operation: "process-chat-v2" });
       if (response.ok) {
         const answer = outputText(await response.json()).trim();
         if (answer) return NextResponse.json({ answer, usedAi: true });
