@@ -1,3 +1,5 @@
+import { openAIFetch } from "@/lib/ai-efficiency.cjs";
+import { processPdfText } from "@/lib/process-pdf-text";
 import { createClient } from "@supabase/supabase-js";
 import { MAX_PROCESS_PDF_BYTES, isPdfUpload, processDraftJsonSchema, processDraftSchema, responseOutputText } from "@/lib/process-pdf";
 import { NextResponse } from "next/server";
@@ -27,7 +29,8 @@ export async function POST(request: Request) {
   if (!isPdfUpload(file, buffer.subarray(0, 5))) return NextResponse.json({ error: "O arquivo precisa ser um PDF válido de até 4 MB." }, { status: 400 });
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const extractedText = await processPdfText(buffer);
+    const response = await openAIFetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -38,14 +41,15 @@ export async function POST(request: Request) {
           role: "user",
           content: [
             { type: "input_text", text: "Transforme este PDF em um processo estruturado com nome, área, objetivo, regras de negócio, políticas e etapas ordenadas." },
-            { type: "input_file", filename: file.name.slice(0, 240), file_data: `data:application/pdf;base64,${buffer.toString("base64")}` },
+            ...(extractedText ? [{ type: "input_text", text: extractedText }] : [{ type: "input_file", filename: file.name.slice(0, 240), file_data: `data:application/pdf;base64,${buffer.toString("base64")}` }]),
           ],
         }],
         text: { format: { type: "json_schema", name: "business_process_v1", strict: true, schema: processDraftJsonSchema } },
         max_output_tokens: 6000,
       }),
       signal: AbortSignal.timeout(60_000),
-    });
+    }, { scope: auth.user.id, ownerId: auth.user.id, system: "tlu", operation: "process-import-v2",
+      validate: (payload) => { try { return processDraftSchema.safeParse(JSON.parse(responseOutputText(payload))).success; } catch { return false; } } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const providerMessage = typeof payload?.error?.message === "string" ? `: ${payload.error.message.slice(0, 300)}` : ".";
