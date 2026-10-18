@@ -24,6 +24,7 @@ import {
   NotebookTabs,
   Search,
   TrendingUp,
+  Target,
   Workflow,
   Wallet,
   Users,
@@ -330,6 +331,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <CalendarDays size={19} />
             <span>{todayLink.label}</span>
             {todayAlertCount > 0 ? <span className="nav-alert-badge" aria-label={`${todayAlertCount} alertas pendentes`}>{todayAlertCount > 99 ? "99+" : todayAlertCount}</span> : null}
+          </Link>
+          <Link href="/acordo-performance" className={pathname.startsWith("/acordo-performance") ? "nav-link active" : "nav-link"} title="Acordo de Performance" onClick={() => setMobileMenu(false)}>
+            <Target size={19} /><span>Acordo de Performance</span>
           </Link>
           {showIndicators ? (
             <Link
