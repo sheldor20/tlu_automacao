@@ -538,3 +538,27 @@ meses, DRE gerencial, conciliação de caixa e simulação de obras, sem menu do
 sistema. Os cenários seguem as permissões de Financeiro. Novos Negócios recebe
 importação de curvas mensais de VGV e investimento. Consulte
 [escopo, regras e instalação](docs/planejador-orcamentario.md).
+
+## Acordo de Performance
+
+A rota autenticada `/acordo-performance`, disponível no menu, permite cadastrar,
+consultar e editar um acordo por colaborador/ciclo. Cada acordo contém período,
+expectativas e até 30 metas com indicador, resultado esperado e prazo dentro do
+ciclo. O salvamento é atômico e o controle de revisão impede sobrescrever uma
+alteração feita por outra pessoa. Revisões são um controle de concorrência, não
+um histórico de versões recuperáveis.
+
+Antes de publicar a interface, aplique a migration
+`20261016183946_performance_agreements.sql` no ambiente de destino. Ela usa
+`profiles` e `profile_reporting_lines` existentes. Nenhum novo segredo ou serviço
+é necessário. O acesso é validado pelo banco a cada consulta e gravação: apenas
+o colaborador ativo e seu líder direto atual, também ativo. Administradores e RH
+não recebem acesso adicional. Trocar o vínculo revoga o acesso do líder anterior
+e concede ao atual, inclusive para ciclos anteriores. O colaborador preserva seu
+acesso mesmo sem líder cadastrado. A tela permite recarregar vínculos e acordos.
+
+Esta primeira versão não inclui assinatura, anexos, exclusão, avaliação de
+desempenho ou PDI. O cadastro permite editar os dados do acordo, sem estado de
+formalização. `tests/performance-agreements.test.ts` executa a migration em
+Postgres e verifica persistência, unicidade por ciclo, validação, edição
+concorrente, acesso de terceiros, troca de líder, inativação e bloqueio anônimo.

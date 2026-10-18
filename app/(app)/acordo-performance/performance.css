@@ -1,0 +1,28 @@
+.performance-page { display: grid; gap: 20px; }
+.performance-page > .content-card, .performance-detail { padding: 24px; }
+.performance-page h2, .performance-page h3 { margin: 0; }
+.performance-privacy { display: flex; align-items: center; gap: 8px; color: #59675f; margin: 0; font-size: .9rem; }
+.performance-toolbar, .performance-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.performance-tabs { justify-content: flex-start; }
+.performance-person { max-width: 440px; }
+.performance-layout { display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.performance-cycles { display: grid; gap: 8px; padding: 12px; }
+.performance-cycles button { display: grid; gap: 8px; text-align: left; padding: 16px; border: 1px solid #dce3df; border-radius: 10px; background: white; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.performance-cycles button.active { background: #eef5f0; border-color: #49715a; }
+.performance-cycles span, .performance-detail small { font-size: .8rem; color: #59675f; }
+.performance-detail { display: grid; gap: 20px; min-width: 0; }
+.performance-text, .performance-goal dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-goals { display: grid; gap: 16px; }
+.performance-goal { padding: 20px; border: 1px solid #dce3df; border-radius: 12px; min-width: 0; }
+.performance-goal legend { padding: 0 6px; font-weight: 600; }
+.performance-goal dl { display: grid; gap: 6px; margin-bottom: 0; }
+.performance-goal dt { font-size: .8rem; font-weight: 600; color: #59675f; }
+.performance-goal dd { margin: 0 0 12px; }
+.performance-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 0; margin: 0; border: 0; grid-column: 1 / -1; min-width: 0; }
+.performance-feedback { padding: 14px 18px; margin: 0; border-radius: 10px; background: #eef5f0; color: #27553a; }
+.performance-feedback.error { background: #fff0ed; color: #933b2a; }
+@media (max-width: 780px) {
+  .performance-layout, .performance-fields { grid-template-columns: minmax(0, 1fr); }
+  .performance-fields > .form-span-2 { grid-column: 1 / -1; }
+  .performance-cycles { max-height: 250px; overflow-y: auto; }
+}
