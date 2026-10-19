@@ -59,6 +59,13 @@ export default function PerformanceAgreementsPage() {
         if (profiles.error || records.error) throw profiles.error || records.error;
         if (!active) return;
         setSignatures((acknowledgments.data || []) as PerformanceAcknowledgment[]);
+        const requestedId = new URL(window.location.href).searchParams.get("agreement");
+        const requested = (records.data || []).find(record => record.id === requestedId);
+        if (requested) {
+          setSelectedId(requested.id);
+          if (requested.report_user_id !== userId) { setView("team"); setReportId(requested.report_user_id); }
+          else setView("self");
+        }
         setSelf(userId);
         setPeople(profiles.data || []);
         setAgreements((records.data || []) as PerformanceAgreement[]);
@@ -113,6 +120,7 @@ export default function PerformanceAgreementsPage() {
       const result = await supabase.from("performance_acknowledgments").insert({ agreement_id: selected.id, agreement_version: selected.version, signature_name: signatureName.trim() }).select("*").single();
       if (result.error) throw result.error;
       setSignatures(current => [result.data as PerformanceAcknowledgment, ...current]);
+      window.dispatchEvent(new Event("today-alert-count-changed"));
       setFeedback({text: "Recebimento e compromisso registrados com sua assinatura e data.", error: false});
     } catch { setFeedback({text: "Não foi possível assinar. Recarregue o acordo para verificar a revisão atual e tente novamente.", error: true}); }
     finally { setSaving(false); }
