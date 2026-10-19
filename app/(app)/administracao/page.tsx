@@ -315,7 +315,7 @@ export default function AdministrationPage() {
 
           <fieldset className="department-access-fieldset form-span-2">
             <legend>Gestão de pagamentos</legend>
-            <p>Todos os usuários ativos podem solicitar e acompanhar os próprios pagamentos. Administradores já possuem gestão completa.</p>
+            <p>Todos os usuários ativos podem solicitar e acompanhar os próprios pagamentos. Administradores já possuem gestão completa. Usuários vinculados como responsáveis veem e tratam apenas os pedidos vinculados na Gestão de pagamentos.</p>
             <div className="admin-toggle-grid"><label><input type="checkbox" disabled={form.is_admin} checked={form.is_admin || form.payment_permission.can_manage} onChange={event => setForm({ ...form, payment_permission: { can_manage: event.target.checked } })} /><span><strong>Gerenciar solicitações de pagamento</strong><small>Consultar todos os pedidos, pedir informações, alterar status e enviar comprovantes.</small></span></label></div>
           </fieldset>
           <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" loading={saving}>{editing ? "Salvar acessos" : "Criar usuário"}</Button></div>
