@@ -121,6 +121,7 @@ function TaskColumn({ status, label, tasks, movingTaskId, onStatusChange, onAddT
 
 export function ProjectTaskBoard(props: ProjectTaskBoardProps) {
   const { tasks, movingTaskId, onStatusChange, onAddTask, onEditTask, onToggleSubtask, canAddTask = true, canEdit = true, canDelete = false, onDeleteTask } = props;
+  const newestTasks = [...tasks].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id.localeCompare(a.id));
   const [activityTask, setActivityTask] = useState<ProjectTask | null>(null);
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }), useSensor(KeyboardSensor));
@@ -136,7 +137,7 @@ export function ProjectTaskBoard(props: ProjectTaskBoardProps) {
   return (
     <>
     <DndContext sensors={sensors} onDragStart={(event) => setActiveTask(tasks.find((item) => item.id === event.active.id) || null)} onDragCancel={() => setActiveTask(null)} onDragEnd={handleDragEnd}>
-      <div className="kanban-board">{TASK_COLUMNS.map((column) => <TaskColumn onOpenActivity={setActivityTask} status={column.key} label={column.label} tasks={tasks.filter((task) => task.status === column.key)} movingTaskId={movingTaskId} onStatusChange={onStatusChange} onAddTask={onAddTask} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canAddTask={canAddTask} canEdit={canEdit} canDelete={canDelete} onDeleteTask={onDeleteTask} key={column.key} />)}</div>
+      <div className="kanban-board">{TASK_COLUMNS.map((column) => <TaskColumn onOpenActivity={setActivityTask} status={column.key} label={column.label} tasks={newestTasks.filter((task) => task.status === column.key)} movingTaskId={movingTaskId} onStatusChange={onStatusChange} onAddTask={onAddTask} onEditTask={onEditTask} onToggleSubtask={onToggleSubtask} canAddTask={canAddTask} canEdit={canEdit} canDelete={canDelete} onDeleteTask={onDeleteTask} key={column.key} />)}</div>
       <DragOverlay dropAnimation={{ duration: 180, easing: "ease-out" }}>{activeTask ? <article className="task-card task-drag-overlay"><TaskCardContent task={activeTask} /></article> : null}</DragOverlay>
     </DndContext>
     {activityTask ? <TaskActivityDialog key={activityTask.id} task={activityTask} onClose={() => setActivityTask(null)} /> : null}

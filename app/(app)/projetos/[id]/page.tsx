@@ -105,7 +105,7 @@ export function ProjectDetailWorkspace({ category }: { category: ProjectCategory
     const currentUserId = currentAuth.user?.id || "00000000-0000-0000-0000-000000000000";
     const [projectResult, taskResult, commentResult, memberResult, fileResult, businessResult, userResult, profileResult, permissionResult, fullAccessResult, targetPermissionResult] = await Promise.all([
       supabase.from("projects").select("*").eq("id", params.id).eq("category", category).single(),
-      supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS}`).eq("project_id", params.id).eq("category", category).order("position"),
+      supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS}`).eq("project_id", params.id).eq("category", category).order("created_at", { ascending: false }).order("id", { ascending: false }),
       supabase.from("project_comments").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),
       supabase.from("project_members").select("*").eq("project_id", params.id).order("name"),
       supabase.from("project_files").select("*").eq("project_id", params.id).order("created_at", { ascending: false }),

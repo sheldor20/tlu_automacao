@@ -78,7 +78,7 @@ export function ProjectsWorkspace({ category }: { category: ProjectCategory }) {
     const { data: authData } = await supabase.auth.getUser();
     const [projectResult, taskResult, userResult, templateResult, templateTaskResult, permissionResult, createPermissionResult, targetPermissionResult] = await Promise.all([
       supabase.from("projects").select("*").eq("category", category).order("updated_at", { ascending: false }),
-      supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("position"),
+      supabase.from("project_tasks").select(`*,${PROJECT_TASK_RELATIONS},projects(name,archived_at,category)`).eq("category", category).order("created_at", { ascending: false }).order("id", { ascending: false }),
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).not("email", "is", null).order("full_name"),
       supabase.from("project_templates").select("*").eq("is_active", true).order("name"),
       supabase.from("project_template_tasks").select("id,template_id"),
