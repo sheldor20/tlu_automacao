@@ -53,6 +53,9 @@ export async function GET(request: Request, context: Context) {
       files: files.data,
       emails: emails.data,
       can_manage: Boolean(actor?.manager),
+      can_assign: Boolean(actor?.globalManager),
+      can_delete: Boolean(actor?.globalManager),
+      can_edit: Boolean(actor && (actor.manager || record.requester_user_id === actor.id)),
     });
   } catch (error) {
     return paymentFailure(error);
@@ -90,7 +93,8 @@ async function manageRequest(request: Request, context: Context, action: "edit" 
   try {
     const db = paymentDb(), { id } = await context.params;
     const { actor, record } = await paymentAccess(request, db, id);
-    if (!actor?.manager) throw new PaymentError("Acesso restrito à gestão de pagamentos.", 403);
+    if (!actor || (action === "delete" ? !actor.globalManager : (!actor.manager && record.requester_user_id !== actor.id)))
+      throw new PaymentError("Você não tem permissão para alterar esta solicitação.", 403);
     await paymentLimit(db, `manage:${actor.id}`, 60, 600);
     const body = await paymentBody(request);
     const payload = action === "edit" ? paymentEditSchema.parse(body) : paymentDeleteSchema.parse(body);
