@@ -65,11 +65,28 @@ export async function POST(request: Request, context: Context) {
         422,
       );
     }
-    const download = await db.storage.from(PAYMENT_BUCKET).download(file.path);
-    if (download.error) throw download.error;
-    const bytes = new Uint8Array(
-      await download.data.slice(0, 12).arrayBuffer(),
-    );
+    const signed = await db.storage.from(PAYMENT_BUCKET).createSignedUrl(file.path, 60);
+    if (signed.error) throw signed.error;
+    const download = await fetch(signed.data.signedUrl, {
+      headers: { Range: "bytes=0-11" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!download.ok || !download.body) throw new PaymentError("Não foi possível conferir o arquivo. Tente novamente.", 502);
+    const bytes = new Uint8Array(12);
+    const reader = download.body.getReader();
+    let offset = 0;
+    try {
+      while (offset < bytes.length) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = value.subarray(0, bytes.length - offset);
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+    } finally {
+      await reader.cancel();
+    }
     const prefix = new TextDecoder().decode(bytes);
     const valid =
       file.mime_type === "application/pdf"

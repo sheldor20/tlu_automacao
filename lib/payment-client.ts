@@ -60,13 +60,35 @@ export async function uploadPaymentFile(
     },
     token,
   );
-  const upload = await db.storage
-    .from(PAYMENT_BUCKET)
-    .uploadToSignedUrl(prepared.path, prepared.token, file, {
-      contentType: file.type,
+  if (file.size > 6 * 1024 * 1024) {
+    const { Upload } = await import("tus-js-client");
+    const endpoint = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);
+    endpoint.hostname = endpoint.hostname.replace(/\.supabase\.(co|in|red)$/, ".storage.supabase.$1");
+    endpoint.pathname = "/storage/v1/upload/resumable";
+    endpoint.search = "";
+    endpoint.hash = "";
+    await new Promise<void>((resolve, reject) => {
+      const upload = new Upload(file, {
+        endpoint: endpoint.toString(),
+        headers: { "x-signature": prepared.token },
+        metadata: { bucketName: PAYMENT_BUCKET, objectName: prepared.path, contentType: file.type, cacheControl: "3600" },
+        chunkSize: 6 * 1024 * 1024,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        uploadDataDuringCreation: true,
+        // Tokens and tracking credentials stay out of persistent browser storage.
+        storeFingerprintForResuming: false,
+        onSuccess: () => resolve(),
+        onError: () => reject(new Error(`Não foi possível enviar ${file.name}. Tente novamente.`)),
+      });
+      upload.start();
     });
-  if (upload.error)
-    throw new Error(`Não foi possível enviar ${file.name}. Tente novamente.`);
+  } else {
+    const upload = await db.storage
+      .from(PAYMENT_BUCKET)
+      .uploadToSignedUrl(prepared.path, prepared.token, file, { contentType: file.type });
+    if (upload.error)
+      throw new Error(`Não foi possível enviar ${file.name}. Tente novamente.`);
+  }
   await paymentFetch(
     `/api/payments/${id}/files/${prepared.id}`,
     { method: "POST" },

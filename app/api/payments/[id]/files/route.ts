@@ -42,7 +42,7 @@ export async function POST(
         "Somente a gestão pode anexar comprovantes de pagamento.",
         403,
       );
-    await paymentLimit(db, `files:${id}`, 40, 3600);
+    await paymentLimit(db, `files:${id}`, 200, 3600);
     const extension: Record<string, string> = {
       "application/pdf": "pdf",
       "image/jpeg": "jpg",
