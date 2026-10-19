@@ -35,6 +35,9 @@ export async function GET(request: Request) {
       0,
       Math.min(100000, Number(url.searchParams.get("page")) || 0),
     );
+    const assigned = await db.from("payment_request_responsibles").select("request_id").eq("user_id", actor.id);
+    if (assigned.error) throw assigned.error;
+    const assignedIds = assigned.data.map((row) => row.request_id);
     let query = db
       .from("payment_requests")
       .select(
@@ -43,8 +46,11 @@ export async function GET(request: Request) {
       )
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
-    if (!mode || !actor.manager)
-      query = query.eq("requester_user_id", actor.id);
+    if (!mode) query = query.eq("requester_user_id", actor.id);
+    else if (!actor.manager) {
+      if (assignedIds.length) query = query.in("id", assignedIds);
+      else query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+    }
     const status = url.searchParams.get("status"),
       type = url.searchParams.get("type"),
       company = url.searchParams.get("company");
@@ -66,7 +72,7 @@ export async function GET(request: Request) {
     return paymentJson({
       rows: data,
       count,
-      can_manage: actor.manager,
+      can_manage: actor.manager || assignedIds.length > 0,
       actor: { name: actor.name, email: actor.email },
     });
   } catch (error) {
