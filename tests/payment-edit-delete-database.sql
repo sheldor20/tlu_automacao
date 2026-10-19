@@ -39,6 +39,26 @@ begin
       raise exception 'Unprivileged user deletion accepted';
     exception when others then if sqlerrm <> 'payment_forbidden' then raise; end if; end;
   end if;
+  -- The authenticated requester may edit, but cannot delete their own request.
+  update public.payment_requests set requester_user_id=v_nonmanager where id=v_id;
+  perform public.manage_payment_request(v_id,v_nonmanager,0,'edit',v_edit);
+  if not exists(select 1 from public.payment_requests where id=v_id and title='Solicitação corrigida'
+    and status=v_before.status and requester_user_id=v_nonmanager and version=1) then
+    raise exception 'Requester edit failed or changed protected fields';
+  end if;
+  begin
+    perform public.manage_payment_request(v_id,v_nonmanager,1,'delete','{}');
+    raise exception 'Requester deletion accepted';
+  exception when others then if sqlerrm <> 'payment_forbidden' then raise; end if; end;
+  begin
+    perform public.manage_payment_request(v_id,v_nonmanager,0,'edit',v_edit);
+    raise exception 'Stale requester edit accepted';
+  exception when others then if sqlerrm <> 'payment_conflict' then raise; end if; end;
+  -- Restore the fixture for the existing manager lifecycle assertions.
+  delete from public.payment_email_outbox where request_id=v_id;
+  delete from public.payment_request_events where request_id=v_id and kind='edited';
+  delete from public.payment_request_revisions where request_id=v_id;
+  update public.payment_requests set requester_user_id=null,version=0,title=v_before.title where id=v_id;
   -- Service role RPCs cannot be invoked directly from a browser with a forged actor.
   if has_function_privilege('anon','public.manage_payment_request(uuid,uuid,integer,text,jsonb)','EXECUTE')
     or has_function_privilege('authenticated','public.manage_payment_request(uuid,uuid,integer,text,jsonb)','EXECUTE') then
@@ -120,4 +140,4 @@ begin
 end;
 $$;
 rollback;
-select 'PASS: manager-only edits/deletion, preserved metadata/files, conflicts, receipt guard, audit, email queue, deleted access and RLS; fixtures rolled back.' as result;
+select 'PASS: requester and manager edits, manager-only deletion, preserved metadata/files, conflicts, receipt guard, audit, email queue, deleted access and RLS; fixtures rolled back.' as result;

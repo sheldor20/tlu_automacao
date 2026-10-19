@@ -108,6 +108,7 @@ export type PaymentActor = {
   name: string;
   email: string;
   manager: boolean;
+  globalManager: boolean;
   admin: boolean;
 };
 export async function paymentActor(
@@ -147,6 +148,7 @@ export async function paymentActor(
     email: data.user.email || "",
     admin: profile.data.is_admin,
     manager: profile.data.is_admin || Boolean(permission.data?.can_manage),
+    globalManager: profile.data.is_admin || Boolean(permission.data?.can_manage),
   };
 }
 export async function paymentLimit(
@@ -210,6 +212,11 @@ export async function paymentAccess(
     .is("deleted_at", null)
     .maybeSingle();
   if (error) throw error;
+  if (actor && !actor.manager && record) {
+    const assigned = await db.rpc("is_payment_responsible", { p_id: id, p_actor: actor.id });
+    if (assigned.error) throw assigned.error;
+    if (assigned.data) actor.manager = true;
+  }
   if (
     !record ||
     (actor && !actor.manager && record.requester_user_id !== actor.id)

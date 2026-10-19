@@ -14,6 +14,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button, Field } from "./ui";
+import { PaymentResponsibles } from "./payment-responsibles";
 import { runPaymentUploads, appendPaymentFiles, type UploadProgress } from "@/lib/payment-upload-queue";
 import { paymentFetch, uploadPaymentFile } from "@/lib/payment-client";
 import {
@@ -50,6 +51,9 @@ type Detail = {
   files: PaymentFile[];
   emails: EmailState[];
   can_manage: boolean;
+  can_edit: boolean;
+  can_assign: boolean;
+  can_delete: boolean;
 };
 const labels: Record<string, string> = {
   scope: "Escopo do serviço",
@@ -151,7 +155,7 @@ export function PaymentDetail({
     }
   }
   async function remove() {
-    if (!data?.can_manage || !window.confirm(`Excluir ${paymentProtocol(data.request.protocol)} — ${data.request.title}? A solicitação sairá das listas e o link de acompanhamento será desativado. O registro será preservado para auditoria.`)) return;
+    if (!data?.can_delete || !window.confirm(`Excluir ${paymentProtocol(data.request.protocol)} — ${data.request.title}? A solicitação sairá das listas e o link de acompanhamento será desativado. O registro será preservado para auditoria.`)) return;
     setBusy(true);
     setError("");
     try {
@@ -194,7 +198,7 @@ export function PaymentDetail({
         </Button>
       </div>
     );
-  if (editing && data.can_manage) return <>
+  if (editing && data.can_edit) return <>
     <header className="payment-detail-head"><div>
       <span className="eyebrow">{paymentProtocol(data.request.protocol)}</span>
       <h1>Editar solicitação</h1>
@@ -235,13 +239,13 @@ export function PaymentDetail({
           {PAYMENT_STATUSES[r.status]}
         </span>
       </header>
-      {data.can_manage && <div className="payment-manage-actions">
+      {data.can_edit && <div className="payment-manage-actions">
         <Button variant="secondary" disabled={busy || loading} onClick={() => { setNotice(""); setEditing(true); }}>
           <Pencil size={16} /> Editar solicitação
         </Button>
-        <Button variant="danger" disabled={busy || loading} onClick={() => void remove()}>
+        {data.can_delete && <Button variant="danger" disabled={busy || loading} onClick={() => void remove()}>
           <Trash2 size={16} /> Excluir solicitação
-        </Button>
+        </Button>}
       </div>}
       {notice && <p className="payment-alert" role="status">{notice}</p>}
       {error && (
@@ -249,6 +253,7 @@ export function PaymentDetail({
           {error}
         </div>
       )}
+      {data.can_manage && !trackingToken && <PaymentResponsibles id={r.id} version={r.version} canAssign={data.can_assign} onChanged={() => { void load(); }} />}
       <div className="payment-detail-grid">
         <main className="payment-detail-main">
           <section className="payment-section">

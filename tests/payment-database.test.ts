@@ -15,6 +15,10 @@ test("payment lifecycle includes protected finalization and an atomic email noti
     "20260916194044_payment_materials_optional_fields.sql",
     "20260916203112_payment_edit_delete.sql",
   ]) await migrate(db, migration);
+  // Payment-only fixture: the operations migration adds this optional work link.
+  await db.exec("alter table public.payment_requests add column qlik_work_key text");
+  await migrate(db, "20261019201155_payment_requester_edit.sql");
+  await migrate(db, "20261019202358_payment_request_responsibles.sql");
   await db.exec(`
     insert into auth.users(id,email) values
       ('11111111-1111-4111-8111-111111111111','admin@example.test'),
@@ -30,6 +34,7 @@ test("payment lifecycle includes protected finalization and an atomic email noti
   await db.exec(readFileSync(new URL("./payment-database.sql", import.meta.url), "utf8"));
   await db.exec(readFileSync(new URL("./payment-materials-database.sql", import.meta.url), "utf8"));
   await db.exec(readFileSync(new URL("./payment-edit-delete-database.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("./payment-responsibles-database.sql", import.meta.url), "utf8"));
   assert.equal((await db.query("select id from public.payment_requests")).rows.length, 0);
   assert.equal((await db.query("select id from public.payment_email_outbox")).rows.length, 0);
 });
