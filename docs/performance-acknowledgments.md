@@ -9,3 +9,9 @@ Arquivos são compartilhados apenas entre o colaborador e o líder direto atual,
 Aplicar a migração `20261019133209_performance_acknowledgments_files.sql` antes de publicar o frontend. O trigger de assinatura vive em schema privado e usa privilégios elevados somente para bloquear a revisão enquanto registra o aceite; valida explicitamente identidade, vínculo ativo e revisão.
 
 Verificação: `npm run typecheck`, `npm run build` e `node --experimental-strip-types --test tests/performance-agreements.test.ts tests/performance-signatures.test.ts`.
+
+## Notificações internas
+
+A migração `20261019133714_performance_agreement_notifications.sql` inclui avisos em Hoje e no contador da navegação. Criação ou edição de acordo avisa o liderado; assinatura retira a pendência e avisa o líder direto atual. Cada aviso abre o ciclo correto. Revisões subsequentes reabrem a pendência, sem duplicação. Ciclos anteriores ainda não assinados também recebem aviso. As notificações de performance são privadas ao destinatário e deixam de aparecer se ele perder acesso ao ciclo. Não há envio de e-mail ou mensagem externa.
+
+Teste adicional: `node --experimental-strip-types --test tests/performance-notifications.test.ts`.
