@@ -19,6 +19,7 @@ import {
   type PaymentRequest,
   type PaymentType,
 } from "@/lib/payment-requests";
+import { runPaymentUploads, appendPaymentFiles, type UploadProgress } from "@/lib/payment-upload-queue";
 import { paymentFetch, uploadPaymentFile } from "@/lib/payment-client";
 
 type Company = { company_key: string; name: string };
@@ -124,25 +125,15 @@ export function PaymentRequestForm({
           : null
         : null;
 
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   async function sendFiles(result: Created) {
-    const pending: File[] = [],
-      errors: string[] = [];
-    for (const file of files) {
-      try {
-        await uploadPaymentFile(
-          result.id,
-          file,
-          "support",
-          publicForm ? result.token : undefined,
-        );
-      } catch (e) {
-        pending.push(file);
-        errors.push(e instanceof Error ? e.message : file.name);
-      }
-    }
-    setFiles(pending);
-    setError(errors.join(" "));
+    const resultFiles = await runPaymentUploads(files, (file) => uploadPaymentFile(
+      result.id, file, "support", publicForm ? result.token : undefined,
+    ), setUploadProgress);
+    setFiles(resultFiles.pending);
+    setError(resultFiles.errors.join(" "));
   }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -265,7 +256,7 @@ export function PaymentRequestForm({
         </p>
         {saving ? (
           <p role="status">
-            Enviando anexos. Aguarde a conclusão para sair desta página…
+            Anexos processados: {uploadProgress?.completed ?? 0} de {uploadProgress?.total ?? files.length}. Aguarde a conclusão para sair desta página…
           </p>
         ) : error ? (
           <div className="payment-alert" role="alert">
@@ -855,11 +846,15 @@ export function PaymentRequestForm({
             type="file"
             accept={PAYMENT_FILE_TYPES.join(",")}
             multiple
-            onChange={(e) => setFiles(Array.from(e.target.files || []))}
+            onChange={(e) => {
+                      const added = Array.from(e.target.files || []);
+                      setFiles((current) => appendPaymentFiles(current, added));
+                      e.target.value = "";
+                    }}
           />
         </Field>}
         {initialRequest && <p>Os anexos existentes serão mantidos. Gerencie os documentos na página da solicitação.</p>}
-        {files.length > 0 && <p>{files.length} arquivo(s) selecionado(s).</p>}
+        {files.length > 0 && <p>{files.length} arquivo(s) selecionado(s). <button type="button" disabled={saving} onClick={() => setFiles([])}>Limpar seleção</button></p>}
       </fieldset>
       <div className="payment-honeypot" aria-hidden="true">
         <label>

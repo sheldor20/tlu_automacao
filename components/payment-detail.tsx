@@ -14,6 +14,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button, Field } from "./ui";
+import { runPaymentUploads, appendPaymentFiles, type UploadProgress } from "@/lib/payment-upload-queue";
 import { paymentFetch, uploadPaymentFile } from "@/lib/payment-client";
 import {
   CLOSED_PAYMENT_STATUSES,
@@ -163,28 +164,21 @@ export function PaymentDetail({
       setBusy(false);
     }
   }
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   async function upload() {
     if (!data) return;
     setBusy(true);
     setError("");
-    const pending: File[] = [];
     try {
-      for (const file of files) {
-        try {
-          await uploadPaymentFile(
-            data.request.id,
-            file,
-            fileKind,
-            trackingToken,
-          );
-        } catch (e) {
-          pending.push(file);
-          setError(e instanceof Error ? e.message : "Falha no anexo.");
-        }
-      }
-      setFiles(pending);
-      if (!pending.length) setFileKey((key) => key + 1);
+      const result = await runPaymentUploads(files, (file) => uploadPaymentFile(
+        data.request.id, file, fileKind, trackingToken,
+      ), setUploadProgress);
+      setFiles(result.pending);
+      setFileKey((key) => key + 1);
       await load();
+      if (result.errors.length) setError(result.errors.join(" "));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível atualizar os anexos.");
     } finally {
       setBusy(false);
     }
@@ -534,9 +528,15 @@ export function PaymentDetail({
                     multiple
                     disabled={busy}
                     accept={PAYMENT_FILE_TYPES.join(",")}
-                    onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                    onChange={(e) => {
+                      const added = Array.from(e.target.files || []);
+                      setFiles((current) => appendPaymentFiles(current, added));
+                      e.target.value = "";
+                    }}
                   />
                 </Field>
+                {files.length > 0 && <p>{files.length} arquivo(s) selecionado(s). <button type="button" disabled={busy} onClick={() => setFiles([])}>Limpar seleção</button></p>}
+                {uploadProgress && <p role="status">Anexos processados: {uploadProgress.completed} de {uploadProgress.total}.</p>}
                 <Button
                   variant="secondary"
                   loading={busy}
