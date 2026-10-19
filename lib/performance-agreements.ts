@@ -49,3 +49,8 @@ export function performanceAgreementError(error: unknown): string {
   if (message.includes("row-level security") || message.includes("permission denied")) return "Você não tem mais acesso a este acordo. Recarregue a página.";
   return "Não foi possível salvar o acordo. Seus dados continuam no formulário; tente novamente.";
 }
+
+export type PerformanceAcknowledgment = {
+  id: string; agreement_id: string; agreement_version: number; signer_id: string;
+  signature_name: string; signed_at: string; statement: string; snapshot: PerformanceAgreement;
+};
