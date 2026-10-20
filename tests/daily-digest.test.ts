@@ -19,11 +19,11 @@ test("email inclui três seções, contagens completas, datas e HTML escapado", 
   const email = buildDailyDigestEmail({ ...empty, name: "Ana <teste>", today_count: 12, overdue_count: 1, payment_count: 1, event_count: 2,
     today: [task], overdue: [{ ...task, due_date: "2026-09-18" }], payments: [{ request_id: "payment-1", protocol: 10, title: "Pagamento", kind: "information_requested", status: "awaiting_information", event_count: 2 }] },
   "ana@example.test", "app@example.test", "https://app.example.test");
-  assert.match(email.html, /Tarefas de hoje \(12\)/);
+  assert.match(email.html, /Tarefas da semana \(12\)/);
   assert.match(email.html, /Tarefas vencidas \(1\)/);
   assert.match(email.html, /Mais 11 no sistema/);
   assert.match(email.html, /18\/09\/2026/);
-  assert.match(email.html, /Solicitações de pagamento com movimentação \(1\)/);
+  assert.match(email.html, /Solicitações de pagamento \(1\)/);
   assert.match(email.text, /\/pagamentos\/payment-1/);
   assert.match(email.html, /Ana &lt;teste&gt;/);
   assert.doesNotMatch(email.html, /<img/);

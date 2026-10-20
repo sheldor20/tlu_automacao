@@ -3,6 +3,8 @@ import { PAYMENT_STATUSES, paymentEventLabel, paymentProtocol, type PaymentStatu
 type DigestTask = { id: string; title: string; due_date: string; project_name: string; href: string };
 type DigestPayment = { request_id: string; protocol: number; title: string; kind: string; status: PaymentStatus; event_count: number };
 export type DailyDigest = {
+  weekly?: boolean;
+  sections?: { section: string; id: string; title: string; detail: string; href: string }[];
   name: string;
   date: string;
   today_count: number;
@@ -30,11 +32,11 @@ export function dailyDigestOrigin(env: Record<string, string | undefined>) {
 
 export function buildDailyDigestEmail(digest: DailyDigest, recipient: string, from: string, origin: string): DigestEmail {
   const link = `${origin}/hoje`;
-  const hasItems = digest.today_count + digest.overdue_count + digest.payment_count > 0;
-  const subject = hasItems ? `Seu resumo de hoje · ${dateBr(digest.date)} · Terra Lótus` : "Comece a usar o Terra Lótus Space";
+  const hasItems = digest.today_count + digest.overdue_count + digest.payment_count + (digest.sections?.length || 0) > 0;
+  const subject = hasItems ? `Seu resumo da semana · ${dateBr(digest.date)} · Terra Lótus` : "Comece a usar o Terra Lótus Space";
   const introduction = hasItems
-    ? "Confira o que você tem para resolver e as novidades nas solicitações de pagamento."
-    : "Você não tem tarefas para hoje, tarefas vencidas ou novas movimentações de pagamento. Comece a usar o Terra Lótus Space para organizar suas atividades e acompanhar suas solicitações em um só lugar.";
+    ? "Confira o que você tem para resolver e os status das solicitações de pagamento e os acompanhamentos da semana."
+    : "Você não tem tarefas para esta semana, tarefas vencidas ou solicitações de pagamento. Comece a usar o Terra Lótus Space para organizar suas atividades e acompanhar suas solicitações em um só lugar.";
   const sections: string[] = [];
   const plain: string[] = [];
   function section(title: string, total: number, items: { title: string; detail: string; url: string }[]) {
@@ -44,16 +46,20 @@ export function buildDailyDigestEmail(digest: DailyDigest, recipient: string, fr
   }
   const taskItems = (tasks: DigestTask[]) => tasks.map(t => ({ title: t.title, detail: `${t.project_name} · Prazo: ${dateBr(t.due_date)}`, url: `${origin}${t.href}` }));
   section("Tarefas vencidas", digest.overdue_count, taskItems(digest.overdue));
-  section("Tarefas de hoje", digest.today_count, taskItems(digest.today));
-  section("Solicitações de pagamento com movimentação", digest.payment_count, digest.payments.map(p => ({
+  section("Tarefas da semana", digest.today_count, taskItems(digest.today));
+  section("Solicitações de pagamento", digest.payment_count, digest.payments.map(p => ({
     title: `${paymentProtocol(p.protocol)} · ${p.title}`,
     detail: `${paymentEventLabel(p.kind, p.status)} · ${PAYMENT_STATUSES[p.status] || p.status} · ${p.event_count} movimentação(ões)`,
     url: `${origin}/pagamentos/${p.request_id}`,
   })));
+  for (const title of new Set(digest.sections?.map(item => item.section) || [])) {
+    const items = digest.sections!.filter(item => item.section === title);
+    section(title, items.length, items.slice(0, 20).map(item => ({ title: item.title, detail: item.detail, url: `${origin}${item.href}` })));
+  }
   const action = hasItems ? "Acessar o sistema" : "Começar a usar";
   return {
     from, to: [recipient], subject,
-    text: `Bom dia, ${digest.name}!\n\n${introduction}\n\n${plain.join("\n\n")}\n\n${action}: ${link}\n\nTerra Lótus Space · Resumo de segunda a sexta, às 7h45 (Brasília).`,
-    html: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f4f5f1;font-family:Arial,sans-serif;color:#263329"><table role="presentation" style="width:100%;border-collapse:collapse"><tr><td style="padding:24px 12px"><table role="presentation" style="width:100%;max-width:600px;margin:auto;border-collapse:collapse;background:white"><tr><td style="background:#263329;color:white;padding:24px 28px"><strong style="font-size:18px;letter-spacing:2px">TERRA LÓTUS</strong><br><span style="font-size:12px">SEU RESUMO DO DIA · ${dateBr(digest.date)}</span></td></tr><tr><td style="padding:28px"><h1 style="font-size:24px;margin:0 0 16px">Bom dia, ${escape(digest.name)}!</h1><p style="line-height:1.6;color:#637167">${escape(introduction)}</p>${sections.join("")}<p style="margin-top:28px"><a href="${escape(link)}" style="display:inline-block;background:#263329;color:white;text-decoration:none;padding:15px 24px;border-radius:8px;font-weight:bold">${action}</a></p><p style="font-size:12px;line-height:1.5;color:#637167">Consulte os detalhes e acompanhe as atualizações no sistema.</p></td></tr><tr><td style="padding:20px 28px;background:#edf1eb;font-size:11px;color:#637167">Resumo de segunda a sexta, às 7h45 (horário de Brasília).<br>Terra Lótus Space</td></tr></table></td></tr></table></body></html>`,
+    text: `Bom dia, ${digest.name}!\n\n${introduction}\n\n${plain.join("\n\n")}\n\n${action}: ${link}\n\nTerra Lótus Space · Resumo semanal, às segundas-feiras, às 7h45 (Brasília).`,
+    html: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f4f5f1;font-family:Arial,sans-serif;color:#263329"><table role="presentation" style="width:100%;border-collapse:collapse"><tr><td style="padding:24px 12px"><table role="presentation" style="width:100%;max-width:600px;margin:auto;border-collapse:collapse;background:white"><tr><td style="background:#263329;color:white;padding:24px 28px"><strong style="font-size:18px;letter-spacing:2px">TERRA LÓTUS</strong><br><span style="font-size:12px">SEU RESUMO DA SEMANA · ${dateBr(digest.date)}</span></td></tr><tr><td style="padding:28px"><h1 style="font-size:24px;margin:0 0 16px">Bom dia, ${escape(digest.name)}!</h1><p style="line-height:1.6;color:#637167">${escape(introduction)}</p>${sections.join("")}<p style="margin-top:28px"><a href="${escape(link)}" style="display:inline-block;background:#263329;color:white;text-decoration:none;padding:15px 24px;border-radius:8px;font-weight:bold">${action}</a></p><p style="font-size:12px;line-height:1.5;color:#637167">Consulte os detalhes e acompanhe as atualizações no sistema.</p></td></tr><tr><td style="padding:20px 28px;background:#edf1eb;font-size:11px;color:#637167">Resumo semanal, às segundas-feiras, às 7h45 (horário de Brasília).<br>Terra Lótus Space</td></tr></table></td></tr></table></body></html>`,
   };
 }

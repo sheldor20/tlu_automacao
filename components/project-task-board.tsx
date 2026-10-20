@@ -68,6 +68,7 @@ function TaskCardContent({ task, dragHandle, expanded = false }: { task: Project
         </div>
       </div>
       <h4>{task.title}</h4>
+      {task.creator_name && (assignees.some(a => a.user_id !== task.created_by) || subtasks.some(s => s.assignees?.some(a => a.user_id !== task.created_by))) ? <small>Criada por {task.creator_name}</small> : null}
       {expanded && task.description ? <p>{task.description}</p> : null}
       {subtasks.length ? <div className="task-subtask-progress"><span><Check size={12} /> {completedSubtasks}/{subtasks.length} subitens</span><i><b style={{ width: `${(completedSubtasks / subtasks.length) * 100}%` }} /></i></div> : null}
       <div className={`task-meta ${task.status === "concluida" && !expanded ? "task-meta-completed" : ""}`}>
