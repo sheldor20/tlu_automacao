@@ -394,52 +394,46 @@ o retorno informa a etapa, os candidatos procurados e os campos ou valores
 disponíveis no Qlik; nesse caso, envie o JSON completo para ajustar o mapeamento
 sem substituir a última carga válida.
 
-## Resumo individual por email em dias úteis
+## Resumo semanal e avisos de tarefas por email
 
-O cron `/api/cron/daily-digest` gera os resumos de segunda a sexta às **07:45
-de Brasília** (`45 10 * * 1-5` em UTC). O cron `/api/cron/daily-digest/retry`
-processa somente a fila já criada a cada cinco minutos; não gera novos resumos.
-Ambas as rotas exigem `Authorization: Bearer <CRON_SECRET>` e são executadas
-automaticamente somente no ambiente de produção da Vercel.
+O cron `/api/cron/daily-digest` agora cria o resumo **somente às segundas-feiras,
+às 07:45 de Brasília** (`45 10 * * 1` em UTC). Os nomes das rotas e da fila
+foram mantidos para compatibilidade. O cron de retry executa a cada cinco minutos,
+sem criar novos resumos. O banco também bloqueia a criação nos outros dias.
 
-Cada perfil ativo, não excluído e com email válido recebe uma mensagem individual:
+Cada perfil ativo recebe tarefas pendentes até domingo, tarefas vencidas,
+projetos acessíveis, status atuais dos pagamentos, reuniões da semana e metas do
+Acordo de Performance com prazo até domingo. As metas seguem o acesso do próprio
+colaborador e da liderança direta atual, sem exceção administrativa. Reuniões e
+tarefas de 1:1 preservam as restrições de privacidade. O resumo também apresenta
+negócios por etapa, obras e imóveis por status, processos e áreas de indicadores
+permitidas. Seções extensas mostram uma amostra e a quantidade completa.
 
-- tarefas pendentes com prazo hoje e tarefas vencidas, incluindo tarefas com
-  subtarefas pendentes atribuídas à pessoa (prazo da tarefa principal);
-- movimentações de solicitações próprias; administradores e gestores de
-  pagamentos também recebem as movimentações que podem gerir;
-- botão **Acessar o sistema**, levando a `/hoje`, e links para os itens;
-- na ausência desses itens, **Comece a usar o Terra Lótus Space**, com botão
-  **Começar a usar**. Tarefas futuras não contam como pendência do resumo.
+Pagamentos ativos aparecem mesmo sem movimentação recente. Movimentações usam o
+intervalo desde o último resumo enviado; o primeiro envio cobre os sete dias
+anteriores. Pagamentos encerrados aparecem quando tiveram movimentação no período.
+Avisos individuais de status e comentários continuam usando a fila existente de
+pagamentos e o email de quem abriu a solicitação.
 
-O email apresenta até dez itens por seção e o total completo. Tarefas concluídas,
-projetos arquivados e departamentos não autorizados são excluídos. Eventos de
-pagamento são agrupados por solicitação, mostrando a última movimentação no
-intervalo. Não são incluídos anexos, dados bancários ou links públicos com token.
-O intervalo vai do corte do último resumo enviado até 07:45 de hoje; no primeiro
-envio, usa 07:45 do dia útil anterior. Assim, a segunda-feira inclui o fim de
-semana e uma falha de envio não descarta as movimentações do dia anterior.
+Tarefas preservam o identificador e o nome de quem as criou. O card exibe a autoria
+quando houver responsável diferente do criador, inclusive em subtarefas. Mudanças
+de status e comentários dessas tarefas geram um email ao criador, desde que ele
+continue ativo e com acesso. Tarefas atribuídas apenas ao próprio criador não geram
+esses avisos. `/api/cron/task-emails` processa a fila privada a cada cinco minutos.
 
-Antes de publicar, aplique a migration
-`20260917121514_weekday_daily_digest.sql`. Configure no servidor:
-`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`,
-`RESEND_API_KEY`, `RESEND_FROM_EMAIL` e a origem HTTPS `APP_URL`. Na ausência de
-`APP_URL`, reaproveita `PAYMENT_APP_URL` ou `VERCEL_PROJECT_PRODUCTION_URL`.
-O remetente deve estar autorizado no Resend e o plano Vercel deve suportar
-agendamento por minuto.
+Antes do deploy, aplique as migrations anteriores e
+`20261020113532_weekly_digest_and_delegated_task_emails.sql`. Ela expira resumos
+diários ainda pendentes na transição. Configure `NEXT_PUBLIC_SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+e a origem HTTPS `APP_URL` (com fallback para `PAYMENT_APP_URL` ou
+`VERCEL_PROJECT_PRODUCTION_URL`). Os crons exigem autenticação e só são agendados
+automaticamente na produção da Vercel.
 
-A tabela privada para a API `daily_digest_outbox` registra um envio por usuário e
-data, estados, tentativas e identificador do provedor. Locks com lease impedem
-workers simultâneos de assumir a mesma mensagem. O corpo fica congelado antes do
-primeiro envio, com chave de idempotência estável no Resend. Novas tentativas têm
-espera progressiva, até oito tentativas e no máximo até meia-noite de Brasília;
-um resumo vencido não é reenviado no dia seguinte. A função revalida o usuário,
-email e acesso aos itens antes de enviar, inclusive nas tentativas seguintes.
-
-As verificações `tests/daily-digest*.test.ts` exercitam o banco com as migrations
-reais e o envio com provedor simulado, sem enviar mensagens reais. Para acompanhar
-falhas, consulte os estados `failed`, `expired` e `skipped` da fila e os logs das
-rotas. `sent` indica aceite pelo provedor, não confirmação de entrega na caixa de entrada.
+As filas preservam o corpo do email e a chave de idempotência em reenvios.
+Permissões e destinatários são revalidados antes do envio. Falhas têm espera
+progressiva; resumos expiram à meia-noite e avisos de tarefa em 23 horas. O estado
+`sent` confirma aceite pelo provedor. Os testes de resumo e notificações exercitam
+as migrations reais e simulam o provedor, sem enviar emails reais.
 
 ## Segurança
 

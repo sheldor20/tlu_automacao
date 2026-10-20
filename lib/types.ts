@@ -296,6 +296,7 @@ export type ProjectTask = {
   position: number;
   completed_at: string | null;
   created_by?: string;
+  creator_name?: string | null;
   created_at: string;
   assignees?: ProjectTaskAssignee[];
   subtasks?: ProjectSubtask[];
