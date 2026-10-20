@@ -23,3 +23,14 @@
   .rental-receipt-editor { padding: 14px; }
   .rental-receipts-head > .field { width: 100%; }
 }
+
+.rental-tabs { display:flex; gap:8px; margin:24px 0 16px; flex-wrap:wrap; }
+.rental-tabs button { padding:10px 18px; border:1px solid var(--border, #ddd); border-radius:8px; background:transparent; color:inherit; cursor:pointer; font:inherit; }
+.rental-tabs button.active { background:#0d604a; color:white; border-color:#0d604a; }
+.rental-iptu-tag { display:inline-block; color:#965b08; background:#fff2d6; border-radius:5px; padding:3px 7px; }
+.rental-document-choices { max-height:260px; overflow:auto; margin:16px 0; border:1px solid #ddd; border-radius:8px; }
+.rental-document-choices label { display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #eee; overflow-wrap:anywhere; }
+.rental-document-choices input { flex:none; width:16px; }
+.rental-document-choices small { margin-left:auto; white-space:nowrap; }
+.rental-contract-version { padding:16px 0; border-bottom:1px solid #ddd; }
+.rental-contract-version button { display:block; margin:8px 0; padding:4px; background:none; border:0; text-decoration:underline; cursor:pointer; color:inherit; text-align:left; }
