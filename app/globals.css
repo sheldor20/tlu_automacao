@@ -2121,3 +2121,13 @@ fieldset.payment-section { padding-top: 18px; }
 .tlu-minutes-history summary { cursor: pointer; font-size: 14px; }
 .tlu-minutes-history pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: #f7f8f5; padding: 16px; border-radius: 12px; }
 @media (max-width: 760px) { .tlu-access-grid { grid-template-columns: 1fr; } .tlu-rite-description { align-items: flex-start; flex-direction: column; } .tlu-rite-tabs button { padding: 9px 12px; } }
+
+.payment-status-in_progress { background: #e7eefc; color: #244981; }
+.payment-status-finalizing { background: #e3f2e9; color: #256143; }
+.payment-status-missing_information { background: #fff2d7; color: #855d0a; }
+.contract-summary, .contract-summary p { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.contract-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 20px; }
+.contract-data dt { font-weight: 600; }
+.contract-data dd { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contract-history { display: grid; gap: 16px; padding-left: 24px; }
+.contract-history p { white-space: pre-wrap; overflow-wrap: anywhere; }

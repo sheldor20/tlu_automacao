@@ -11,10 +11,10 @@ export function PublicPaymentShell({ children }: { children: ReactNode }) {
           height={68}
           priority
         />
-        <span>Solicitações de pagamento</span>
+        <span>Solicitações</span>
       </header>
       <main>{children}</main>
-      <footer>Terra Lótus · Atendimento financeiro</footer>
+      <footer>Terra Lótus · Atendimento</footer>
     </div>
   );
 }

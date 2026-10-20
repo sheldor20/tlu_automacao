@@ -5,12 +5,12 @@ export default function NewPaymentPage() {
   return (
     <>
       <Link href="/pagamentos" className="payment-back">
-        ← Solicitações de pagamento
+        ← Solicitações
       </Link>
       <PageIntro
         eyebrow="Financeiro"
         title="Nova solicitação"
-        description="Escolha o tipo de pagamento e preencha os dados para análise."
+        description="Escolha o que você precisa solicitar e preencha os dados para análise."
       />
       <PaymentRequestForm />
     </>

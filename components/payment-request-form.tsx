@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { CheckCircle2, Plus, Trash2, Send } from "lucide-react";
+import { ContractRequestForm } from "./contract-request-form";
 import { QlikWorkSelect } from "./qlik-work-select";
 import { Button, Field } from "@/components/ui";
 import { getSupabase } from "@/lib/supabase";
@@ -35,6 +36,7 @@ export function PaymentRequestForm({
   onSaved?: () => void;
   onCancel?: () => void;
 }) {
+  const [contractSelected, setContractSelected] = useState(false);
   const [companyKey, setCompanyKey] = useState(initialRequest?.company_key || "");
   const [workKey, setWorkKey] = useState(initialRequest?.qlik_work_key || "");
   const [type, setType] = useState<PaymentType>(initialRequest?.type || "service");
@@ -315,25 +317,30 @@ export function PaymentRequestForm({
     );
   if (loading)
     return <p className="payment-loading">Carregando empresas do Qlik…</p>;
-  return (
-    <form className="payment-form" onSubmit={submit}>
+  const requestPicker = (
       <fieldset className="payment-type-picker" disabled={saving}>
         <legend>O que você precisa solicitar?</legend>
         <div>
           {Object.entries(PAYMENT_TYPES).map(([key, label]) => (
-            <label className={type === key ? "selected" : ""} key={key}>
+            <label className={!contractSelected && type === key ? "selected" : ""} key={key}>
               <input
                 type="radio"
                 name="request_type"
                 value={key}
-                checked={type === key}
-                onChange={() => setType(key as PaymentType)}
+                checked={!contractSelected && type === key}
+                onChange={() => { setContractSelected(false); setType(key as PaymentType); }}
               />
               <span>{label}</span>
             </label>
           ))}
+          {!initialRequest && <label className={contractSelected ? "selected" : ""}><input type="radio" name="request_type" value="contract" checked={contractSelected} onChange={() => setContractSelected(true)} /><span>Contratos</span></label>}
         </div>
       </fieldset>
+  );
+  if (contractSelected) return <>{requestPicker}<ContractRequestForm publicForm={publicForm} identity={identity} /></>;
+  return (
+    <form className="payment-form" onSubmit={submit}>
+      {requestPicker}
       <fieldset className="payment-section" disabled={saving}>
         <legend>1. Solicitação e empresa</legend>
         <div className="form-grid">

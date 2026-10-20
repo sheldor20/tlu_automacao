@@ -5,6 +5,6 @@ export default async function PaymentsPage({
   searchParams: Promise<{ scope?: string | string[] }>;
 }) {
   const { scope } = await searchParams;
-  const initialScope = scope === "management" ? "management" : "mine";
+  const initialScope = scope === "contracts" ? "contracts" : scope === "management" ? "management" : "mine";
   return <PaymentList key={initialScope} initialScope={initialScope} />;
 }
