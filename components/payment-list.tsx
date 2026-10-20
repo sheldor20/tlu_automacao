@@ -1,4 +1,5 @@
 "use client";
+import { ContractList } from "./contract-list";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Copy, Plus, RefreshCw, Wallet } from "lucide-react";
@@ -12,7 +13,8 @@ import {
   type PaymentRequest,
 } from "@/lib/payment-requests";
 
-export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" | "management" }) {
+export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" | "management" | "contracts" }) {
+  const [contractManager, setContractManager] = useState(false);
   const loadSequence = useRef(0);
   const [rows, setRows] = useState<PaymentRequest[]>([]),
     [count, setCount] = useState(0),
@@ -36,7 +38,7 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
     setError("");
     try {
       const query = new URLSearchParams({
-        scope,
+        scope: scope === "contracts" ? "mine" : scope,
         status,
         type,
         company,
@@ -60,6 +62,7 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
     return () => clearTimeout(timer);
   }, [load]);
   useEffect(() => {
+    paymentFetch("/api/contracts?scope=mine").then(r => setContractManager(r.can_manage)).catch(() => {});
     paymentFetch("/api/payments/companies")
       .then((r) => setCompanies(r.companies))
       .catch(() => {});
@@ -68,8 +71,8 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
     <>
       <PageIntro
         eyebrow="Financeiro"
-        title="Solicitações de pagamento"
-        description="Envie pedidos e acompanhe cada etapa até o comprovante de pagamento."
+        title="Solicitações"
+        description="Solicite pagamentos e contratos e acompanhe o atendimento de cada pedido."
         action={
           <Link className="button button-primary" href="/pagamentos/nova">
             <Plus size={17} />
@@ -107,6 +110,7 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
               Gestão de pagamentos
             </button>
           )}
+          {contractManager && <button role="tab" aria-selected={scope === "contracts"} className={scope === "contracts" ? "active" : ""} onClick={() => { setScope("contracts"); setPage(0); }}>Gestão de contratos</button>}
         </div>
         <Button
           variant="secondary"
@@ -126,6 +130,8 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
           {copied ? "Link copiado" : "Copiar link público"}
         </Button>
       </div>
+      {scope !== "contracts" && <>
+      {scope === "mine" && <h2>Meus pagamentos</h2>}
       <section className="payment-section">
         <form
           className="payment-filters"
@@ -319,6 +325,8 @@ export function PaymentList({ initialScope = "mine" }: { initialScope?: "mine" |
           />
         )
       )}
+      </>}
+      {scope !== "management" && <ContractList key={scope} management={scope === "contracts"} onAccess={setContractManager} />}
     </>
   );
 }

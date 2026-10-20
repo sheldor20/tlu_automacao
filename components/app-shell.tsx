@@ -348,7 +348,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ) : null}
           <span className="nav-caption nav-caption-spaced">Departamentos</span>
           <Link href="/pagamentos" className={pathname.startsWith("/pagamentos") ? "nav-link active" : "nav-link"} title="Solicitações de pagamento" onClick={() => setMobileMenu(false)}>
-            <Wallet size={19} /><span>Pagamentos</span>
+            <Wallet size={19} /><span>Solicitações</span>
           </Link>
           {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
             if (slug === "clientes") return <ClientsNavigation key={href} pathname={pathname} onNavigate={() => setMobileMenu(false)} />;

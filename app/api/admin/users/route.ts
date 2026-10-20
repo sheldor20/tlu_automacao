@@ -30,6 +30,7 @@ const createUserSchema = z.object({
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
   payment_permission: processPermissionSchema,
+  contract_permission: processPermissionSchema,
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
@@ -47,6 +48,7 @@ const updateUserSchema = z.object({
   project_permission: projectPermissionSchema,
   process_permission: processPermissionSchema,
   payment_permission: z.object({ can_manage: z.boolean() }).optional(),
+  contract_permission: z.object({ can_manage: z.boolean() }).optional(),
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
@@ -195,7 +197,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, leader_user_id } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, leader_user_id } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -227,6 +229,8 @@ export async function POST(request: Request) {
     await replaceProjectPermission(context.service, created.user.id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, created.user.id, departments.includes("processos"), process_permission.can_manage);
     await replacePaymentPermission(context.service, created.user.id, payment_permission.can_manage);
+    const contractAccess = await context.service.from("profile_contract_permissions").upsert({ user_id: created.user.id, can_manage: contract_permission.can_manage });
+    if (contractAccess.error) throw contractAccess.error;
     await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
@@ -249,7 +253,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e as permissões informadas." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, leader_user_id } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, leader_user_id } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -293,6 +297,10 @@ export async function PATCH(request: Request) {
     await replaceProjectPermission(context.service, user_id, departments.includes("projetos") || departments.includes("governanca"), project_permission);
     await replaceProcessPermission(context.service, user_id, departments.includes("processos"), process_permission.can_manage);
     if (payment_permission) await replacePaymentPermission(context.service, user_id, payment_permission.can_manage);
+    if (contract_permission) {
+      const contractAccess = await context.service.from("profile_contract_permissions").upsert({ user_id, can_manage: contract_permission.can_manage });
+      if (contractAccess.error) throw contractAccess.error;
+    }
     await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível atualizar os departamentos.";
