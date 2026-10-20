@@ -398,7 +398,7 @@ export type RaDecision = { id: string; meeting_id: string; item_id: string; titl
 export type UserNotification = {
   id: string;
   recipient_user_id: string;
-  notification_type: "task_assigned";
+  notification_type: "task_assigned" | "performance_pending" | "performance_signed";
   entity_id: string;
   title: string;
   message: string;

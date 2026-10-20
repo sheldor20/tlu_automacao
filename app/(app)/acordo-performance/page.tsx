@@ -6,7 +6,7 @@ import { Button, EmptyState, Field, PageIntro } from "@/components/ui";
 import { getSupabase } from "@/lib/supabase";
 import {
   emptyPerformanceGoal, performanceAgreementError, performanceAgreementSchema,
-  type PerformanceAgreement, type PerformanceAgreementInput, type PerformanceGoal,
+  type PerformanceAgreement, type PerformanceAgreementInput, type PerformanceGoal, type PerformanceAcknowledgment,
 } from "@/lib/performance-agreements";
 import "./performance.css";
 
@@ -28,6 +28,12 @@ export default function PerformanceAgreementsPage() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
+  const [signatures, setSignatures] = useState<PerformanceAcknowledgment[]>([]);
+  const [signatureName, setSignatureName] = useState("");
+  const [accepted, setAccepted] = useState(false);
+  const [files, setFiles] = useState<{name: string; path: string; created_at: string}[]>([]);
+  const [filesError, setFilesError] = useState("");
+  const [filesReload, setFilesReload] = useState(0);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -44,12 +50,22 @@ export default function PerformanceAgreementsPage() {
         const lines = await supabase!.from("profile_reporting_lines").select("report_user_id").eq("leader_user_id", userId);
         if (lines.error) throw lines.error;
         const ids = [userId, ...(lines.data || []).map(line => line.report_user_id)];
-        const [profiles, records] = await Promise.all([
+        const [profiles, records, acknowledgments] = await Promise.all([
           supabase!.from("profiles").select("user_id, full_name, email").in("user_id", ids).eq("active", true).is("deleted_at", null).order("full_name"),
           supabase!.from("performance_agreements").select("*").order("starts_on", { ascending: false }).order("created_at", { ascending: false }),
+          supabase!.from("performance_acknowledgments").select("*").order("signed_at", { ascending: false }),
         ]);
+        if (acknowledgments.error) throw acknowledgments.error;
         if (profiles.error || records.error) throw profiles.error || records.error;
         if (!active) return;
+        setSignatures((acknowledgments.data || []) as PerformanceAcknowledgment[]);
+        const requestedId = new URL(window.location.href).searchParams.get("agreement");
+        const requested = (records.data || []).find(record => record.id === requestedId);
+        if (requested) {
+          setSelectedId(requested.id);
+          if (requested.report_user_id !== userId) { setView("team"); setReportId(requested.report_user_id); }
+          else setView("self");
+        }
         setSelf(userId);
         setPeople(profiles.data || []);
         setAgreements((records.data || []) as PerformanceAgreement[]);
@@ -73,6 +89,66 @@ export default function PerformanceAgreementsPage() {
   const visible = agreements.filter(agreement => agreement.report_user_id === ownerId);
   const selected = visible.find(agreement => agreement.id === selectedId) || visible[0];
 
+  const currentSignature = selected && signatures.find(item => item.agreement_id === selected.id && item.agreement_version === selected.version);
+  const canEdit = view === "team" && Boolean(ownerId);
+
+  useEffect(() => { setSignatureName(""); setAccepted(false); }, [selected?.id, selected?.version]);
+  useEffect(() => {
+    let active = true;
+    setFiles([]); setFilesError("");
+    if (!selected || !supabase) return;
+    const id = selected.id;
+    void (async () => {
+      try {
+        const folders = await supabase.storage.from("performance-files").list(id, { limit: 1000 });
+        if (folders.error) throw folders.error;
+        const groups = await Promise.all((folders.data || []).map(async folder => {
+          const result = await supabase.storage.from("performance-files").list(`${id}/${folder.name}`, { limit: 1000 });
+          if (result.error) throw result.error;
+          return (result.data || []).filter(file => file.id).map(file => ({ name: file.name.slice(37), path: `${id}/${folder.name}/${file.name}`, created_at: file.created_at || "" }));
+        }));
+        if (active) setFiles(groups.flat());
+      } catch { if (active) setFilesError("Não foi possível carregar os anexos. Tente novamente."); }
+    })();
+    return () => { active = false; };
+  }, [selected?.id, supabase, filesReload]);
+
+  async function sign() {
+    if (!selected || !supabase || saving || !accepted || signatureName.trim().length < 3) return;
+    setSaving(true);
+    try {
+      const result = await supabase.from("performance_acknowledgments").insert({ agreement_id: selected.id, agreement_version: selected.version, signature_name: signatureName.trim() }).select("*").single();
+      if (result.error) throw result.error;
+      setSignatures(current => [result.data as PerformanceAcknowledgment, ...current]);
+      window.dispatchEvent(new Event("today-alert-count-changed"));
+      setFeedback({text: "Recebimento e compromisso registrados com sua assinatura e data.", error: false});
+    } catch { setFeedback({text: "Não foi possível assinar. Recarregue o acordo para verificar a revisão atual e tente novamente.", error: true}); }
+    finally { setSaving(false); }
+  }
+
+  async function upload(file: File) {
+    if (!selected || !supabase || saving) return;
+    if (file.size > 20 * 1024 * 1024 || file.size === 0) { setFeedback({text: "Selecione um arquivo entre 1 byte e 20 MB.", error: true}); return; }
+    setSaving(true);
+    try {
+      const path = `${selected.id}/${self}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9. _-]/g, "_")}`;
+      const result = await supabase.storage.from("performance-files").upload(path, file, { upsert: false });
+      if (result.error) throw result.error;
+      setFilesReload(value => value + 1);
+      setFeedback({text: "Arquivo anexado ao ciclo.", error: false});
+    } catch { setFeedback({text: "Não foi possível anexar o arquivo. Tente novamente.", error: true}); }
+    finally { setSaving(false); }
+  }
+
+  async function download(path: string, name: string) {
+    if (!supabase) return;
+    const result = await supabase.storage.from("performance-files").download(path);
+    if (result.error) { setFeedback({text: "Não foi possível baixar o arquivo.", error: true}); return; }
+    const url = URL.createObjectURL(result.data);
+    const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function leaveEditor() {
     if (editor && !window.confirm("Descartar as alterações que ainda não foram salvas?")) return false;
     setEditor(null);
@@ -81,14 +157,14 @@ export default function PerformanceAgreementsPage() {
   }
 
   function startNew() {
-    if (!ownerId || !leaveEditor()) return;
+    if (!canEdit || !ownerId || !leaveEditor()) return;
     setEditor({ id: null, version: null, data: {
       report_user_id: ownerId, cycle: "", starts_on: "", ends_on: "", expectations: "", goals: [emptyPerformanceGoal()],
     } });
   }
 
   function editSelected() {
-    if (!selected || !leaveEditor()) return;
+    if (!canEdit || !selected || !leaveEditor()) return;
     setEditor({ id: selected.id, version: selected.version, data: {
       report_user_id: selected.report_user_id, cycle: selected.cycle, starts_on: selected.starts_on,
       ends_on: selected.ends_on, expectations: selected.expectations, goals: selected.goals.map(goal => ({ ...goal })),
@@ -156,7 +232,7 @@ export default function PerformanceAgreementsPage() {
       {feedback ? <p className={feedback.error ? "performance-feedback error" : "performance-feedback"} role={feedback.error ? "alert" : "status"}>{feedback.text}</p> : null}
       {owner ? <>
         <div className="performance-toolbar"><h2>{view === "self" ? "Meus ciclos" : `Ciclos de ${nameOf(owner)}`}</h2>
-          <Button onClick={startNew} disabled={saving || Boolean(editor)}><Plus size={17} /> Novo acordo</Button></div>
+          {canEdit ? <Button onClick={startNew} disabled={saving || Boolean(editor)}><Plus size={17} /> Novo acordo</Button> : null}</div>
         {editor ? <section className="content-card">
           <h2>{editor.id ? "Editar acordo" : "Novo acordo"}</h2>
           <p>{nameOf(owner)} · Preencha o período e as metas deste ciclo.</p>
@@ -183,21 +259,35 @@ export default function PerformanceAgreementsPage() {
             <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={leaveEditor}>Cancelar</Button><Button type="submit" loading={saving}>Salvar acordo</Button></div>
           </form>
         </section> : visible.length === 0 ? <section className="content-card"><EmptyState icon={<Target size={24} />} title="Nenhum acordo neste momento"
-          description="Cadastre o primeiro ciclo para registrar as metas e expectativas." action={<Button onClick={startNew}>Cadastrar acordo</Button>} /></section> : selected ? <div className="performance-layout">
+          description={canEdit ? "Cadastre o primeiro ciclo para registrar as metas e expectativas." : "Seu líder cadastrará o ciclo e as metas para você ler e assinar."} action={canEdit ? <Button onClick={startNew}>Cadastrar acordo</Button> : undefined} /></section> : selected ? <div className="performance-layout">
           <nav className="performance-cycles content-card" aria-label="Ciclos de performance">
             {visible.map(agreement => <button key={agreement.id} type="button" className={selected.id === agreement.id ? "active" : ""}
-              aria-current={selected.id === agreement.id ? "true" : undefined} onClick={() => { setSelectedId(agreement.id); setFeedback(null); }}>
-              <strong>{agreement.cycle}</strong><span>{dateBr(agreement.starts_on)} a {dateBr(agreement.ends_on)}</span>
+              aria-current={selected.id === agreement.id ? "true" : undefined} disabled={saving} onClick={() => { setSelectedId(agreement.id); setFeedback(null); }}>
+              <strong>{agreement.cycle}</strong><span>{signatures.some(item => item.agreement_id === agreement.id && item.agreement_version === agreement.version) ? "Assinado" : "Aguardando assinatura"}</span><span>{dateBr(agreement.starts_on)} a {dateBr(agreement.ends_on)}</span>
             </button>)}
           </nav>
           <section className="content-card performance-detail">
             <div className="performance-toolbar"><div><span className="eyebrow">{nameOf(owner)}</span><h2>{selected.cycle}</h2>
-              <p>{dateBr(selected.starts_on)} a {dateBr(selected.ends_on)}</p></div><Button variant="secondary" onClick={editSelected}>Editar acordo</Button></div>
+              <p>{dateBr(selected.starts_on)} a {dateBr(selected.ends_on)}</p></div>{canEdit ? <Button variant="secondary" disabled={saving} onClick={editSelected}>Editar acordo</Button> : null}</div>
             {selected.expectations ? <div><h3>Expectativas e observações</h3><p className="performance-text">{selected.expectations}</p></div> : null}
             <h3>Metas do ciclo</h3>
             {selected.goals.map((goal, index) => <article key={index} className="performance-goal">
               <h3>{index + 1}. {goal.title}</h3><dl><dt>Indicador</dt><dd>{goal.indicator}</dd><dt>Resultado esperado</dt><dd>{goal.expected_result}</dd><dt>Prazo</dt><dd>{dateBr(goal.due_date)}</dd></dl>
             </article>)}
+            <section className="performance-goal">
+              <h3>Ciência e compromisso · Revisão {selected.version}</h3>
+              {currentSignature ? <><p>{currentSignature.statement}</p><p><strong>Assinado por {currentSignature.signature_name}</strong><br />{new Date(currentSignature.signed_at).toLocaleString("pt-BR")} · Revisão {currentSignature.agreement_version}</p></> : <>
+                <p>Aguardando assinatura do liderado. Alterações nas metas ou no período exigem uma nova assinatura; os registros anteriores são preservados.</p>
+                {view === "self" ? <><Field label="Assinatura — nome completo"><input maxLength={200} value={signatureName} disabled={saving} onChange={event => setSignatureName(event.target.value)} autoComplete="name" /></Field>
+                  <label><input type="checkbox" checked={accepted} disabled={saving} onChange={event => setAccepted(event.target.checked)} /> Declaro que recebi, li e compreendi as metas e expectativas deste ciclo e me comprometo a segui-las.</label>
+                  <Button disabled={saving || !accepted || signatureName.trim().length < 3} onClick={sign}>Assinar recebimento e compromisso</Button></> : null}
+              </>}
+              {signatures.filter(item => item.agreement_id === selected.id && item.agreement_version !== selected.version).map(item => <details key={item.id}><summary>Revisão {item.agreement_version} · {item.signature_name} · {new Date(item.signed_at).toLocaleString("pt-BR")}</summary><p>{item.statement}</p><p>{item.snapshot.cycle} · {item.snapshot.expectations}</p>{item.snapshot.goals.map((goal, index) => <p key={index}><strong>{goal.title}</strong> · {goal.indicator} · {goal.expected_result} · {dateBr(goal.due_date)}</p>)}</details>)}
+            </section>
+            <section className="performance-goal"><h3>Arquivos do ciclo</h3><p>Líder e liderado podem anexar arquivos de até 20 MB.</p>
+              <input type="file" aria-label="Anexar arquivo ao ciclo" disabled={saving} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} />
+              {filesError ? <p role="alert">{filesError} <Button variant="secondary" onClick={() => setFilesReload(value => value + 1)}>Tentar novamente</Button></p> : files.length === 0 ? <p>Nenhum arquivo anexado.</p> : <ul>{files.map(file => <li key={file.path}><Button variant="ghost" onClick={() => void download(file.path, file.name)}>{file.name}</Button> · {new Date(file.created_at).toLocaleString("pt-BR")}</li>)}</ul>}
+            </section>
             <small>Último salvamento: {new Date(selected.updated_at).toLocaleString("pt-BR")} · Revisão {selected.version}</small>
           </section>
         </div> : null}
