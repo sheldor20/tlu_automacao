@@ -101,3 +101,43 @@ usar `vercel crons run /api/cron/qlik/rental-inventory` ou `rental-receipts`.
 Conferir execuções em `data_connection_runs` e a última carga confirmada em
 `data_connections.last_success_at`. Testes de parser, persistência, permissões,
 vínculo, repetição e preservação estão em `tests/qlik-rentals*.test.ts`.
+
+
+## Contratos como base da gestão (outubro de 2026)
+
+Aplicar `20261020120431_rental_contract_versions.sql` antes de publicar a interface.
+A migração cria um bucket privado de PDFs, histórico de versões e campos de
+locatário, vencimento, índice, renovação e responsabilidade pelo IPTU. O cadastro
+continua sincronizando exclusivamente nome, Cód. Imóvel, tipo e permissão para
+locação; não importa valores, vigência ou ocupação do Qlik.
+
+Na ficha de cada imóvel, enviar PDF ou abrir um ZIP e escolher até oito documentos
+do mesmo imóvel. O ZIP é aberto no navegador; somente os PDFs escolhidos são
+enviados diretamente ao armazenamento, evitando o limite de corpo das funções.
+Limites: ZIP de 120 MB, PDF de 25 MB, seleção de 35 MB por análise.
+
+A leitura usa `OPENAI_API_KEY` no servidor e `OPENAI_RENTAL_MODEL` (opcional,
+com fallback para `OPENAI_PROCESS_MODEL` e depois o modelo já usado pelo sistema).
+Aceita PDFs digitalizados. Documentos são fontes não confiáveis: suas instruções
+são ignoradas. Campos ausentes preservam dados existentes, especialmente para
+aditivos; avisos e conflitos aparecem antes do salvamento. O usuário deve conferir
+o imóvel, a ocupação e as informações antes de salvar. Se a leitura falhar, os
+PDFs enviados continuam disponíveis para salvar com preenchimento manual.
+
+O salvamento de uma nova versão atualiza os dados e registra o estado completo
+numa única transação. Detecta alterações concorrentes e impede associação de
+arquivos de outro imóvel. As versões anteriores e seus PDFs ficam acessíveis.
+A tag `IPTU · TLU` é exibida quando a responsabilidade revisada for do locador.
+
+A sincronização financeira lê e concilia o histórico completo da origem, mantém
+vínculo exato pelo código e atualiza somente imóveis atualmente alugados. O
+histórico de imóveis que deixaram de estar alugados é preservado. A rotina diária
+existente continua às 06:30; o upload do contrato não dispara uma carga Qlik
+síncrona. Recebimentos manuais e Qlik continuam separados e as fórmulas dos
+indicadores permanecem iguais.
+
+A tela usa três abas: Locações, Cadastro geral e Recebimentos. Terrenos e áreas
+ficam fora da lista por padrão e podem ser exibidos no filtro de tipo. Os filtros
+não alteram os totais dos indicadores. Testes locais em
+`tests/rental-contracts-database.test.ts` verificam transação, versões, permissões,
+conflitos, isolamento dos arquivos e preservação do histórico financeiro.

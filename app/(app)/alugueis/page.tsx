@@ -27,6 +27,8 @@ export default function RentalsPage() {
   const supabase = getSupabase();
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"leases" | "inventory" | "receipts">("leases");
+  const [typeFilter, setTypeFilter] = useState("buildings");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<RentalStatus | "all">("all");
   const [exceptionOnly, setExceptionOnly] = useState(false);
@@ -58,10 +60,12 @@ export default function RentalsPage() {
     return rentals.filter((rental) => {
       const daysToEnd = rental.lease_end_date ? Math.ceil((new Date(`${rental.lease_end_date}T12:00:00`).getTime() - now) / 86_400_000) : Number.POSITIVE_INFINITY;
       const exception = rental.status === "desocupado" || (rental.status === "alugado" && daysToEnd >= 0 && daysToEnd <= 60);
-      const matchesSearch = !normalized || [rental.name, rental.qlik_property_id, rental.property_address, rental.property_type, rental.lessor_name].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
-      return matchesSearch && (rentableFilter === "all" || (rentableFilter === "unknown" ? rental.rentable === null : String(rental.rentable) === rentableFilter)) && (statusFilter === "all" || rental.status === statusFilter) && (!exceptionOnly || exception);
+      const matchesSearch = !normalized || [rental.name, rental.qlik_property_id, rental.property_address, rental.property_type, rental.lessor_name, rental.tenant_name].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
+      const type = (rental.property_type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const matchesType = typeFilter === "all" || (typeFilter === "buildings" ? !/terreno|area/.test(type) : rental.property_type === typeFilter);
+      return (tab !== "leases" || rental.status === "alugado") && matchesType && matchesSearch && (rentableFilter === "all" || (rentableFilter === "unknown" ? rental.rentable === null : String(rental.rentable) === rentableFilter)) && (statusFilter === "all" || rental.status === statusFilter) && (!exceptionOnly || exception);
     });
-  }, [exceptionOnly, query, rentals, statusFilter, rentableFilter]);
+  }, [exceptionOnly, query, rentals, statusFilter, rentableFilter, typeFilter, tab]);
 
   async function changeStatus(rental: Rental, status: RentalStatus) {
     if (!supabase || status === rental.status) return;
@@ -96,11 +100,13 @@ export default function RentalsPage() {
         <KpiCard label="Aguardando reforma" value={String(metrics.renovation)} helper="imóveis em preparação" icon={<Hammer size={17} />} />
       </section>
 
-      <section className="content-card rentals-list-card">
+      <nav className="rental-tabs" aria-label="Visões de aluguéis">{([["leases", "Locações"], ["inventory", "Cadastro geral"], ["receipts", "Recebimentos"]] as const).map(([value,label]) => <button key={value} aria-pressed={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>)}</nav>
+      {tab !== "receipts" ? <section className="content-card rentals-list-card">
         <div className="content-card-head project-list-head">
-          <div><h2>Todos os imóveis</h2><p>Consulte tipo, permissão de locação, ocupação e contrato de cada imóvel</p></div>
+          <div><h2>{tab === "inventory" ? "Cadastro geral de imóveis" : "Locações em gestão"}</h2><p>Cadastro pelo Qlik · locações pelos contratos · recebimentos pelo código do imóvel</p></div>
         </div>
-        <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por imóvel, código, tipo, endereço ou locador">
+        <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por imóvel, código, tipo, endereço ou locatário">
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filtrar por tipo de imóvel"><option value="buildings">Imóveis · sem terrenos e áreas</option><option value="all">Todos os tipos</option>{Array.from(new Set(rentals.map(r => r.property_type).filter((v): v is string => Boolean(v)))).sort().map(type => <option key={type} value={type}>{type}</option>)}</select>
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as RentalStatus | "all")} aria-label="Filtrar por status"><option value="all">Todos os status</option>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
           <select value={rentableFilter} onChange={(event) => setRentableFilter(event.target.value)} aria-label="Filtrar permissão de locação"><option value="all">Todos: permissão de locação</option><option value="true">Pode ser locado</option><option value="false">Não pode ser locado</option><option value="unknown">Permissão não informada</option></select>
           <label className="filter-check"><input type="checkbox" checked={exceptionOnly} onChange={(event) => setExceptionOnly(event.target.checked)} /> Somente exceções</label>
@@ -116,7 +122,7 @@ export default function RentalsPage() {
         ) : (
           <div className="rental-table-wrap">
             <table className="data-table rental-table">
-              <thead><tr><th>Imóvel</th><th>Tipo</th><th>Pode ser locado?</th><th>Ocupação</th><th>Valor mensal da locação</th><th>Locador</th><th>Contrato</th><th aria-label="Acessar" /></tr></thead>
+              <thead><tr><th>Imóvel</th><th>Tipo</th><th>Pode ser locado?</th><th>Ocupação</th><th>Valor mensal da locação</th><th>Locatário / IPTU</th><th>Contrato</th><th aria-label="Acessar" /></tr></thead>
               <tbody>
                 {visibleRentals.map((rental) => {
                   const endInDays = rental.lease_end_date ? Math.ceil((new Date(`${rental.lease_end_date}T12:00:00`).getTime() - new Date(`${todayIso()}T12:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY;
@@ -135,8 +141,8 @@ export default function RentalsPage() {
                         </select>
                       </div>
                     </td>
-                    <td><strong>{currency(rental.monthly_rent)}</strong><small>reajuste {Number(rental.annual_adjustment_percent || 0).toFixed(2)}% a.a.</small></td>
-                    <td><strong>{rental.lessor_name}</strong><small>{rental.lessor_type.toUpperCase()}</small></td>
+                    <td><strong>{currency(rental.monthly_rent)}</strong><small>{rental.due_day ? `vence dia ${rental.due_day}` : "vencimento não informado"}</small></td>
+                    <td><strong>{rental.tenant_name || "Locatário não informado"}</strong>{rental.iptu_payer === "tlu" ? <small className="rental-iptu-tag">IPTU · TLU</small> : null}</td>
                     <td><strong>{dateBr(rental.lease_start_date)}</strong><small>{endInDays >= 0 && endInDays <= 60 ? `vence em ${endInDays} dia(s)` : `até ${dateBr(rental.lease_end_date)}`}</small></td>
                     <td><div className="table-actions"><Link className="table-action" href={`/alugueis/${rental.id}`} aria-label={`Acessar ${rental.name}`} title="Abrir imóvel"><ArrowUpRight size={16} /></Link></div></td>
                   </tr>;
@@ -145,11 +151,7 @@ export default function RentalsPage() {
             </table>
           </div>
         )}
-      </section>
-
-      <RentalQlikReceipts />
-
-      {!loading ? <RentalReceipts key={rentals.map((rental) => rental.id).sort().join(",")} /> : null}
+      </section> : <><RentalQlikReceipts />{!loading ? <RentalReceipts key={rentals.map((rental) => rental.id).sort().join(",")} /> : null}</>}
 
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>

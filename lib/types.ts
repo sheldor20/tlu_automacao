@@ -194,6 +194,12 @@ export type RentalStatus = "alugado" | "desocupado" | "aguardando_reforma";
 export type LessorType = "pf" | "pj";
 
 export type Rental = {
+  tenant_name?: string | null;
+  due_day?: number | null;
+  adjustment_index?: string | null;
+  renewal_terms?: string | null;
+  iptu_payer?: "tlu" | "tenant" | "shared" | "unknown";
+  iptu_clause?: string | null;
   id: string;
   property_type: string | null;
   rentable: boolean | null;
