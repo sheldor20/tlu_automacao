@@ -32,8 +32,13 @@ function snapshot(metricKey: string, referenceMonth: string, value: number, dime
     objectTitle: metricKey,
     targetLabel: metricKey,
     selections: metricKey === "saldo_conta_alugueis" ? {
+      reference_date: `${referenceMonth.slice(0, 7)}-28`,
       "Conta Banco": QLIK_RENTAL_BANK_ACCOUNTS.join(" | "),
       account_balances: JSON.stringify([{ dimensions: ["104 - BCO CX EC FEDERAL SA", `${QLIK_RENTAL_BANK_ACCOUNTS[0]} - APLICAÇÃO - ALUGUEL GUIMARÃES`, "Conta Aplicação"], value }]),
+      qlik_total: String(value),
+    } : metricKey === "valor_caixa" ? {
+      Grupo: "Terra Lotus", reference_date: `${referenceMonth.slice(0, 7)}-28`,
+      account_balances: JSON.stringify([{ dimensions: ["001 - Banco", "999-0 - Conta grupo", "Conta"], value }]),
       qlik_total: String(value),
     } : { Grupo: "Terra Lotus" },
     ...(dimension ? { dimensionKey: dimension, dimensionLabel: "Conta teste" } : {}),
@@ -101,6 +106,7 @@ test("calcula o disponível com aluguéis da mesma competência do caixa total",
   const julyAvailableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-07-01")!;
   const julyCash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-07-01")!;
   assert.equal(julyAvailableCash.value, julyCash.value - overriddenRentalCash.value);
+  assert.equal(julyCash.value, 1012);
 });
 
 test("reconcilia todas as contas, rejeitando subtotal, duplicidade e filtro incorreto", () => {

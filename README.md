@@ -352,8 +352,9 @@ Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
 resultado gerencial continua mensal e é calculado por receita menos despesa. A
 posição de caixa considera o último dia do último mês encerrado.
 O card **Valor total em caixa** mostra a soma das contas bancárias do grupo
-Terra Lotus na composição do DFC, incluindo as contas de aluguéis presentes
-nesse grupo. Abaixo exibe **Conta de aluguéis**, na mesma competência e
+Terra Lotus na composição do DFC, incluindo todas as nove contas de aluguéis.
+Contas já presentes no grupo são contadas uma única vez; as contas de aluguéis
+fora do filtro de grupo são adicionadas após conferir os saldos nativos. Abaixo exibe **Conta de aluguéis**, na mesma competência e
 sincronização. A data da posição e o horário da carga permanecem visíveis.
 Resultado gerencial e gráficos históricos continuam no último fechamento.
 
