@@ -556,3 +556,39 @@ desempenho ou PDI. O cadastro permite editar os dados do acordo, sem estado de
 formalização. `tests/performance-agreements.test.ts` executa a migration em
 Postgres e verifica persistência, unicidade por ciclo, validação, edição
 concorrente, acesso de terceiros, troca de líder, inativação e bloqueio anônimo.
+
+### Documentos e consulta administrativa dos acordos
+
+Em **Administração → Editar usuário → Acordos de Performance**, a opção
+**Consultar todos os acordos** libera consulta e impressão dos registros.
+A autorização é explícita, inclusive para administradores, e não concede edição,
+assinatura por terceiros ou envio de anexos. A revogação e a inativação removem
+esse acesso no banco.
+
+O líder cadastra as metas em **Meus liderados**, confere a minuta e usa
+**Emitir e assinar documento**. O liderado abre o documento em **Meu acordo** e
+usa **Assinar acordo**, informando nome e local (cidade/UF). Coordenadas são
+opcionais e só são obtidas após a solicitação e a permissão no navegador; se
+recusadas, o local informado continua permitindo a assinatura. Data e hora são
+registradas no servidor. O documento registra o local informado e distingue
+coordenadas autorizadas de coordenadas não registradas.
+
+A lista apresenta período, datas das duas assinaturas e situação **Acordado**
+quando o liderado aceita o documento. **Abrir documento → Imprimir / Salvar em PDF**
+exibe as partes, compromissos, metas, indicadores, resultados, prazos, assinaturas,
+identificadores e o hash SHA-256 do conteúdo. A impressão contém apenas o documento.
+Cada emissão preserva uma cópia imutável da revisão e das identidades das partes.
+Alterar as metas exige nova emissão e novas assinaturas. Registros anteriores de
+ciência permanecem identificados como tal e não são convertidos retroativamente
+em assinatura dos novos termos. As assinaturas são registros eletrônicos em conta
+autenticada no sistema; não há integração com certificados digitais externos.
+
+O líder pode **Excluir acordo**: a exclusão é lógica, identifica autor e horário,
+retira pendências e impede novas alterações no acordo excluído. **Incluir acordos
+excluídos** e **Documentos preservados** permitem consultar seu histórico. As partes
+originais conservam acesso aos documentos emitidos mesmo após mudança de liderança.
+
+A migração `20261021124534_performance_contracts_and_review_access.sql` pressupõe
+as tabelas de ciência e arquivos já existentes em produção (migrações de 19/10,
+agora também incluídas no repositório). Aplique apenas as migrações ainda não
+presentes no ambiente; os nomes históricos no banco podem ter timestamps diferentes.

@@ -8,7 +8,7 @@ import type { DepartmentSlug, ManagementAreaSlug, ProcessPermission, ProfileDepa
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserRoundCog, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; payment_permission: { can_manage: boolean }; contract_permission: { can_manage: boolean }; leader_user_id: string | null };
+type ManagedUser = UserProfile & { departments: DepartmentSlug[]; indicator_areas: ManagementAreaSlug[]; project_permission: Omit<ProfileProjectPermission, "user_id">; process_permission: Omit<ProcessPermission, "user_id">; payment_permission: { can_manage: boolean }; contract_permission: { can_manage: boolean }; performance_permission: { can_review: boolean }; leader_user_id: string | null };
 
 type AdminForm = {
   full_name: string;
@@ -20,7 +20,7 @@ type AdminForm = {
   indicator_areas: ManagementAreaSlug[];
   project_permission: Omit<ProfileProjectPermission, "user_id">;
   process_permission: Omit<ProcessPermission, "user_id">;
-  payment_permission: { can_manage: boolean }; contract_permission: { can_manage: boolean };
+  payment_permission: { can_manage: boolean }; contract_permission: { can_manage: boolean }; performance_permission: { can_review: boolean };
   leader_user_id: string;
 };
 
@@ -36,6 +36,7 @@ const emptyForm: AdminForm = {
   process_permission: { can_manage: false },
   payment_permission: { can_manage: false },
   contract_permission: { can_manage: false },
+  performance_permission: { can_review: false },
   leader_user_id: "",
 };
 
@@ -52,7 +53,7 @@ export default function AdministrationPage() {
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
-    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult, paymentPermissionResult, contractPermissionResult] = await Promise.all([
+    const [profileResult, accessResult, indicatorAccessResult, projectPermissionResult, processPermissionResult, reportingLineResult, paymentPermissionResult, contractPermissionResult, performancePermissionResult] = await Promise.all([
       supabase.from("profiles").select("user_id,full_name,email,active,is_admin").is("deleted_at", null).order("full_name"),
       supabase.from("profile_departments").select("user_id,department_slug,access_level"),
       supabase.from("profile_indicator_areas").select("user_id,area"),
@@ -61,9 +62,10 @@ export default function AdministrationPage() {
       supabase.from("profile_reporting_lines").select("report_user_id,leader_user_id"),
       supabase.from("profile_payment_permissions").select("user_id,can_manage"),
       supabase.from("profile_contract_permissions").select("user_id,can_manage"),
+      supabase.from("profile_performance_permissions").select("user_id,can_review"),
     ]);
-    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error || contractPermissionResult.error) {
-      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error || contractPermissionResult.error), type: "error" });
+    if (profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error || contractPermissionResult.error || performancePermissionResult.error) {
+      setToast({ message: friendlyError(profileResult.error || accessResult.error || indicatorAccessResult.error || projectPermissionResult.error || processPermissionResult.error || reportingLineResult.error || paymentPermissionResult.error || contractPermissionResult.error || performancePermissionResult.error), type: "error" });
       setLoading(false);
       return;
     }
@@ -80,6 +82,7 @@ export default function AdministrationPage() {
       process_permission: processPermissions.find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
       payment_permission: (paymentPermissionResult.data || []).find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
       contract_permission: (contractPermissionResult.data || []).find((permission) => permission.user_id === profile.user_id) || { can_manage: false },
+      performance_permission: (performancePermissionResult.data || []).find(permission => permission.user_id === profile.user_id) || { can_review: false },
       leader_user_id: reportingLines.find((line) => line.report_user_id === profile.user_id)?.leader_user_id || null,
     })));
     setLoading(false);
@@ -121,6 +124,7 @@ export default function AdministrationPage() {
       process_permission: { can_manage: user.process_permission.can_manage },
       payment_permission: { can_manage: user.payment_permission.can_manage },
       contract_permission: { can_manage: user.contract_permission.can_manage },
+      performance_permission: { can_review: user.performance_permission.can_review },
       leader_user_id: user.leader_user_id || "",
     });
     setDialogOpen(true);
@@ -176,6 +180,7 @@ export default function AdministrationPage() {
         process_permission: form.process_permission,
         payment_permission: form.payment_permission,
         contract_permission: form.contract_permission,
+        performance_permission: form.performance_permission,
         leader_user_id: form.leader_user_id || null,
       } : { ...form, leader_user_id: form.leader_user_id || null }),
     });
@@ -240,6 +245,7 @@ export default function AdministrationPage() {
                   {!user.is_admin && user.departments.includes("indicadores") ? <small>{user.indicator_areas.length} de {MANAGEMENT_AREAS.length} visões de Indicadores</small> : null}
                   {!user.is_admin && (user.departments.includes("projetos") || user.departments.includes("governanca")) ? <small>{user.project_permission.access_scope === "full" ? "Gestão dos projetos envolvidos" : "Somente tarefas e subtarefas envolvidas"}</small> : null}
                   {!user.is_admin && user.departments.includes("processos") ? <small>{user.process_permission.can_manage ? "Pode criar e editar processos" : "Somente consulta de processos"}</small> : null}
+                  {user.performance_permission.can_review ? <small>Consulta de todos os acordos de performance</small> : null}
                   {user.leader_user_id ? <small>Líder: {users.find((candidate) => candidate.user_id === user.leader_user_id)?.full_name || users.find((candidate) => candidate.user_id === user.leader_user_id)?.email || "Usuário"}</small> : null}
                 </div>
                 <div className="table-actions admin-user-actions"><button className="table-action" onClick={() => openEdit(user)} aria-label={`Editar acessos de ${user.full_name || user.email}`}><Pencil size={16} /></button><button className="table-action danger" onClick={() => void deleteUser(user)} disabled={saving} aria-label={`Excluir ${user.full_name || user.email}`}><Trash2 size={16} /></button></div>
@@ -318,6 +324,11 @@ export default function AdministrationPage() {
             </fieldset>
           ) : null}
 
+          <fieldset className="department-access-fieldset form-span-2">
+            <legend>Acordos de Performance</legend>
+            <p>Líder e liderado já consultam os próprios acordos. Esta autorização permite consultar todos os acordos registrados, suas assinaturas e documentos. Não permite editar metas ou assinar por outra pessoa.</p>
+            <div className="admin-toggle-grid"><label><input type="checkbox" disabled={!form.active} checked={form.performance_permission.can_review} onChange={event => setForm({ ...form, performance_permission: { can_review: event.target.checked } })} /><span><strong>Consultar todos os acordos</strong><small>Liberação explícita, inclusive para administradores. Inclui impressão dos documentos.</small></span></label></div>
+          </fieldset>
           <fieldset className="department-access-fieldset form-span-2">
             <legend>Gestão de contratos</legend>
             <p>Todos os usuários ativos podem solicitar e acompanhar os próprios contratos. O ADM libera o acesso à gestão. Administradores já possuem acesso completo.</p>
