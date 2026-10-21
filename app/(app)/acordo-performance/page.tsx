@@ -73,6 +73,8 @@ export default function PerformanceAgreementsPage() {
   const visible = agreements.filter(agreement => agreement.report_user_id === ownerId);
   const selected = visible.find(agreement => agreement.id === selectedId) || visible[0];
 
+  const canEdit = view === "team" && reports.some(person => person.user_id === ownerId);
+
   function leaveEditor() {
     if (editor && !window.confirm("Descartar as alterações que ainda não foram salvas?")) return false;
     setEditor(null);
@@ -81,14 +83,14 @@ export default function PerformanceAgreementsPage() {
   }
 
   function startNew() {
-    if (!ownerId || !leaveEditor()) return;
+    if (!canEdit || !ownerId || !leaveEditor()) return;
     setEditor({ id: null, version: null, data: {
       report_user_id: ownerId, cycle: "", starts_on: "", ends_on: "", expectations: "", goals: [emptyPerformanceGoal()],
     } });
   }
 
   function editSelected() {
-    if (!selected || !leaveEditor()) return;
+    if (!canEdit || !selected || !leaveEditor()) return;
     setEditor({ id: selected.id, version: selected.version, data: {
       report_user_id: selected.report_user_id, cycle: selected.cycle, starts_on: selected.starts_on,
       ends_on: selected.ends_on, expectations: selected.expectations, goals: selected.goals.map(goal => ({ ...goal })),
@@ -106,7 +108,7 @@ export default function PerformanceAgreementsPage() {
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!editor || !supabase || saving) return;
+    if (!canEdit || !editor || editor.data.report_user_id !== ownerId || !supabase || saving) return;
     setFeedback(null);
     const parsed = performanceAgreementSchema.safeParse(editor.data);
     if (!parsed.success) {
@@ -137,6 +139,7 @@ export default function PerformanceAgreementsPage() {
     <PageIntro eyebrow="Desenvolvimento" title="Acordo de Performance"
       description="Registre as metas e expectativas de cada ciclo em um espaço privado entre colaborador e líder direto." />
     <p className="performance-privacy"><LockKeyhole size={17} aria-hidden="true" /> Acesso exclusivo ao colaborador e ao líder direto atual.</p>
+    {view === "self" ? <p>Os acordos são cadastrados e editados pelo seu líder direto.</p> : null}
     {loading ? <p role="status">Carregando acordos…</p> : loadError ? <section className="content-card">
       <p role="alert">{loadError}</p><Button onClick={() => setReload(value => value + 1)}>Tentar novamente</Button>
     </section> : <>
@@ -156,8 +159,8 @@ export default function PerformanceAgreementsPage() {
       {feedback ? <p className={feedback.error ? "performance-feedback error" : "performance-feedback"} role={feedback.error ? "alert" : "status"}>{feedback.text}</p> : null}
       {owner ? <>
         <div className="performance-toolbar"><h2>{view === "self" ? "Meus ciclos" : `Ciclos de ${nameOf(owner)}`}</h2>
-          <Button onClick={startNew} disabled={saving || Boolean(editor)}><Plus size={17} /> Novo acordo</Button></div>
-        {editor ? <section className="content-card">
+          {canEdit ? <Button onClick={startNew} disabled={saving || Boolean(editor)}><Plus size={17} /> Novo acordo</Button> : null}</div>
+        {editor && canEdit ? <section className="content-card">
           <h2>{editor.id ? "Editar acordo" : "Novo acordo"}</h2>
           <p>{nameOf(owner)} · Preencha o período e as metas deste ciclo.</p>
           <form onSubmit={save} className="form-grid performance-form">
@@ -183,7 +186,7 @@ export default function PerformanceAgreementsPage() {
             <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={leaveEditor}>Cancelar</Button><Button type="submit" loading={saving}>Salvar acordo</Button></div>
           </form>
         </section> : visible.length === 0 ? <section className="content-card"><EmptyState icon={<Target size={24} />} title="Nenhum acordo neste momento"
-          description="Cadastre o primeiro ciclo para registrar as metas e expectativas." action={<Button onClick={startNew}>Cadastrar acordo</Button>} /></section> : selected ? <div className="performance-layout">
+          description={canEdit ? "Cadastre o primeiro ciclo para registrar as metas e expectativas." : "Seu líder direto cadastrará o ciclo e as metas do seu acordo."} action={canEdit ? <Button onClick={startNew}>Cadastrar acordo</Button> : undefined} /></section> : selected ? <div className="performance-layout">
           <nav className="performance-cycles content-card" aria-label="Ciclos de performance">
             {visible.map(agreement => <button key={agreement.id} type="button" className={selected.id === agreement.id ? "active" : ""}
               aria-current={selected.id === agreement.id ? "true" : undefined} onClick={() => { setSelectedId(agreement.id); setFeedback(null); }}>
@@ -192,7 +195,7 @@ export default function PerformanceAgreementsPage() {
           </nav>
           <section className="content-card performance-detail">
             <div className="performance-toolbar"><div><span className="eyebrow">{nameOf(owner)}</span><h2>{selected.cycle}</h2>
-              <p>{dateBr(selected.starts_on)} a {dateBr(selected.ends_on)}</p></div><Button variant="secondary" onClick={editSelected}>Editar acordo</Button></div>
+              <p>{dateBr(selected.starts_on)} a {dateBr(selected.ends_on)}</p></div>{canEdit ? <Button variant="secondary" onClick={editSelected}>Editar acordo</Button> : null}</div>
             {selected.expectations ? <div><h3>Expectativas e observações</h3><p className="performance-text">{selected.expectations}</p></div> : null}
             <h3>Metas do ciclo</h3>
             {selected.goals.map((goal, index) => <article key={index} className="performance-goal">
