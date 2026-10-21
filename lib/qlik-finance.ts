@@ -4,6 +4,7 @@ import type {
   QlikCloudMetricFilter,
   QlikMetricSnapshot,
 } from "@/lib/qlik-cloud";
+import { consolidateCompanyCash } from "./company-cash.ts";
 import { legalSalesReferenceMonths, legalSalesClosedReferenceMonths, lastClosedSaoPauloYearMonth, saoPauloYearMonth } from "./qlik-legal-sales.ts";
 
 export const QLIK_FINANCE_CONNECTION_SLUG = "qlik-finance";
@@ -262,6 +263,12 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
     }
   }
 
+  for (let index = 0; index < normalizedSnapshots.length; index += 1) {
+    const cash = normalizedSnapshots[index];
+    if (cash.metricKey !== "valor_caixa") continue;
+    const rentalCash = normalizedSnapshots.find((row) => row.metricKey === "saldo_conta_alugueis" && row.referenceMonth === cash.referenceMonth);
+    if (rentalCash) normalizedSnapshots[index] = consolidateCompanyCash(cash, rentalCash);
+  }
   const enriched = normalizedSnapshots.slice();
   for (const referenceMonth of new Set([...expectedMonths, ...legalSalesClosedReferenceMonths(now)])) {
     const revenue = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "receita_consolidada" && snapshot.referenceMonth === referenceMonth);
@@ -334,6 +341,8 @@ export function toFinanceIndicatorRows(snapshots: QlikMetricSnapshot[], synchron
     source: QLIK_FINANCE_SOURCE,
     notes: snapshot.metricKey === "saldo_conta_alugueis"
       ? "Soma das nove contas de aluguéis na composição do saldo inicial do DFC; período no último dia do mês, conferida com o total do Qlik."
+      : snapshot.metricKey === "valor_caixa"
+      ? "União das contas bancárias do grupo Terra Lotus e das nove contas de aluguéis no último fechamento, sem duplicidade; totais nativos preservados nos metadados."
       : snapshot.selections.ajuste_validado
       ? "Valor validado manualmente; o retorno original do Qlik permanece nos metadados."
       : snapshot.mode === "breakdown"
