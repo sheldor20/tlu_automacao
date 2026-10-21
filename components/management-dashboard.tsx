@@ -621,6 +621,11 @@ function LegalSalesView({ delinquencyInitial, metricValue, metricValueForMonth, 
 
 function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, months, rentals }: MetricViewProps & { rentals: ManagementRentalSnapshot | null }) {
   const chartMonths = monthsThroughLastClosed(months);
+  const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
+  const previousFollowers = metricValueForMonth("instagram_seguidores", previousMonth.key);
+  const instagramHelper = previousFollowers === null
+    ? `Mês passado (${previousMonth.label}): sem registro`
+    : `Mês passado (${previousMonth.label}): ${displayNumber(previousFollowers)} seguidores`;
   const closedSeries = (key: string) => chartMonths.map((month) => metricValueForMonth(key, month.key));
   const availabilityMonths = months.slice(0, months.findIndex((month) => month.isCurrent) + 1);
   const availabilityValues = availabilityMonths.map((month) => month.isCurrent
@@ -631,7 +636,7 @@ function PeopleClientsView({ metricValue, metricValueForMonth, metricHelper, mon
       <section className="management-kpi-grid management-people-kpis">
         <KpiCard label="Imóveis desocupados" value={rentals ? String(rentals.available_properties) : "—"} helper={rentals ? "disponíveis para locação" : "aguardando base de aluguéis"} icon={<Building2 size={17} />} />
         <KpiCard label="Pesquisa de clima" value={metricValue("pesquisa_clima") === null ? "—" : `${displayNumber(metricValue("pesquisa_clima"))}/10`} helper={metricHelper("pesquisa_clima", "duas medições por ano")} icon={<UsersRound size={17} />} />
-        <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={metricHelper("instagram_seguidores", "aguardando integração do Instagram")} tone="success" icon={<Camera size={17} />} />
+        <KpiCard label="Seguidores no Instagram" value={displayNumber(metricValue("instagram_seguidores"))} helper={instagramHelper} tone="success" icon={<Camera size={17} />} />
       </section>
       <section className="management-two-columns">
         <article className="management-panel"><div className="management-panel-head"><div><span>Aluguéis</span><h2>Imóveis disponíveis para locação</h2><p>Histórico mensal, incluindo a disponibilidade atual.</p></div>{rentals ? <StatusPill tone="info">{rentals.rented_properties} alugados</StatusPill> : null}</div><TrendChart labels={availabilityMonths.map((month) => month.label)} series={[{ label: "Disponíveis", color: "#405343", values: availabilityValues }]} /></article>
