@@ -350,12 +350,12 @@ indicador, percorre de janeiro ao mês vigente e grava:
 
 Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
 resultado gerencial continua mensal e é calculado por receita menos despesa. A
-posição de caixa preserva no metadado a última data encontrada no mês.
-O card **Valor total em caixa** usa a posição mais recente carregada, incluindo
-o mês em andamento, e acompanha as atualizações da base em tempo real. Exibe
-a data da posição e o horário da sincronização, respeitando a atualização da
-fonte Qlik. O disponível usa a mesma competência e sincronização do saldo
-total; resultado gerencial e gráficos históricos continuam no último fechamento.
+posição de caixa considera o último dia do mês, inclusive no mês em andamento.
+O card **Valor total em caixa** mostra a soma das contas bancárias do grupo
+Terra Lotus na composição do DFC, incluindo as contas de aluguéis presentes
+nesse grupo. Abaixo exibe **Conta de aluguéis**, na mesma competência e
+sincronização. A data da posição e o horário da carga permanecem visíveis.
+Resultado gerencial e gráficos históricos continuam no último fechamento.
 
 O saldo de aluguéis vem da tabela **Composição Saldo Inicial | Contas** do
 DFC (objeto `883da608-a05c-442b-9304-c5bb1d8eaa5e`). A leitura seleciona
@@ -363,7 +363,7 @@ exatamente as nove contas da Caixa definidas em
 `data_connections.settings.rental_bank_accounts` (configuração protegida,
 fora do repositório público),
 no estado `<estado alternativo 01>`, e ajusta `vPosicaoInicialDFC` e
-`vPosicaoFinalDFC` para o último dia de cada mês (hoje para o mês em aberto).
+`vPosicaoFinalDFC` para o último dia de cada mês, inclusive o mês em aberto.
 Isso reproduz o período exibido no DFC e preserva sua medida nativa de saldo
 inicial, sem substituí-la pelo saldo projetado ou pela data de vencimento.
 Todas as linhas são somadas e reconciliadas com o total do Qlik; os valores

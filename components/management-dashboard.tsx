@@ -511,7 +511,7 @@ function CompanyView({ cashSnapshot, metricValueForMonth, seriesFor, months, rev
   const previousMonth = previousClosedMonth(months, Number(months[0]?.key.slice(0, 4) || new Date().getFullYear()));
   const closedMonthLabel = `${previousMonth.label}.${previousMonth.key.slice(0, 4)}`;
   const { revenue: previousRevenue, expense: previousExpense, reportedResult, result } = companyMonthSnapshot(previousMonth.key, metricValueForMonth);
-  const { cash, availableCash, rentalCash, referenceDate, referenceMonth, synchronizedAt } = cashSnapshot;
+  const { cash, rentalCash, referenceDate, referenceMonth, synchronizedAt } = cashSnapshot;
   const cashPosition = referenceDate
     ? `posição em ${referenceDateFormatter.format(monthDate(referenceDate))}`
     : referenceMonth ? `referência ${competenceFormatter.format(monthDate(referenceMonth))}` : null;
@@ -540,12 +540,7 @@ function CompanyView({ cashSnapshot, metricValueForMonth, seriesFor, months, rev
           value={cash === null ? "—" : currency(cash)}
           helper={<span className="management-cash-helper">
             <span>{cashPosition || "Saldo atual"}</span>
-            {cash === null ? <span>aguardando a atualização do saldo de caixa</span>
-              : rentalCash === null || availableCash === null ? <span>aguardando o saldo da conta de aluguéis para calcular o disponível</span>
-              : <>
-                  <span>Disponível para uso: <strong>{currency(availableCash)}</strong></span>
-                  <span>{currency(cash)} total − {currency(rentalCash)} aluguéis</span>
-                </>}
+            <span>Conta de aluguéis: <strong>{rentalCash === null ? "aguardando atualização" : currency(rentalCash)}</strong></span>
             {cashUpdatedAt ? <span>Atualizado em {cashUpdatedAt}</span> : null}
           </span>}
           icon={<Landmark size={17} />}

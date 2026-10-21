@@ -25,11 +25,11 @@ test("o histórico mensal mantém o fechamento de agosto mesmo com setembro carr
 
 function cashRow(metric: string, month: string, value: number, sync = "2026-09-22T12:00:00Z"): ManagementIndicatorValue {
   const [year, monthNumber] = month.split("-").map(Number);
-  const rentalMonth = new Date(Date.UTC(year, monthNumber - 2, 1)).toISOString().slice(0, 10);
+  const rentalMonth = month;
   return {
     id: `${metric}-${month}`, area: "empresa", metric_key: metric, reference_month: month,
     dimension_key: "total", dimension_label: null, value, source: "Qlik", notes: null,
-    metadata: { synchronized_at: sync, selections: { reference_date: `${month.slice(0, 7)}-22`, saldo_conta_alugueis_competência: rentalMonth } }, updated_at: sync,
+    metadata: { synchronized_at: sync, selections: { reference_date: new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10), saldo_conta_alugueis_competência: rentalMonth } }, updated_at: sync,
   };
 }
 
@@ -38,7 +38,7 @@ test("o card de caixa usa setembro e a data da fonte mesmo com agosto fechado", 
     cashRow("valor_caixa", "2026-09-01", 990), cashRow("caixa_disponivel", "2026-08-01", 760)];
   assert.deepEqual(latestCompanyCashSnapshot(rows, "2026-09-01"), {
     cash: 990, availableCash: 290, rentalCash: 700, referenceMonth: "2026-09-01",
-    referenceDate: "2026-09-22", synchronizedAt: "2026-09-22T12:00:00Z",
+    referenceDate: "2026-09-30", synchronizedAt: "2026-09-22T12:00:00Z",
   });
   // A new database event changes the card without changing its reference month.
   rows[2] = cashRow("valor_caixa", "2026-09-01", 1100, "2026-09-22T12:30:00Z");
@@ -109,15 +109,15 @@ test("janeiro consulta o fechamento de dezembro do ano anterior", () => {
   assert.deepEqual([...readMonths], ["2025-12-01"]);
 });
 
-test("em janeiro não exibe disponível calculado com aluguel do próprio mês", () => {
+test("em janeiro não mistura aluguéis de dezembro com o caixa de janeiro", () => {
   const cash = cashRow("valor_caixa", "2026-01-01", 1000);
   const available = cashRow("caixa_disponivel", "2026-01-01", 500);
-  available.metadata.selections = { saldo_conta_alugueis_competência: "2026-01-01" };
+  available.metadata.selections = { saldo_conta_alugueis_competência: "2025-12-01" };
   const snapshot = latestCompanyCashSnapshot([cash, available], "2026-01-01");
   assert.equal(snapshot.cash, 1000);
   assert.equal(snapshot.availableCash, null);
   assert.equal(snapshot.rentalCash, null);
-  assert.equal(latestCompanyCashSnapshot([cash, available], "2026-02-01").availableCash, 500);
+  assert.equal(latestCompanyCashSnapshot([cash, available], "2026-02-01").availableCash, null);
 });
 
 test("não apresenta uma competência futura como saldo atual", () => {
