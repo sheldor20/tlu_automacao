@@ -1,5 +1,6 @@
 "use client";
 
+import { ChatNavigation } from "./chat-navigation";
 import { ClientsNavigation } from "./clients-navigation";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { getSupabase } from "@/lib/supabase";
@@ -322,6 +323,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <nav aria-label="Departamentos">
           <span className="nav-caption">Operação</span>
+          <ChatNavigation pathname={pathname} onNavigate={() => setMobileMenu(false)} />
           <Link
             href={todayLink.href}
             className={pathname.startsWith(todayLink.href) ? "nav-link active" : "nav-link"}
