@@ -58,7 +58,12 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   assert.equal(balance?.stateName, "<estado alternativo 01>");
   assert.equal(balance?.periodStrategy, "month-end-variables");
   assert.deepEqual(balance?.periodVariables, ["vPosicaoInicialDFC", "vPosicaoFinalDFC"]);
-  assert.equal(cash?.periodStrategy, "date-last-day");
+  assert.equal(cash?.periodStrategy, "month-end-variables");
+  assert.equal(cash?.objectId, QLIK_RENTAL_BALANCE_OBJECT);
+  assert.equal(cash?.aggregation, "sum-rows");
+  assert.deepEqual(cash?.periodVariables, balance?.periodVariables);
+  assert.equal(cash?.filters?.length, 1);
+  assert.equal(cash?.filters?.[0].label, "grupo Terra Lotus");
   const accounts = balance?.filters?.find((filter) => filter.fieldCandidates.includes("Conta Banco"));
   assert.deepEqual(accounts?.values, QLIK_RENTAL_BANK_ACCOUNTS);
   assert.equal(accounts?.requireAllValues, true);
@@ -72,7 +77,7 @@ test("configura os três recortes de aluguel e o grupo Terra Lotus", () => {
   assert.equal(expenseBreakdown?.objectId, "HgngyL");
 });
 
-test("calcula o caixa atual descontando o saldo de aluguéis do último mês fechado", () => {
+test("calcula o disponível com aluguéis da mesma competência do caixa total", () => {
   const snapshots = applyFinanceMetricOverrides(createSnapshots(), {
     saldo_conta_alugueis: { "2026-07-01": 999 },
   });
@@ -87,13 +92,13 @@ test("calcula o caixa atual descontando o saldo de aluguéis do último mês fec
   assert.equal(august?.value, revenue.value - expense.value);
   const availableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-08-01");
   const cash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-08-01")!;
-  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-07-01")!;
+  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-08-01")!;
   assert.equal(availableCash?.value, cash.value - rentalCash.value);
-  assert.equal(availableCash?.selections.cálculo, "valor em caixa atual - saldo da conta de aluguéis do último mês fechado");
-  assert.equal(availableCash?.selections.saldo_conta_alugueis_competência, "2026-07-01");
+  assert.equal(availableCash?.selections.cálculo, "valor total em caixa - saldo da conta de aluguéis da mesma competência");
+  assert.equal(availableCash?.selections.saldo_conta_alugueis_competência, "2026-08-01");
   const julyAvailableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-07-01")!;
   const julyCash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-07-01")!;
-  assert.equal(julyAvailableCash.value, julyCash.value - rentalCash.value);
+  assert.equal(julyAvailableCash.value, julyCash.value - overriddenRentalCash.value);
 });
 
 test("reconcilia todas as contas, rejeitando subtotal, duplicidade e filtro incorreto", () => {
@@ -132,4 +137,12 @@ test("exige a configuração protegida completa e sem contas duplicadas", () => 
   assert.deepEqual(rentalBankAccountsFromSettings(settings), QLIK_RENTAL_BANK_ACCOUNTS);
   assert.throws(() => financeAppsForSettings({}), /configure as nove contas/);
   assert.throws(() => financeAppsForSettings({rental_bank_accounts:Array(9).fill("100-1")}), /configure as nove contas/);
+});
+
+
+test("ajustes antigos não substituem o total bancário incluindo aluguéis", () => {
+  const cash = snapshot("valor_caixa", "2026-08-01", 800000);
+  const [result] = applyFinanceMetricOverrides([cash], { valor_caixa: { "2026-08-01": 52306.28 } });
+  assert.equal(result.value, 800000);
+  assert.equal(result.selections.ajuste_validado, undefined);
 });

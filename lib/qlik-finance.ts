@@ -19,7 +19,6 @@ const REVENUE_SHEET = "bd84bea2-0f3c-4dc6-9081-0eab08502ba3";
 const EXPENSE_SHEET = "e21bae6c-5983-4ea5-a12d-ddc68f7659d0";
 
 const GROUP_FIELDS = ["Grupo", "Grupo Empresa", "Grupo Econômico", "Grupo Economico", "Nome Grupo"] as const;
-const BALANCE_DATE_FIELDS = ["Data Saldo", "Data Movimento", "Data Lançamento", "Data Lancamento", "Data Caixa", "Data Vencimento"] as const;
 const REVENUE_DATE_FIELDS = ["Data Recebimento", "Data Baixa", "Data Movimento", "Data Pagamento", "Data Vencimento", "Data"] as const;
 const EXPENSE_DATE_FIELDS = ["Data Pagamento", "Data Baixa", "Data Movimento", "Data Vencimento", "Data Lançamento", "Data Lancamento", "Data"] as const;
 
@@ -53,21 +52,6 @@ const rentalExpenseFilter: QlikCloudMetricFilter = {
   fieldCandidates: ["Fluxo Financeiro", "Tipo Fluxo Financeiro", "Detalhamento Fluxo Financeiro", "Descrição Fluxo Financeiro", "Descricao Fluxo Financeiro", "Cód Tipo Fluxo Financeiro"],
   contains: ["aluguel", "aluguéis", "alugueis", "alguel"],
 };
-
-const balanceMetric = (
-  metricKey: string,
-  filters: ReadonlyArray<QlikCloudMetricFilter>,
-): QlikCloudMetricDefinition => ({
-  metricKey,
-  sheetId: BALANCE_SHEET,
-  targetLabel: "Saldo",
-  aliases: ["Saldo bancário", "Saldo bancario", "Saldo atual", "Saldo da conta"],
-  mode: "monthly",
-  periodStrategy: "date-last-day",
-  dateField: BALANCE_DATE_FIELDS[0],
-  dateFieldCandidates: BALANCE_DATE_FIELDS.slice(1),
-  filters,
-});
 
 const revenueMetric = (
   metricKey: string,
@@ -118,7 +102,18 @@ export const QLIK_FINANCE_APPS: ReadonlyArray<QlikCloudMetricApp> = [{
   entryUrl: `${QLIK_TENANT}/sense/app/${APP_ID}/sheet/${BALANCE_SHEET}/state/analysis/hubUrl/%2Fanalytics%2Fcatalog`,
   isolatedSession: true,
   metrics: [
-    balanceMetric("valor_caixa", [terraLotusFilter]),
+    {
+      metricKey: "valor_caixa",
+      sheetId: DFC_SHEET,
+      objectId: QLIK_RENTAL_BALANCE_OBJECT,
+      targetLabel: "Composição Saldo Inicial | Contas",
+      mode: "monthly",
+      periodStrategy: "month-end-variables",
+      periodVariables: ["vPosicaoInicialDFC", "vPosicaoFinalDFC"],
+      stateName: "<estado alternativo 01>",
+      aggregation: "sum-rows",
+      filters: [terraLotusFilter],
+    },
     revenueMetric("receita_alugueis_mes", [rentalGroupsFilter, rentalRevenueFilter]),
     revenueMetric("receita_consolidada", [terraLotusFilter]),
     expenseMetric("despesa_alugueis_mes", [rentalGroupsFilter, rentalExpenseFilter]),
@@ -198,7 +193,7 @@ export function applyFinanceMetricOverrides(
   return snapshots.map((snapshot) => {
     // This balance is now reconciled against the DFC account composition;
     // legacy manual totals must not replace the verified source amount.
-    if (snapshot.metricKey === "saldo_conta_alugueis") return snapshot;
+    if (["saldo_conta_alugueis", "valor_caixa"].includes(snapshot.metricKey)) return snapshot;
     const overrideValue = metricOverrides[snapshot.metricKey]?.[snapshot.referenceMonth];
     if (typeof overrideValue !== "number" || !Number.isFinite(overrideValue)) return snapshot;
     return {
@@ -253,10 +248,6 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
   }
 
   const enriched = normalizedSnapshots.slice();
-  const currentReferenceMonth = expectedMonths.at(-1);
-  const previousClosedReferenceMonth = expectedMonths.length > 1
-    ? expectedMonths.at(-2)
-    : currentReferenceMonth;
   for (const referenceMonth of expectedMonths) {
     const revenue = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "receita_consolidada" && snapshot.referenceMonth === referenceMonth);
     const expense = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "despesa_consolidada" && snapshot.referenceMonth === referenceMonth);
@@ -271,11 +262,8 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
     }
 
     const cash = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "valor_caixa" && snapshot.referenceMonth === referenceMonth);
-    const rentalReferenceMonth = referenceMonth === currentReferenceMonth
-      ? previousClosedReferenceMonth
-      : referenceMonth;
     const rentalCash = normalizedSnapshots.find((snapshot) => (
-      snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === rentalReferenceMonth
+      snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === referenceMonth
     ));
     if (cash && rentalCash) {
       enriched.push({
@@ -284,7 +272,7 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
         targetLabel: "Caixa disponível calculado",
         value: cash.value - rentalCash.value,
         selections: {
-          cálculo: "valor em caixa atual - saldo da conta de aluguéis do último mês fechado",
+          cálculo: "valor total em caixa - saldo da conta de aluguéis da mesma competência",
           competência: referenceMonth,
           valor_caixa: String(cash.value),
           saldo_conta_alugueis: String(rentalCash.value),
@@ -330,7 +318,7 @@ export function toFinanceIndicatorRows(snapshots: QlikMetricSnapshot[], synchron
     value: snapshot.value,
     source: QLIK_FINANCE_SOURCE,
     notes: snapshot.metricKey === "saldo_conta_alugueis"
-      ? "Soma das nove contas de aluguéis na composição do saldo inicial do DFC; período no fechamento do mês (ou hoje no mês em aberto), conferida com o total do Qlik."
+      ? "Soma das nove contas de aluguéis na composição do saldo inicial do DFC; período no último dia do mês, conferida com o total do Qlik."
       : snapshot.selections.ajuste_validado
       ? "Valor validado manualmente; o retorno original do Qlik permanece nos metadados."
       : snapshot.mode === "breakdown"
@@ -338,7 +326,7 @@ export function toFinanceIndicatorRows(snapshots: QlikMetricSnapshot[], synchron
       : snapshot.metricKey === "resultado_gerencial"
         ? "Calculado por receita mensal menos despesa mensal."
         : snapshot.metricKey === "caixa_disponivel"
-          ? "Calculado por valor em caixa atual menos saldo da conta de aluguéis do último mês fechado."
+          ? "Calculado por caixa total menos aluguéis na mesma data de fechamento."
         : "Valor mensal consultado no Qlik Cloud.",
     metadata: {
       connection: QLIK_FINANCE_CONNECTION_SLUG,

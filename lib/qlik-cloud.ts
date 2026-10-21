@@ -1339,7 +1339,6 @@ async function readQlikEngineMetrics(
           if (typeof handle !== "number") throw new Error(`Qlik Engine: variável “${name}” não encontrada.`);
           variables.push({ name, handle });
         }
-        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
         for (let month = 1; month <= throughMonth; month += 1) {
           await call(docHandle, "ClearAll", { qLockedAlso: true, qStateName: "$" });
           if (metric.stateName && metric.stateName !== "$") {
@@ -1348,7 +1347,7 @@ async function readQlikEngineMetrics(
           const selections = await applyMetricFilters(metric);
           const referenceMonth = `${year}-${String(month).padStart(2, "0")}-01`;
           const closing = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-          const referenceDate = closing > today ? today : closing;
+          const referenceDate = closing;
           const serial = (Date.parse(`${referenceDate}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000;
           for (const variable of variables) {
             await call(variable.handle, "SetNumValue", { qVal: serial });
