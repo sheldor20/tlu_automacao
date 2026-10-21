@@ -6,8 +6,10 @@ export function sumMetricSeries(values: Array<number | null>) {
 }
 
 export function latestCompanyCashSnapshot(values: ManagementIndicatorValue[], currentReferenceMonth: string) {
+  const [year, month] = currentReferenceMonth.split("-").map(Number);
+  const closedReferenceMonth = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10);
   const totals = values.filter((item) => item.area === "empresa" && item.dimension_key === "total"
-    && item.reference_month <= currentReferenceMonth);
+    && item.reference_month <= closedReferenceMonth);
   const cashMetric = totals
     .filter((item) => item.metric_key === "valor_caixa")
     .sort((a, b) => b.reference_month.localeCompare(a.reference_month) || b.updated_at.localeCompare(a.updated_at))[0];

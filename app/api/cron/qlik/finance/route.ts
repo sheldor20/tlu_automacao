@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
   applyFinanceMetricOverrides,
-  financeAppsForSettings,
+  financeCollectionPlans,
   rentalBankAccountsFromSettings,
   QLIK_FINANCE_APPS,
   QLIK_FINANCE_CONNECTION_SLUG,
@@ -10,7 +10,7 @@ import {
   toFinanceIndicatorRows,
   validateFinanceSnapshots,
 } from "@/lib/qlik-finance";
-import { saoPauloYearMonth } from "@/lib/qlik-legal-sales";
+import { lastClosedSaoPauloYearMonth, saoPauloYearMonth } from "@/lib/qlik-legal-sales";
 import { isRecoverableQlikBrowserError } from "@/lib/qlik-retry";
 
 export const runtime = "nodejs";
@@ -82,20 +82,22 @@ export async function GET(request: Request) {
   let phase = "load-browser-runtime";
   let recoveredBrowserSession = false;
   try {
-    const apps = financeAppsForSettings(connection.settings);
+    const plans = financeCollectionPlans(connection.settings);
     const rentalAccounts = rentalBankAccountsFromSettings(connection.settings);
-    const { scrapeQlikCloudMetrics } = await import("@/lib/qlik-cloud");
+    const { scrapeQlikCloudMetrics, createQlikCloudMetricSession } = await import("@/lib/qlik-cloud");
     let rawSnapshots: Awaited<ReturnType<typeof scrapeQlikCloudMetrics>> = [];
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       phase = `open-finance-app-and-read-indicators:attempt-${attempt}`;
       try {
-        rawSnapshots = await scrapeQlikCloudMetrics({
-          username,
-          password,
-          apps,
-          year,
-          throughMonth: month,
-        });
+        const session = await createQlikCloudMetricSession();
+        try {
+          rawSnapshots = [];
+          for (const plan of plans) {
+            rawSnapshots.push(...await session.scrape({ username, password, ...plan }));
+          }
+        } finally {
+          await session.close();
+        }
         recoveredBrowserSession = attempt === 2;
         break;
       } catch (error) {
@@ -153,9 +155,11 @@ export async function GET(request: Request) {
     ]);
 
     const currentReference = `${year}-${String(month).padStart(2, "0")}-01`;
-    const currentCash = snapshots.find((snapshot) => snapshot.metricKey === "valor_caixa" && snapshot.referenceMonth === currentReference);
-    const rentalBalanceUsed = snapshots.find((snapshot) => snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === currentReference);
-    const availableCash = snapshots.find((snapshot) => snapshot.metricKey === "caixa_disponivel" && snapshot.referenceMonth === currentReference);
+    const closed = lastClosedSaoPauloYearMonth();
+    const cashReference = `${closed.year}-${String(closed.month).padStart(2, "0")}-01`;
+    const currentCash = snapshots.find((snapshot) => snapshot.metricKey === "valor_caixa" && snapshot.referenceMonth === cashReference);
+    const rentalBalanceUsed = snapshots.find((snapshot) => snapshot.metricKey === "saldo_conta_alugueis" && snapshot.referenceMonth === cashReference);
+    const availableCash = snapshots.find((snapshot) => snapshot.metricKey === "caixa_disponivel" && snapshot.referenceMonth === cashReference);
     return NextResponse.json({
       ok: true,
       connection: QLIK_FINANCE_CONNECTION_SLUG,
@@ -166,9 +170,9 @@ export async function GET(request: Request) {
         .filter((snapshot) => snapshot.referenceMonth === currentReference && !snapshot.dimensionKey)
         .map((snapshot) => [snapshot.metricKey, snapshot.value])),
       cash_calculation: {
-        reference_month: currentReference,
+        reference_month: cashReference,
         valor_caixa: currentCash?.value ?? null,
-        saldo_conta_alugueis_reference_month: currentReference,
+        saldo_conta_alugueis_reference_month: cashReference,
         saldo_conta_alugueis: rentalBalanceUsed?.value ?? null,
         caixa_disponivel: availableCash?.value ?? null,
       },
@@ -202,7 +206,7 @@ export async function GET(request: Request) {
       connection: QLIK_FINANCE_CONNECTION_SLUG,
       run_id: run.id,
       phase,
-      error: message,
+      error: `Não foi possível atualizar os saldos financeiros. Os dados anteriores foram preservados. Referência do erro: ${run.id}.`,
     }, { status: 502 });
   }
 }

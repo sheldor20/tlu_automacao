@@ -350,7 +350,7 @@ indicador, percorre de janeiro ao mês vigente e grava:
 
 Os cards de receita e despesa da Empresa somam os meses do ano vigente. O
 resultado gerencial continua mensal e é calculado por receita menos despesa. A
-posição de caixa considera o último dia do mês, inclusive no mês em andamento.
+posição de caixa considera o último dia do último mês encerrado.
 O card **Valor total em caixa** mostra a soma das contas bancárias do grupo
 Terra Lotus na composição do DFC, incluindo as contas de aluguéis presentes
 nesse grupo. Abaixo exibe **Conta de aluguéis**, na mesma competência e
@@ -363,7 +363,8 @@ exatamente as nove contas da Caixa definidas em
 `data_connections.settings.rental_bank_accounts` (configuração protegida,
 fora do repositório público),
 no estado `<estado alternativo 01>`, e ajusta `vPosicaoInicialDFC` e
-`vPosicaoFinalDFC` para o último dia de cada mês, inclusive o mês em aberto.
+`vPosicaoFinalDFC` para o último dia de cada mês encerrado. O mês em andamento não é consultado
+para saldos bancários; em janeiro, a posição vem de dezembro do ano anterior.
 Isso reproduz o período exibido no DFC e preserva sua medida nativa de saldo
 inicial, sem substituí-la pelo saldo projetado ou pela data de vencimento.
 Todas as linhas são somadas e reconciliadas com o total do Qlik; os valores
