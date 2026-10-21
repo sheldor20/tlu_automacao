@@ -31,6 +31,7 @@ const createUserSchema = z.object({
   process_permission: processPermissionSchema,
   payment_permission: processPermissionSchema,
   contract_permission: processPermissionSchema,
+  performance_permission: z.object({ can_review: z.boolean().default(false) }).default({ can_review: false }),
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (!data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
@@ -49,6 +50,7 @@ const updateUserSchema = z.object({
   process_permission: processPermissionSchema,
   payment_permission: z.object({ can_manage: z.boolean() }).optional(),
   contract_permission: z.object({ can_manage: z.boolean() }).optional(),
+  performance_permission: z.object({ can_review: z.boolean() }).optional(),
   leader_user_id: leaderSchema,
 }).superRefine((data, context) => {
   if (data.active && !data.is_admin && data.departments.includes("indicadores") && data.indicator_areas.length === 0) {
@@ -197,7 +199,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, leader_user_id } = parsed.data;
+  const { full_name, email, password, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, performance_permission, leader_user_id } = parsed.data;
   const { data: created, error: createError } = await context.service.auth.admin.createUser({
     email,
     password,
@@ -231,6 +233,8 @@ export async function POST(request: Request) {
     await replacePaymentPermission(context.service, created.user.id, payment_permission.can_manage);
     const contractAccess = await context.service.from("profile_contract_permissions").upsert({ user_id: created.user.id, can_manage: contract_permission.can_manage });
     if (contractAccess.error) throw contractAccess.error;
+    const performanceAccess = await context.service.from("profile_performance_permissions").upsert({ user_id: created.user.id, can_review: performance_permission.can_review });
+    if (performanceAccess.error) throw performanceAccess.error;
     await replaceReportingLine(context.service, created.user.id, leader_user_id);
     if (!active) {
       await context.service.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
@@ -253,7 +257,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Revise os dados e as permissões informadas." }, { status: 400 });
   }
 
-  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, leader_user_id } = parsed.data;
+  const { user_id, full_name, active, is_admin, departments, indicator_areas, project_permission, process_permission, payment_permission, contract_permission, performance_permission, leader_user_id } = parsed.data;
   const { data: current, error: currentError } = await context.service
     .from("profiles")
     .select("is_admin,active")
@@ -300,6 +304,10 @@ export async function PATCH(request: Request) {
     if (contract_permission) {
       const contractAccess = await context.service.from("profile_contract_permissions").upsert({ user_id, can_manage: contract_permission.can_manage });
       if (contractAccess.error) throw contractAccess.error;
+    }
+    if (performance_permission) {
+      const performanceAccess = await context.service.from("profile_performance_permissions").upsert({ user_id, can_review: performance_permission.can_review });
+      if (performanceAccess.error) throw performanceAccess.error;
     }
     await replaceReportingLine(context.service, user_id, leader_user_id);
   } catch (error) {

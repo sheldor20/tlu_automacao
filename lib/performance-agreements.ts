@@ -33,6 +33,8 @@ export type PerformanceAgreement = PerformanceAgreementInput & {
   version: number;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
+  archived_by?: string | null;
   created_by: string;
   updated_by: string;
 };
@@ -49,3 +51,22 @@ export function performanceAgreementError(error: unknown): string {
   if (message.includes("row-level security") || message.includes("permission denied")) return "Você não tem mais acesso a este acordo. Recarregue a página.";
   return "Não foi possível salvar o acordo. Seus dados continuam no formulário; tente novamente.";
 }
+
+export type PerformanceAcknowledgment = {
+  id: string; agreement_id: string; agreement_version: number; signer_id: string;
+  signature_name: string; signed_at: string; statement: string; snapshot: PerformanceAgreement;
+};
+
+export type PerformanceParty = { user_id: string; full_name: string; email: string };
+export type PerformanceContract = {
+  id: string; agreement_id: string; agreement_version: number;
+  report_user_id: string; leader_user_id: string;
+  report_identity: PerformanceParty; leader_identity: PerformanceParty;
+  snapshot: PerformanceAgreement; terms: string; content_hash: string;
+  leader_signature_name: string; leader_signed_at: string;
+};
+export type PerformanceContractAcceptance = {
+  id: string; contract_id: string; signer_id: string; signature_name: string;
+  signed_at: string; content_hash: string; statement: string;
+  location_description: string; latitude: number | null; longitude: number | null;
+};

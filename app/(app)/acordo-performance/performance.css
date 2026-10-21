@@ -26,3 +26,18 @@
   .performance-fields > .form-span-2 { grid-column: 1 / -1; }
   .performance-cycles { max-height: 250px; overflow-y: auto; }
 }
+.performance-detail section.performance-goal { display: grid; gap: 12px; }
+.performance-detail section.performance-goal label { line-height: 1.6; }
+.performance-detail section.performance-goal input[type="checkbox"] { width: auto; margin-right: 8px; }
+.performance-detail details { border-top: 1px solid var(--border, #e5e7eb); padding-top: 12px; }
+.performance-detail details summary { cursor: pointer; }
+.performance-detail li { overflow-wrap: anywhere; }
+.performance-register { overflow-x: auto; padding: 16px; }
+.performance-register table { width: 100%; min-width: 900px; border-collapse: collapse; text-align: left; font-size: .85rem; }
+.performance-register caption { text-align: left; font-weight: 600; padding: 0 0 16px; }
+.performance-register th, .performance-register td { padding: 12px; border-bottom: 1px solid #dce3df; vertical-align: top; }
+.performance-register th { color: #59675f; }
+.performance-document-frame { width: 100%; min-height: 65vh; border: 1px solid #dce3df; margin-top: 16px; background: white; }
+.performance-sign-form, .performance-document-archive { display: grid; gap: 16px; }
+.performance-sign-form input[type="checkbox"] { width: auto; margin-right: 8px; }
+.performance-archive-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-top: 1px solid #dce3df; }
