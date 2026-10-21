@@ -29,6 +29,7 @@ import {
   Workflow,
   Wallet,
   Users,
+  UserRound,
   HandCoins,
   X,
 } from "lucide-react";
@@ -74,6 +75,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(Boolean(supabase));
   const [accessError, setAccessError] = useState("");
   const [email, setEmail] = useState("");
+  const [avatar, setAvatar] = useState("");
+  const [profileRevision, setProfileRevision] = useState(0);
   const [fullName, setFullName] = useState("Usuário");
   const [allowedDepartments, setAllowedDepartments] = useState<DepartmentSlug[]>([]);
   const [allowedIndicatorAreas, setAllowedIndicatorAreas] = useState<ManagementAreaSlug[]>([]);
@@ -159,6 +162,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [loading, pathname, supabase]);
 
+  useEffect(() => {
+    const refresh = () => setProfileRevision(value => value + 1);
+    window.addEventListener("personal-profile-changed", refresh);
+    return () => window.removeEventListener("personal-profile-changed", refresh);
+  }, []);
+
   function toggleCollapsed() {
     setCollapsed((current) => {
       const next = !current;
@@ -215,6 +224,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           : access.indicator_areas as ManagementAreaSlug[];
         const visibleLinks = departmentLinks.filter((link) => assigned.includes(link.slug));
 
+        const avatarPath = user.user_metadata.avatar_path;
+        if (typeof avatarPath === "string" && avatarPath.startsWith(`${user.id}/`)) {
+          const signed = await supabase.storage.from("profile-avatars").createSignedUrl(avatarPath, 3600);
+          if (!active) return;
+          setAvatar(signed.data?.signedUrl || "");
+        } else setAvatar("");
         setEmail(profileResult.data.email || user.email || "Usuário");
         setFullName(profileResult.data.full_name || profileResult.data.email?.split("@")[0] || "Usuário");
         setAllowedDepartments(assigned);
@@ -243,7 +258,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [pathname, router, supabase]);
+  }, [pathname, router, supabase, profileRevision]);
 
   const visibleDepartmentLinks = departmentLinks.filter((link) => link.slug !== "indicadores" && allowedDepartments.includes(link.slug));
   const showIndicators = allowedDepartments.includes("indicadores") && allowedIndicatorAreas.length > 0;
@@ -435,8 +450,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         ) : null}
 
+        <nav aria-label="Conta pessoal">
+          <Link href="/perfil" className={pathname === "/perfil" ? "nav-link active" : "nav-link"} title="Meu perfil" onClick={() => setMobileMenu(false)}><UserRound size={19} /><span>Meu perfil</span></Link>
+        </nav>
         <div className="side-user">
-          <div className="user-avatar">{initials(fullName)}</div>
+          <Link href="/perfil" className="user-avatar" aria-label="Editar meu perfil">{avatar ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} /> : initials(fullName)}</Link>
           <div className="user-meta">
             <strong>{fullName}</strong>
             <span>{email}</span>
