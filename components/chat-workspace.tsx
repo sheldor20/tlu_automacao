@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, MessageCircle, Plus, Send, Settings, Users } from "lucide-react";
+import { ArrowLeft, ListPlus, MessageCircle, Plus, Send, Settings, Users } from "lucide-react";
 import { getSupabase, friendlyError } from "@/lib/supabase";
-import { initials } from "@/lib/format";
-import type { UserProfile } from "@/lib/types";
+import { initials, todayIso } from "@/lib/format";
+import type { ProjectCategory, UserProfile } from "@/lib/types";
 import { Button, Dialog, Field } from "./ui";
 import { UserMultiSelect } from "./user-multi-select";
+import { emptyProjectTaskDraft, projectTaskRpcPayload } from "@/lib/project-tasks";
 import "./chat.css";
 
 type Person = Pick<UserProfile, "user_id" | "full_name" | "email">;
@@ -17,6 +18,14 @@ const date = (value: string) => new Date(value).toLocaleDateString("pt-BR");
 
 export function ChatWorkspace() {
   const supabase = getSupabase();
+  const [taskMessage, setTaskMessage] = useState<Message | null>(null);
+  const [taskForm, setTaskForm] = useState(() => emptyProjectTaskDraft("", todayIso()));
+  const [taskCategory, setTaskCategory] = useState<ProjectCategory>("operational");
+  const [taskCategories, setTaskCategories] = useState<ProjectCategory[]>([]);
+  const [taskSaving, setTaskSaving] = useState(false);
+  const taskSavingRef = useRef(false);
+  const [taskError, setTaskError] = useState("");
+  const [taskNotice, setTaskNotice] = useState("");
   const [me, setMe] = useState("");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -51,14 +60,20 @@ export function ChatWorkspace() {
     let active = true;
     async function refresh() {
       try {
-        const [{ data: auth }, people, inbox] = await Promise.all([
+        const [{ data: auth }, people, inbox, operational, governance] = await Promise.all([
           supabase!.auth.getUser(),
           supabase!.from("profiles").select("user_id,full_name,email,active,is_admin").eq("active", true).is("deleted_at", null).order("full_name"),
           supabase!.rpc("chat_inbox"),
+          supabase!.rpc("has_project_category_access", { p_category: "operational" }),
+          supabase!.rpc("has_project_category_access", { p_category: "governance" }),
         ]);
         if (!active) return;
         if (people.error) throw people.error;
         if (inbox.error) throw inbox.error;
+        setTaskCategories([
+          ...(operational.data === true ? ["operational" as const] : []),
+          ...(governance.data === true ? ["governance" as const] : []),
+        ]);
         setMe(auth.user?.id || ""); setUsers(people.data || []); setConversations(inbox.data || []); setError("");
       } catch (err) { if (active) setError(friendlyError(err)); }
       finally { if (active) setLoading(false); }
@@ -139,9 +154,33 @@ export function ChatWorkspace() {
     } catch (err) { setError(friendlyError(err)); }
     finally { setSending(false); }
   }
+  function openTask(message: Message) {
+    setTaskForm({ ...emptyProjectTaskDraft("", todayIso(), "a_fazer", [me]),
+      title: message.body.replace(/\s+/g, " ").trim().slice(0, 220),
+      description: message.body,
+    });
+    setTaskCategory(taskCategories[0] || "operational");
+    setTaskError(""); setTaskNotice(""); setTaskMessage(message);
+  }
+  async function saveMessageTask(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !taskMessage || taskSavingRef.current) return;
+    if (taskForm.title.trim().length < 2 || !taskForm.assignee_user_ids.length) {
+      setTaskError("Informe um título com pelo menos 2 caracteres e selecione um responsável."); return;
+    }
+    taskSavingRef.current = true; setTaskSaving(true); setTaskError("");
+    try {
+      const { error } = await supabase.rpc("save_project_task", projectTaskRpcPayload(taskForm, taskCategory));
+      if (error) throw error;
+      setTaskMessage(null);
+      setTaskNotice("Tarefa criada. Você pode acompanhá-la em " + (taskCategory === "governance" ? "Governança." : "Projetos."));
+    } catch (err) { setTaskError(friendlyError(err)); }
+    finally { taskSavingRef.current = false; setTaskSaving(false); }
+  }
   const filtered = conversations.filter(c => `${title(c)} ${c.last_body || ""}`.toLocaleLowerCase("pt-BR").includes(query.toLocaleLowerCase("pt-BR")));
   return <div className="chat-page">
     <header className="chat-page-heading"><div><span className="eyebrow">TERRA LOTUS</span><h1>Mensagens</h1><p>Converse e conecte sua equipe.</p></div><div className="chat-actions"><Button variant="secondary" onClick={() => open("group")}><Users size={17} />Criar grupo</Button><Button onClick={() => open("direct")}><Plus size={17} />Nova conversa</Button></div></header>
+    {taskNotice ? <div className="chat-task-notice" role="status">{taskNotice}</div> : null}
     {error ? <div className="chat-error" role="alert">{error}</div> : null}
     <div className={`chat-layout${selected ? " has-selection" : ""}`}>
       <aside className="chat-list" aria-label="Conversas"><div className="chat-search"><input aria-label="Buscar conversas" placeholder="Buscar conversas…" value={query} onChange={e => setQuery(e.target.value)} /></div>
@@ -153,12 +192,23 @@ export function ChatWorkspace() {
           <div className="chat-history" role="log" aria-label="Histórico de mensagens" aria-live="polite">{messageLoading ? <p className="chat-empty">Carregando mensagens…</p> : <>{hasMore ? <Button variant="secondary" onClick={() => setLimit(n => n + 100)}>Carregar mensagens anteriores</Button> : null}{!messages.length ? <p className="chat-empty">Envie a primeira mensagem.</p> : messages.map((message, index) => {
             const author = current.participants.find(p => p.user_id === message.sender_id) || users.find(p => p.user_id === message.sender_id);
             const mine = message.sender_id === me;
-            return <div key={message.id}>{index === 0 || date(messages[index - 1].created_at) !== date(message.created_at) ? <div className="chat-date">{date(message.created_at)}</div> : null}<article className={`chat-bubble${mine ? " mine" : ""}`}>{current.is_group && !mine ? <strong>{author?.full_name || author?.email || "Ex-participante"}</strong> : null}<p>{message.body}</p><time dateTime={message.created_at}>{time(message.created_at)}</time></article></div>;
+            return <div key={message.id}>{index === 0 || date(messages[index - 1].created_at) !== date(message.created_at) ? <div className="chat-date">{date(message.created_at)}</div> : null}<article className={`chat-bubble${mine ? " mine" : ""}`}>{current.is_group && !mine ? <strong>{author?.full_name || author?.email || "Ex-participante"}</strong> : null}<p>{message.body}</p>{taskCategories.length ? <button type="button" className="chat-create-task" onClick={() => openTask(message)}><ListPlus size={14} />Criar tarefa</button> : null}<time dateTime={message.created_at}>{time(message.created_at)}</time></article></div>;
           })}</>}<div ref={bottom} /></div>
           <form className="chat-composer" onSubmit={send}><textarea aria-label="Sua mensagem" placeholder="Escreva uma mensagem…" maxLength={4000} rows={2} value={drafts[current.id] || ""} disabled={sending} onChange={e => setDrafts(previous => ({ ...previous, [current.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} /><Button type="submit" loading={sending} disabled={!drafts[current.id]?.trim()} aria-label="Enviar mensagem"><Send size={19} /><span>Enviar</span></Button><small>Enter para enviar · Shift + Enter para nova linha</small></form>
         </>}
       </section>
     </div>
+    <Dialog open={taskMessage !== null} onClose={() => { if (!taskSavingRef.current) setTaskMessage(null); }} title="Criar tarefa da mensagem" description="Revise o texto e escolha responsáveis e prazo. A tarefa será criada como atividade avulsa; os responsáveis poderão ler a descrição.">
+      <form className="chat-dialog-form" onSubmit={saveMessageTask}>
+        {taskCategories.length > 1 ? <Field label="Área"><select value={taskCategory} disabled={taskSaving} onChange={e => setTaskCategory(e.target.value as ProjectCategory)}>{taskCategories.map(category => <option key={category} value={category}>{category === "governance" ? "Governança" : "Projetos"}</option>)}</select></Field> : null}
+        <Field label="Título"><input required minLength={2} maxLength={220} value={taskForm.title} disabled={taskSaving} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })} /></Field>
+        <Field label="Descrição"><textarea maxLength={4000} rows={5} value={taskForm.description} disabled={taskSaving} onChange={e => setTaskForm({ ...taskForm, description: e.target.value })} /></Field>
+        <Field label="Responsáveis"><UserMultiSelect users={users} value={taskForm.assignee_user_ids} disabled={taskSaving} onChange={assignee_user_ids => setTaskForm({ ...taskForm, assignee_user_ids })} /></Field>
+        <Field label="Data de entrega"><input type="date" required value={taskForm.due_date} disabled={taskSaving} onChange={e => setTaskForm({ ...taskForm, due_date: e.target.value })} /></Field>
+        {taskError ? <p className="chat-error" role="alert">{taskError}</p> : null}
+        <div className="chat-actions"><Button type="button" variant="secondary" disabled={taskSaving} onClick={() => setTaskMessage(null)}>Cancelar</Button><Button type="submit" loading={taskSaving} disabled={!taskForm.assignee_user_ids.length || !taskCategories.includes(taskCategory)}>Criar tarefa</Button></div>
+      </form>
+    </Dialog>
     <Dialog open={dialog !== null} onClose={() => { if (!saving) setDialog(null); }} title={dialog === "group" ? "Criar grupo" : dialog === "manage" ? "Gerenciar participantes" : "Nova conversa"} description={dialog === "manage" ? "Pessoas adicionadas podem ler o histórico. Remover uma pessoa encerra seu acesso." : "Escolha usuários cadastrados e ativos da Terra Lotus."}>
       <form className="chat-dialog-form" onSubmit={saveConversation}>{dialog === "group" ? <Field label="Nome do grupo"><input value={groupName} onChange={e => setGroupName(e.target.value)} minLength={2} maxLength={100} required placeholder="Ex.: Equipe de projetos" /></Field> : null}
         {dialog === "direct" ? <Field label="Pessoa"><select value={members[0] || ""} onChange={e => setMembers([e.target.value])} required><option value="">Selecione uma pessoa</option>{users.filter(u => u.user_id !== me).map(u => <option key={u.user_id} value={u.user_id}>{u.full_name || u.email}</option>)}</select></Field> : <div><p>Participantes</p><UserMultiSelect users={users.filter(u => u.user_id !== me)} value={members} onChange={setMembers} disabled={saving} /><small>Você participa automaticamente. Até 50 pessoas por grupo.</small></div>}

@@ -64,6 +64,19 @@ test("chat: privacidade, grupos, envio, leitura e usuários inativos", async t =
     });
     await as(ids[2],async()=>assert.equal((await db.query("select * from public.chat_messages where conversation_id=$1",[group])).rows.length,1));
   });
+  await t.test("mensagem vira atividade avulsa sem alterar o chat", async () => {
+    await as(ids[2], async () => {
+      const message = (await db.query<{body:string}>("select body from public.chat_messages where conversation_id=$1", [group])).rows[0];
+      const result = await db.query<{id:string}>(`select public.save_project_task(
+        null, null, 'operational', $1, $2, current_date, 'a_fazer', $3::uuid[], '[]'::jsonb
+      ) id`, [message.body, message.body, [ids[2]]]);
+      const task = (await db.query<{description:string;project_id:string|null;status:string}>("select description,project_id,status from public.project_tasks where id=$1", [result.rows[0].id])).rows[0];
+      assert.equal(task.description, message.body);
+      assert.equal(task.project_id, null);
+      assert.equal(task.status, "a_fazer");
+      assert.equal((await db.query("select * from public.chat_messages where conversation_id=$1", [group])).rows.length, 1);
+    });
+  });
   await t.test("perfil inativo ou excluído perde acesso e não pode ser convidado",async()=>{
     await db.query("update public.profiles set active=false where user_id=$1",[ids[1]]);
     await as(ids[1],async()=>{
