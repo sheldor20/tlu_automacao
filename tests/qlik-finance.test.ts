@@ -5,19 +5,20 @@ import {
   QLIK_FINANCE_APPS,
   QLIK_FINANCE_BASE_METRIC_KEYS,
   financeAppsForSettings,
+  financeCollectionPlans,
   rentalBankAccountsFromSettings,
   QLIK_RENTAL_BALANCE_OBJECT,
   toFinanceIndicatorRows,
   validateFinanceSnapshots,
   validateRentalBalanceSnapshot,
 } from "../lib/qlik-finance.ts";
+import { legalSalesReferenceMonths, legalSalesClosedReferenceMonths } from "../lib/qlik-legal-sales.ts";
 import type { QlikMetricSnapshot } from "../lib/qlik-cloud.ts";
 
 const QLIK_RENTAL_BANK_ACCOUNTS = ["100-1A", "200-1", "300-2", "300-2A", "100-1", "400-4", "500-0", "400-4A", "600-7"];
 const settings = { rental_bank_accounts: QLIK_RENTAL_BANK_ACCOUNTS };
 
 const now = new Date("2026-08-13T12:00:00-03:00");
-const months = Array.from({ length: 8 }, (_, index) => `2026-${String(index + 1).padStart(2, "0")}-01`);
 
 function snapshot(metricKey: string, referenceMonth: string, value: number, dimension?: string): QlikMetricSnapshot {
   return {
@@ -39,11 +40,12 @@ function snapshot(metricKey: string, referenceMonth: string, value: number, dime
   };
 }
 
-function createSnapshots() {
+function createSnapshots(date = now) {
   const definitions = QLIK_FINANCE_APPS.flatMap((app) => app.metrics);
+  const balanceMonths = legalSalesClosedReferenceMonths(date);
   return definitions.flatMap((definition, metricIndex) => {
-    if (definition.mode === "breakdown") return [snapshot(definition.metricKey, "2026-07-01", 100 + metricIndex, `conta-${metricIndex}`)];
-    return months.map((month, monthIndex) => snapshot(definition.metricKey, month, metricIndex * 1_000 + monthIndex));
+    if (definition.mode === "breakdown") return [snapshot(definition.metricKey, balanceMonths.at(-1)!, 100 + metricIndex, `conta-${metricIndex}`)];
+    return (definition.periodStrategy === "month-end-variables" ? balanceMonths : legalSalesReferenceMonths(date)).map((month, monthIndex) => snapshot(definition.metricKey, month, metricIndex * 1_000 + monthIndex));
   });
 }
 
@@ -85,17 +87,17 @@ test("calcula o disponível com aluguéis da mesma competência do caixa total",
   assert.equal(overriddenRentalCash.value, 6);
   assert.equal(overriddenRentalCash.selections.valor_qlik_original, undefined);
   const result = validateFinanceSnapshots(snapshots, now, QLIK_RENTAL_BANK_ACCOUNTS);
-  assert.equal(result.length, 66);
+  assert.equal(result.length, 63);
   const august = result.find((item) => item.metricKey === "resultado_gerencial" && item.referenceMonth === "2026-08-01");
   const revenue = result.find((item) => item.metricKey === "receita_consolidada" && item.referenceMonth === "2026-08-01")!;
   const expense = result.find((item) => item.metricKey === "despesa_consolidada" && item.referenceMonth === "2026-08-01")!;
   assert.equal(august?.value, revenue.value - expense.value);
-  const availableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-08-01");
-  const cash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-08-01")!;
-  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-08-01")!;
+  const availableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-07-01");
+  const cash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-07-01")!;
+  const rentalCash = result.find((item) => item.metricKey === "saldo_conta_alugueis" && item.referenceMonth === "2026-07-01")!;
   assert.equal(availableCash?.value, cash.value - rentalCash.value);
   assert.equal(availableCash?.selections.cálculo, "valor total em caixa - saldo da conta de aluguéis da mesma competência");
-  assert.equal(availableCash?.selections.saldo_conta_alugueis_competência, "2026-08-01");
+  assert.equal(availableCash?.selections.saldo_conta_alugueis_competência, "2026-07-01");
   const julyAvailableCash = result.find((item) => item.metricKey === "caixa_disponivel" && item.referenceMonth === "2026-07-01")!;
   const julyCash = result.find((item) => item.metricKey === "valor_caixa" && item.referenceMonth === "2026-07-01")!;
   assert.equal(julyAvailableCash.value, julyCash.value - overriddenRentalCash.value);
@@ -145,4 +147,25 @@ test("ajustes antigos não substituem o total bancário incluindo aluguéis", ()
   const [result] = applyFinanceMetricOverrides([cash], { valor_caixa: { "2026-08-01": 52306.28 } });
   assert.equal(result.value, 800000);
   assert.equal(result.selections.ajuste_validado, undefined);
+});
+
+
+test("posição bancária consulta somente fechamentos sem perder os movimentos atuais", () => {
+  for (const [date, expected] of [["2026-10-21T19:00:00Z", [2026, 9]], ["2026-01-10T12:00:00Z", [2025, 12]]] as const) {
+    const [movements, balances] = financeCollectionPlans(settings, new Date(date));
+    assert.deepEqual([balances.year, balances.throughMonth], expected);
+    assert.equal(movements.year, 2026);
+    assert.ok(movements.apps.flatMap((app) => app.metrics).every((metric) => metric.periodStrategy !== "month-end-variables"));
+    assert.deepEqual(balances.apps.flatMap((app) => app.metrics.map((metric) => metric.metricKey)), ["saldo_conta_alugueis", "valor_caixa"]);
+  }
+});
+
+
+test("valida janeiro com dezembro anterior e rejeita fechamento bancário incompleto", () => {
+  const date = new Date("2026-01-10T12:00:00Z");
+  const rows = createSnapshots(date);
+  const result = validateFinanceSnapshots(rows, date, QLIK_RENTAL_BANK_ACCOUNTS);
+  assert.ok(result.some((row) => row.metricKey === "caixa_disponivel" && row.referenceMonth === "2025-12-01"));
+  assert.ok(!result.some((row) => row.metricKey === "valor_caixa" && row.referenceMonth === "2026-01-01"));
+  assert.throws(() => validateFinanceSnapshots(rows.filter((row) => row.metricKey !== "valor_caixa" || row.referenceMonth !== "2025-12-01"), date, QLIK_RENTAL_BANK_ACCOUNTS), /valor_caixa.*2025-12-01/);
 });

@@ -4,7 +4,7 @@ import type {
   QlikCloudMetricFilter,
   QlikMetricSnapshot,
 } from "@/lib/qlik-cloud";
-import { legalSalesReferenceMonths, saoPauloYearMonth } from "./qlik-legal-sales.ts";
+import { legalSalesReferenceMonths, legalSalesClosedReferenceMonths, lastClosedSaoPauloYearMonth, saoPauloYearMonth } from "./qlik-legal-sales.ts";
 
 export const QLIK_FINANCE_CONNECTION_SLUG = "qlik-finance";
 export const QLIK_FINANCE_SOURCE = "Qlik Cloud - Financeiro";
@@ -166,6 +166,21 @@ export function financeAppsForSettings(settings: unknown): QlikCloudMetricApp[] 
   }));
 }
 
+/** Movements include the open month; bank positions only use completed months. */
+export function financeCollectionPlans(settings: unknown, now = new Date()) {
+  const apps = financeAppsForSettings(settings);
+  const current = saoPauloYearMonth(now);
+  const closed = lastClosedSaoPauloYearMonth(now);
+  return [
+    { year: current.year, throughMonth: current.month, apps: apps.map((app) => ({
+      ...app, metrics: app.metrics.filter((metric) => metric.periodStrategy !== "month-end-variables"),
+    })).filter((app) => app.metrics.length) },
+    { year: closed.year, throughMonth: closed.month, apps: apps.map((app) => ({
+      ...app, metrics: app.metrics.filter((metric) => metric.periodStrategy === "month-end-variables"),
+    })).filter((app) => app.metrics.length) },
+  ];
+}
+
 export const QLIK_FINANCE_BASE_METRIC_KEYS = QLIK_FINANCE_APPS.flatMap((app) => app.metrics.map((metric) => metric.metricKey));
 export const QLIK_FINANCE_COMPANY_METRIC_KEYS = [
   "receita_consolidada",
@@ -230,7 +245,7 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
     .filter((metric) => metric.mode === "monthly")
     .map((metric) => metric.metricKey);
   for (const metricKey of monthlyKeys) {
-    for (const referenceMonth of expectedMonths) {
+    for (const referenceMonth of (["valor_caixa", "saldo_conta_alugueis"].includes(metricKey) ? legalSalesClosedReferenceMonths(now) : expectedMonths)) {
       if (!seen.has(`${metricKey}:${referenceMonth}:total`)) {
         throw new Error(`Qlik Financeiro: “${metricKey}” não retornou ${referenceMonth}. Nenhum dado foi gravado.`);
       }
@@ -248,7 +263,7 @@ export function validateFinanceSnapshots(snapshots: QlikMetricSnapshot[], now = 
   }
 
   const enriched = normalizedSnapshots.slice();
-  for (const referenceMonth of expectedMonths) {
+  for (const referenceMonth of new Set([...expectedMonths, ...legalSalesClosedReferenceMonths(now)])) {
     const revenue = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "receita_consolidada" && snapshot.referenceMonth === referenceMonth);
     const expense = normalizedSnapshots.find((snapshot) => snapshot.metricKey === "despesa_consolidada" && snapshot.referenceMonth === referenceMonth);
     if (revenue && expense) {
