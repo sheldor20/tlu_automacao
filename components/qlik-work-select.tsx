@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { resolveQlikCodes } from "@/lib/construction-finance";
+import { OperationsError, useOperations } from "./operations-common";
 import { Field } from "./ui";
 import { paymentFetch } from "@/lib/payment-client";
 import type { QlikCompany, QlikWork } from "@/lib/operational-finance";
@@ -92,5 +94,75 @@ export function QlikWorkSelect({
         </select>
       </Field>
     </>
+  );
+}
+
+// Construction variant: users supply codes; names are shown only for verification.
+// The existing company/work selects remain unchanged for other product flows.
+export function QlikWorkCodes({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string, keys: string[], valid: boolean) => void;
+}) {
+  const o = useOperations<{ companies: QlikCompany[]; works: QlikWork[] }>(
+    `/api/operations/catalog?construction_id=${id}`,
+  );
+  const resolved = resolveQlikCodes(value, o.data?.works || []);
+  return (
+    <div className="form-span-2">
+      <Field
+        label="Código(s) Qlik"
+        hint="Digite empresa|unidade, um por linha. Um número simples só é aceito se identificar uma única unidade. Preserve os zeros à esquerda."
+      >
+        <textarea
+          name="qlik_codes"
+          rows={3}
+          value={value}
+          placeholder="empresa|unidade"
+          disabled={o.loading}
+          onChange={(e) => {
+            const next = resolveQlikCodes(e.target.value, o.data?.works || []);
+            onChange(
+              e.target.value,
+              next.keys,
+              !!o.data && !o.error && !next.errors.length,
+            );
+          }}
+        />
+      </Field>
+      <OperationsError message={o.error} />
+      {o.loading ? <p role="status">Carregando catálogo Qlik…</p> : null}
+      {!o.loading && !o.error ? (
+        <div aria-live="polite">
+          {resolved.errors.map((error) => (
+            <p className="ops-notice" key={error}>
+              {error}
+            </p>
+          ))}
+          {resolved.keys.map((key) => {
+            const work = o.data!.works.find((w) => w.key === key)!;
+            const company = o.data!.companies.find(
+              (c) => c.id === work.company_id,
+            );
+            return (
+              <p key={key}>
+                <strong>{key}</strong> · {work.name} ·{" "}
+                {company?.name || work.company_id}
+              </p>
+            );
+          })}
+          {!value.trim() ? (
+            <p>
+              Sem vínculo. Preencha o código para consultar os gastos desta
+              obra.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
