@@ -49,6 +49,7 @@ test("indicadores e resumo usam o mesmo gasto Qlik publicado, respeitando RLS e 
   ].map(e => ({...e, active:true, cash_date: new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}));
   for (const e of entries) await db.query("insert into operational_cash_entries(id,company_id,work_key,kind,amount,source_category,cash_date) values($1,'test',$2,$3,$4,$5,$6)", [e.id,e.work_key,e.kind,e.amount,e.source_category,e.cash_date]);
   await migrate(db, "20261022160000_construction_qlik_indicators.sql");
+  await migrate(db, "20261022183000_construction_expense_lookup.sql");
   assert.equal((await db.query<Record<string, unknown>>("select realized_total from construction_progress_summary where id=$1", [work])).rows[0].realized_total, null);
   await db.exec("insert into operational_publications(kind) values('paid'),('payable')");
   const sources = {paid:{at:new Date().toISOString(),status:"success"},payable:{at:new Date().toISOString(),status:"success"}};
