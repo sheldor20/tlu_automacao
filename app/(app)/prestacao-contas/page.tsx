@@ -13,6 +13,8 @@ type Dispatch = {
   year: number;
   month: number;
   status: "historical" | "processing" | "sent_beta" | "failed" | "uncertain";
+  pdf_path: string | null;
+  excel_path: string | null;
   error: string | null;
   sent_at: string | null;
 };
@@ -119,6 +121,34 @@ export default function AccountabilityPage() {
     } finally {
       setBusy(false);
       await load();
+    }
+  }
+  async function download(dispatch: Dispatch, artifact: "pdf" | "excel") {
+    if (!supabase) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const response = await fetch(`/api/accountability?dispatchId=${dispatch.id}&artifact=${artifact}`, {
+        headers: { Authorization: `Bearer ${session.session?.access_token || ""}` },
+        cache: "no-store",
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      const file = await fetch(body.url);
+      if (!file.ok) throw new Error("Não foi possível baixar o arquivo.");
+      const url = URL.createObjectURL(await file.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${artifact === "pdf" ? "Book" : "Recebiveis"}-${dispatch.enterprise_id}-${year}-${String(dispatch.month).padStart(2, "0")}.${artifact === "pdf" ? "pdf" : "xlsx"}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível baixar o arquivo.");
+    } finally {
+      setBusy(false);
     }
   }
   async function closePeriod(month: number) {
@@ -338,6 +368,18 @@ export default function AccountabilityPage() {
                               ) : null}
                             </>
                           )}
+                          {dispatch?.pdf_path ? (
+                            <button className="accountability-send" disabled={busy}
+                              onClick={() => void download(dispatch, "pdf")}>
+                              <FileText size={13} /> Baixar book
+                            </button>
+                          ) : null}
+                          {dispatch?.excel_path ? (
+                            <button className="accountability-send" disabled={busy}
+                              onClick={() => void download(dispatch, "excel")}>
+                              <FileText size={13} /> Baixar Excel
+                            </button>
+                          ) : null}
                         </td>
                       );
                     })}
