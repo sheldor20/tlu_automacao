@@ -32,7 +32,30 @@ export async function GET(request: Request) {
       { error: "Acesso não autorizado." },
       { status: 403 },
     );
-  const year = Number(new URL(request.url).searchParams.get("year"));
+  const params = new URL(request.url).searchParams;
+  if (params.has("artifact")) {
+    const artifact = z.object({
+      dispatchId: z.string().uuid(),
+      artifact: z.enum(["pdf", "excel"]),
+    }).safeParse(Object.fromEntries(params));
+    if (!artifact.success)
+      return NextResponse.json({ error: "Arquivo inválido." }, { status: 400 });
+    const record = await ctx.client.from("accountability_dispatches")
+      .select("id,pdf_path,excel_path")
+      .eq("id", artifact.data.dispatchId).maybeSingle();
+    const path = artifact.data.artifact === "pdf"
+      ? record.data?.pdf_path : record.data?.excel_path;
+    if (record.error || !path || !path.startsWith(`${artifact.data.dispatchId}/`))
+      return NextResponse.json({ error: "Arquivo indisponível." }, { status: 404 });
+    const signed = await ctx.client.storage.from("accountability-books")
+      .createSignedUrl(path, 120);
+    if (signed.error || !signed.data?.signedUrl)
+      return NextResponse.json({ error: "Não foi possível abrir o arquivo." }, { status: 503 });
+    return NextResponse.json({ url: signed.data.signedUrl }, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  }
+  const year = Number(params.get("year"));
   if (!Number.isInteger(year) || year < 2026 || year > 2100)
     return NextResponse.json({ error: "Ano inválido." }, { status: 400 });
   const [enterprises, dispatches, periods, admin] = await Promise.all([
