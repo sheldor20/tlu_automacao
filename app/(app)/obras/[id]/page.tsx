@@ -8,9 +8,9 @@ import { ConstructionProgressMap } from "@/components/construction-progress-map"
 import { SupplyEditor } from "@/components/supply-editor";
 import { generateConstructionReport } from "@/lib/construction-report";
 import { remainingSupplyQuantity, supplyWithRemainingQuantity } from "@/lib/construction-supplies";
-import { currency, dateBr, monthBr, todayIso } from "@/lib/format";
+import { currency, dateBr, todayIso } from "@/lib/format";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
-import type { Construction, ConstructionBudget, ConstructionEvidence, ConstructionInspection, ConstructionSourceFile, ConstructionSupply, ConstructionTemplate, MacroStage, MicroStage, UserProfile } from "@/lib/types";
+import type { Construction, ConstructionEvidence, ConstructionInspection, ConstructionSourceFile, ConstructionSupply, ConstructionTemplate, MacroStage, MicroStage, UserProfile } from "@/lib/types";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -71,7 +71,6 @@ export default function WorkDetailPage() {
   const [construction, setConstruction] = useState<Construction | null>(null);
   const [macros, setMacros] = useState<MacroStage[]>([]);
   const [evidences, setEvidences] = useState<ConstructionEvidence[]>([]);
-  const [budgets, setBudgets] = useState<ConstructionBudget[]>([]);
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
   const [inspections, setInspections] = useState<ConstructionInspection[]>([]);
   const [sourceFiles, setSourceFiles] = useState<ConstructionSourceFile[]>([]);
@@ -111,12 +110,11 @@ export default function WorkDetailPage() {
   const loadData = useCallback(async () => {
     if (!supabase || !params.id) return;
     setLoading(true);
-    const [workResult, macroResult, microResult, evidenceResult, budgetResult, updateResult, inspectionResult, sourceFileResult, templateResult, userResult, publicLinkResult] = await Promise.all([
+    const [workResult, macroResult, microResult, evidenceResult, updateResult, inspectionResult, sourceFileResult, templateResult, userResult, publicLinkResult] = await Promise.all([
       supabase.from("construction_progress_summary").select("*").eq("id", params.id).single(),
       supabase.from("construction_macro_stage_progress").select("*").eq("construction_id", params.id).order("position"),
       supabase.from("construction_micro_stages").select("*").order("position"),
       supabase.from("construction_evidence").select("*").eq("construction_id", params.id).order("captured_at", { ascending: false }),
-      supabase.from("construction_budgets").select("*").eq("construction_id", params.id).order("reference_month", { ascending: false }),
       supabase.from("construction_update_feed").select("*").eq("construction_id", params.id).order("created_at", { ascending: false }).limit(20),
       supabase.from("construction_inspections").select("*").eq("construction_id", params.id).order("inspected_at", { ascending: false }).order("created_at", { ascending: false }).limit(20),
       supabase.rpc("construction_source_files", { p_construction_id: params.id }),
@@ -153,7 +151,6 @@ export default function WorkDetailPage() {
     setMacros(assembled);
     setWeights(Object.fromEntries(assembled.map((item) => [item.id, String(item.weight_percent)])));
     setEvidences(signedEvidence);
-    setBudgets((budgetResult.data || []) as ConstructionBudget[]);
     setUpdates(((updateResult.data || []) as UpdateRow[]).map((item) => ({ ...item, evidence_url: item.evidence_id ? urlByEvidence.get(item.evidence_id) : undefined })));
     setInspections((inspectionResult.data || []) as ConstructionInspection[]);
     setSourceFiles(signedSourceFiles);
@@ -604,11 +601,6 @@ export default function WorkDetailPage() {
             <span>{currency(Number(item.total_value || 0), true)}</span>
           </div>)}
         </div> : <EmptyState icon={<Package size={22} />} title="Nenhum insumo cadastrado" description="Vincule os insumos às microetapas para controlar estoque e consumo durante as atualizações de avanço." />}
-      </section> : null}
-
-      {activeTab === "financeiro" ? <section className="content-card detail-tab-panel">
-        <div className="content-card-head"><div><h2>Competências manuais · legado</h2><p>Histórico preservado, somente leitura. Não somado aos gastos Qlik.</p></div></div>
-        {budgets.length ? <div className="budget-list budget-list-full">{budgets.map((budget) => <div key={budget.id}><div><strong>{monthBr(budget.reference_month)}</strong><span>{budget.notes || "Sem observações"}</span></div><div><small>Previsto manual: {currency(budget.planned_amount, true)}</small><strong>Realizado manual: {currency(budget.realized_amount, true)}</strong></div></div>)}</div> : <EmptyState icon={<WalletCards size={22} />} title="Sem histórico manual" description="Os gastos mensais são consultados na tabela Qlik acima." />}
       </section> : null}
 
       {activeTab === "arquivos" ? <div className="detail-files-grid detail-tab-panel">
