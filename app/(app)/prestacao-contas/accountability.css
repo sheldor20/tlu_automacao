@@ -1,0 +1,241 @@
+.accountability-page {
+  max-width: 1600px;
+  margin: auto;
+  padding: 32px;
+  color: #263c30;
+}
+.accountability-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.accountability-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: #748576;
+}
+.accountability-header h1 {
+  font-size: 30px;
+  margin: 8px 0;
+}
+.accountability-header p {
+  color: #748576;
+}
+.accountability-beta {
+  font-size: 11px;
+  background: #e8d9ad;
+  color: #5c4b24;
+  padding: 5px 9px;
+  border-radius: 5px;
+  vertical-align: middle;
+}
+.accountability-banner {
+  display: flex;
+  gap: 14px;
+  padding: 20px;
+  background: #eaf0e8;
+  border: 1px solid #d5e0d1;
+  border-radius: 12px;
+  margin: 25px 0;
+}
+.accountability-banner p,
+.accountability-integration p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 5px 0 0;
+}
+.accountability-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.accountability-stats > div {
+  background: #fff;
+  border: 1px solid #e2e6df;
+  padding: 20px;
+  flex: 1;
+  border-radius: 10px;
+}
+.accountability-stats strong {
+  font-size: 29px;
+  display: block;
+}
+.accountability-stats span {
+  font-size: 12px;
+  color: #748576;
+}
+.accountability-integration {
+  background: #faf6e9;
+  border: 1px solid #e9dfbd;
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+.accountability-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 24px 0;
+}
+.accountability-toolbar label {
+  font-size: 12px;
+  display: grid;
+  gap: 7px;
+}
+.accountability-toolbar input {
+  padding: 10px 12px;
+  border: 1px solid #d8dfd5;
+  border-radius: 7px;
+  min-width: 280px;
+  background: white;
+}
+.accountability-toolbar > span {
+  font-size: 12px;
+  color: #748576;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.accountability-table-wrap {
+  overflow: auto;
+  border: 1px solid #dde4d9;
+  border-radius: 12px;
+  background: white;
+}
+.accountability-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.accountability-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.accountability-table th,
+.accountability-table td {
+  padding: 17px 12px;
+  border-bottom: 1px solid #e9ede6;
+  min-width: 118px;
+  text-align: center;
+  vertical-align: middle;
+}
+.accountability-table thead th {
+  background: #f0f3ed;
+  color: #5b6c5c;
+  font-weight: 600;
+}
+.accountability-table thead th small {
+  display: block;
+  color: #81917e;
+  font-size: 10px;
+  margin-top: 5px;
+}
+.accountability-table thead button {
+  font-size: 10px;
+  border: 0;
+  background: none;
+  color: #657449;
+  cursor: pointer;
+}
+.accountability-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 295px;
+  text-align: left;
+  background: #fff;
+  box-shadow: 2px 0 3px #00000005;
+}
+.accountability-table thead th:first-child {
+  z-index: 2;
+  background: #f0f3ed;
+}
+.accountability-table tbody th {
+  font-weight: 500;
+}
+.accountability-table tbody th svg {
+  vertical-align: middle;
+  margin-right: 8px;
+  color: #8c9d88;
+}
+.accountability-history,
+.accountability-sent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #70866d;
+}
+.accountability-sent {
+  color: #296a44;
+  background: #edf6ec;
+  padding: 7px;
+  border-radius: 5px;
+}
+.accountability-send {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid #dbe5d5;
+  border-radius: 6px;
+  background: #f4f7f0;
+  padding: 7px 4px;
+  font-size: 10px;
+  color: #45623d;
+  cursor: pointer;
+}
+.accountability-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.accountability-muted {
+  color: #b6beb2;
+}
+.accountability-note {
+  font-size: 12px;
+  color: #748576;
+  line-height: 1.6;
+  margin-top: 18px;
+}
+.accountability-error {
+  color: #ad4235;
+  font-size: 12px;
+}
+.accountability-table small.accountability-error {
+  display: block;
+  margin-top: 5px;
+}
+@media (max-width: 700px) {
+  .accountability-page {
+    padding: 18px;
+  }
+  .accountability-header {
+    align-items: flex-start;
+  }
+  .accountability-header h1 {
+    font-size: 23px;
+  }
+  .accountability-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .accountability-stats {
+    gap: 8px;
+  }
+  .accountability-stats > div {
+    padding: 12px;
+  }
+  .accountability-table th:first-child {
+    min-width: 220px;
+  }
+}
