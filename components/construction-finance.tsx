@@ -106,7 +106,7 @@ export function ConstructionFinance({
         <div>
           <h2>Gastos mensais · Qlik</h2>
           <p className="ops-subtle">
-            Somente leitura. Pagamentos por mês de pagamento e contas a pagar
+            Somente tag Reformas ou agrupador 9.118 e seus subcódigos. Pagamentos por mês de pagamento e contas a pagar
             por mês de vencimento.
           </p>
         </div>

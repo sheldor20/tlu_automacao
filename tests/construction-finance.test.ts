@@ -26,6 +26,7 @@ const entry = (
   work_key,
   cash_date,
   active: true,
+  source_category: "Reformas",
 });
 const works = [
   {
@@ -194,3 +195,10 @@ test("CSV preserva fonte, período, ausência, publicação e impede fórmulas d
   ])
     assert.ok(csv.includes(text), text);
 });
+
+ test("filtra Reformas ou agrupador 9.118 sem duplicar nem incluir códigos vizinhos", () => {
+  const categories = ["Reformas", "REFORMAS", "9.118", "9.118.01 - Material", "9.118 · Reformas", "9.1180", "19.118", "9.119", null, "", "Outros", "Sem reformas gerais"];
+  const result = monthlyConstructionExpenses(categories.map((source_category, i) => ({ ...entry(String(i)), source_category })), ["test|001"], sources);
+  assert.equal(result.paid, 60);
+  assert.equal(result.rows[0].paidCount, 6);
+ });
