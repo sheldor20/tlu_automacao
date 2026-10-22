@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   outputFileTracingIncludes: {
+    "/api/accountability*": [
+      "./node_modules/@sparticuz/chromium/**/*",
+      "./node_modules/puppeteer-core/**/*",
+      "./node_modules/@puppeteer/browsers/**/*",
+    ],
     "/api/operations/cash/bank-balance": [
       "./node_modules/@sparticuz/chromium/**/*",
       "./node_modules/puppeteer-core/**/*",

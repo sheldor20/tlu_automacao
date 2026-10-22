@@ -1,13 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
-import { canGenerateBook, monthlyEmail } from "@/lib/accountability/policy";
-import {
-  createAccountabilityBook,
-  exportConfigured,
-} from "@/lib/accountability/book";
+import { canGenerateBook } from "@/lib/accountability/policy";
+import { exportConfigured } from "@/lib/accountability/book";
+import { sendAccountabilityDispatch } from "@/lib/accountability/send";
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 async function context(request: Request) {
   const token = request.headers
     .get("authorization")
@@ -161,75 +159,20 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   const id = job.data.id;
-  let sending = false;
-  try {
-    const { pdf, excel, reference } = await createAccountabilityBook(
+  after(async () => {
+    await sendAccountabilityDispatch(
+      service,
+      id,
       enterprise.data.qlik_value,
       year,
       month,
-    );
-    const email = monthlyEmail(enterprise.data.name, reference);
-    sending = true;
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": `accountability-beta-${id}`,
+      async () => {
+        const permission = await ctx.client.rpc("has_department_access", {
+          p_department_slug: "prestacao-contas",
+        });
+        return !permission.error && permission.data === true;
       },
-      body: JSON.stringify({
-        from: process.env.RESEND_FROM_EMAIL,
-        ...email,
-        attachments: [
-          {
-            filename: `Prestacao-contas-${year}-${String(month).padStart(2, "0")}.pdf`,
-            content: pdf.toString("base64"),
-          },
-          {
-            filename: `Detalhamento-a-receber-${year}-${String(month).padStart(2, "0")}.xlsx`,
-            content: excel.toString("base64"),
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) {
-      sending = false;
-      throw new Error("O provedor de e-mail recusou o envio.");
-    }
-    const result = await response.json();
-    if (typeof result.id !== "string")
-      throw new Error("Não foi possível confirmar o envio.");
-    const saved = await service
-      .from("accountability_dispatches")
-      .update({
-        status: "sent_beta",
-        provider_id: result.id,
-        sent_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-    if (saved.error)
-      throw new Error(
-        "O provedor aceitou o envio, mas o registro precisa ser reconciliado.",
-      );
-    return NextResponse.json({ sent: true });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Falha na geração do book.";
-    await service
-      .from("accountability_dispatches")
-      .update({
-        status: sending ? "uncertain" : "failed",
-        error: message.slice(0, 500),
-      })
-      .eq("id", id);
-    return NextResponse.json(
-      {
-        error: sending
-          ? "Envio pendente de conferência. Não tente reenviar antes da verificação."
-          : message,
-      },
-      { status: 502 },
     );
-  }
+  });
+  return NextResponse.json({ processing: true }, { status: 202 });
 }

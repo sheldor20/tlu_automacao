@@ -1613,7 +1613,7 @@ async function readQlikEngineMetrics(
 
 let chromiumPathPromise: Promise<string> | undefined;
 
-async function launchBrowser(protocolTimeout = 180_000): Promise<Browser> {
+async function launchBrowser(protocolTimeout = 180_000, enforceWebSecurity = false): Promise<Browser> {
   chromium.setGraphicsMode = false;
   // Concurrent indicator jobs must not unpack the same executable twice.
   if (!process.env.CHROME_EXECUTABLE_PATH && !chromiumPathPromise) {
@@ -1626,7 +1626,7 @@ async function launchBrowser(protocolTimeout = 180_000): Promise<Browser> {
   if (!executablePath) throw new Error("Chromium: o executável não foi localizado no ambiente do servidor.");
   return puppeteer.launch({
     protocolTimeout,
-    args: await puppeteer.defaultArgs({ args: [...chromium.args, "--lang=pt-BR"], headless: "shell" }),
+    args: await puppeteer.defaultArgs({ args: [...chromium.args.filter(arg => !enforceWebSecurity || arg !== "--disable-web-security"), "--lang=pt-BR"], headless: "shell" }),
     defaultViewport: {
       deviceScaleFactor: 1,
       hasTouch: false,
@@ -1770,10 +1770,10 @@ export async function scrapeQlikCloudMetrics(options: QlikCloudMetricOptions, se
 }
 
 /** Isolated, read-only connection used by the operational Qlik catalog. */
-export async function withQlikOperationalPage<T>(entryUrl: string, read: (page: Page, socketUrl: string, appId: string) => Promise<T>): Promise<T> {
+export async function withQlikOperationalPage<T>(entryUrl: string, read: (page: Page, socketUrl: string, appId: string) => Promise<T>, options?: { enforceWebSecurity?: boolean }): Promise<T> {
   const username = process.env.QLIK_USERNAME, password = process.env.QLIK_PASSWORD;
   if (!username || !password || username.includes("[SENSITIVE]") || password.includes("[SENSITIVE]")) throw new Error("Credenciais do Qlik indisponíveis.");
-  const browser = await launchBrowser(750_000);
+  const browser = await launchBrowser(750_000, options?.enforceWebSecurity);
   let observer: Awaited<ReturnType<typeof observeNativeQlikSocket>> | undefined;
   try {
     const page = await browser.newPage();

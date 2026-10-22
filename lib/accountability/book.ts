@@ -1,7 +1,8 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import JSZip from "jszip";
 import { z } from "zod";
-import { QLIK_APP_ID, QLIK_SHEETS } from "./policy";
+import { QLIK_SHEETS } from "./policy";
+import { exportAccountabilitySource } from "./qlik";
 
 const resultSchema = z.object({
   enterprise: z.string(),
@@ -20,10 +21,7 @@ const resultSchema = z.object({
   receivablesXlsx: z.string().min(8).max(24_000_000),
 });
 export function exportConfigured() {
-  return Boolean(
-    process.env.QLIK_ACCOUNTABILITY_EXPORT_URL &&
-    process.env.QLIK_ACCOUNTABILITY_EXPORT_TOKEN,
-  );
+  return Boolean(process.env.QLIK_ACCOUNTABILITY_ENABLED === "true" && process.env.QLIK_USERNAME && process.env.QLIK_PASSWORD);
 }
 function wrap(text: string, width: number) {
   const lines: string[] = [];
@@ -46,43 +44,12 @@ export async function createAccountabilityBook(
     throw new Error(
       "Exportação automática do Qlik ainda não configurada. Nenhum e-mail foi enviado.",
     );
-  const url = new URL(process.env.QLIK_ACCOUNTABILITY_EXPORT_URL!);
-  if (
-    url.protocol !== "https:" ||
-    !(
-      url.hostname === "qlikcloud.com" ||
-      url.hostname.endsWith(".qlikcloud.com")
-    )
-  )
-    throw new Error("O exportador deve usar um endereço HTTPS do Qlik Cloud.");
-  const response = await fetch(url, {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.QLIK_ACCOUNTABILITY_EXPORT_TOKEN}`,
-    },
-    body: JSON.stringify({
-      appId: QLIK_APP_ID,
-      enterprise,
-      year,
-      month,
-      sheetIds: QLIK_SHEETS,
-      expandConsolidated: "all",
-      detailedRevenue: "complete-table-pdf",
-      receivables: "xlsx",
-      preserveSourceData: true,
-    }),
-    signal: AbortSignal.timeout(180_000),
-  });
-  if (!response.ok)
-    throw new Error(
-      "Não foi possível exportar os relatórios originais do Qlik.",
-    );
-  const raw = await response.text();
-  if (raw.length > 35_000_000)
-    throw new Error("Os anexos excedem o tamanho permitido.");
-  const result = resultSchema.parse(JSON.parse(raw));
+  const sourceExport = await exportAccountabilitySource(
+    enterprise,
+    year,
+    month,
+  );
+  const result = resultSchema.parse(sourceExport);
   if (
     result.enterprise !== enterprise ||
     result.year !== year ||
@@ -178,5 +145,5 @@ export async function createAccountabilityBook(
   const pdf = Buffer.from(await book.save());
   if (pdf.length + excel.length > 18_000_000)
     throw new Error("O book e o Excel excedem o limite de envio por e-mail.");
-  return { pdf, excel, reference };
+  return { pdf, excel, reference, sourceRevision: sourceExport.revision };
 }
