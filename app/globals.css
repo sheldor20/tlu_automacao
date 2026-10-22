@@ -2131,3 +2131,23 @@ fieldset.payment-section { padding-top: 18px; }
 .contract-data dd { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .contract-history { display: grid; gap: 16px; padding-left: 24px; }
 .contract-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Measurement workspace: large touch targets and persistent tools. */
+.construction-plan-scroll.is-panning { touch-action: none; cursor: grab; }
+.construction-plan-canvas-toolbar { flex-wrap: wrap; }
+.construction-plan-canvas-toolbar button { min-width: 44px; min-height: 44px; }
+.plan-touch-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; background: white; }
+.plan-touch-tools button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; display: inline-flex; align-items: center; gap: 6px; }
+.plan-touch-tools span { font-size: 12px; flex: 1; }
+.plan-canvas-footer { padding: 8px; background: white; max-height: 40dvh; overflow: auto; }
+.plan-canvas-footer .construction-plan-actions { flex-wrap: wrap; }
+.construction-plan-canvas-shell.is-expanded { position: fixed; inset: 0; z-index: 10000; border-radius: 0; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.construction-plan-canvas-shell.is-expanded .construction-plan-scroll { flex: 1; min-height: 0; max-height: none; }
+.construction-plan-canvas-shell.is-expanded .plan-canvas-footer { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .construction-plan-scroll { max-height: 55dvh; }
+  .construction-plan-canvas-shell.is-compact .construction-plan-page { min-width: 100%; }
+  .plan-canvas-footer .construction-plan-actions > div:first-child { width: 100%; }
+  .plan-canvas-footer button { min-height: 44px; }
+  .plan-canvas-footer .plan-progress-submit { grid-template-columns: 1fr; }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import type { PlanMeasurementType, PlanPath, PlanPoint } from "@/lib/construction-plan-geometry";
-import { LoaderCircle, Minus, MousePointer2, Plus } from "lucide-react";
+import { LoaderCircle, Minus, MousePointer2, Plus, Maximize2, Minimize2, Check, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type ConstructionPlanOverlay = {
@@ -32,6 +32,7 @@ export function ConstructionPlanCanvas({
   onAspectRatio,
   resetKey = 0,
   compact = false,
+  actions,
 }: {
   documentUrl: string;
   pageNumber?: number;
@@ -44,12 +45,28 @@ export function ConstructionPlanCanvas({
   onAspectRatio?: (aspectRatio: number) => void;
   resetKey?: number;
   compact?: boolean;
+  actions?: React.ReactNode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
   const drawingRef = useRef(false);
+  const pathRef = useRef<PlanPath>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [navigating, setNavigating] = useState(false);
+  const activeMode = navigating ? "navigate" : mode;
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ distance: number; zoom: number } | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setExpanded(false); };
+    window.addEventListener("keydown", escape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", escape); };
+  }, [expanded]);
   const [aspectRatio, setAspectRatio] = useState(0.65);
-  const draftIdentity = `${resetKey}:${mode}`;
+  const draftIdentity = `${documentUrl}:${resetKey}:${activeMode}`;
   const [draft, setDraft] = useState<{ identity: string; path: PlanPath }>({ identity: draftIdentity, path: [] });
   const draftPath = draft.identity === draftIdentity ? draft.path : [];
   const [loading, setLoading] = useState(true);
@@ -108,48 +125,85 @@ export function ConstructionPlanCanvas({
     };
   }
 
+  function finishDraft() {
+    const path = draft.identity === draftIdentity ? pathRef.current : [];
+    if (path.length < (mode === "area" ? 3 : 2)) return;
+    onFinishPath?.(path);
+    pathRef.current = [];
+    setDraft({ identity: draftIdentity, path: [] });
+  }
+
   function pointerDown(event: React.PointerEvent<SVGSVGElement>) {
-    if (mode === "navigate") return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    if (activeMode === "navigate" || loading || error || !event.isPrimary) return;
     const point = coordinate(event);
-    if (mode === "calibrate") {
-      onCalibrationPoint?.(point);
+    if (activeMode === "calibrate") { onCalibrationPoint?.(point); return; }
+    // Touch users place precise vertices; mouse and pen retain freehand drawing.
+    if (event.pointerType === "touch") {
+      const previous = draft.identity === draftIdentity ? pathRef.current : [];
+      pathRef.current = [...previous, point];
+      setDraft({ identity: draftIdentity, path: pathRef.current });
       return;
     }
+    event.currentTarget.setPointerCapture(event.pointerId);
     drawingRef.current = true;
-    setDraft({ identity: draftIdentity, path: [point] });
+    pathRef.current = [point];
+    setDraft({ identity: draftIdentity, path: pathRef.current });
   }
 
   function pointerMove(event: React.PointerEvent<SVGSVGElement>) {
-    if (!drawingRef.current || mode === "navigate" || mode === "calibrate") return;
+    if (!drawingRef.current || activeMode === "navigate" || activeMode === "calibrate") return;
     const point = coordinate(event);
-    setDraft((current) => {
-      const currentPath = current.identity === draftIdentity ? current.path : [];
-      const previous = currentPath[currentPath.length - 1];
-      return previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.0015
-        ? { identity: draftIdentity, path: currentPath }
-        : { identity: draftIdentity, path: [...currentPath, point] };
-    });
+    const previous = pathRef.current.at(-1);
+    if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 0.0015) {
+      pathRef.current = [...pathRef.current, point];
+      setDraft({ identity: draftIdentity, path: pathRef.current });
+    }
   }
 
   function pointerUp(event: React.PointerEvent<SVGSVGElement>) {
     if (!drawingRef.current) return;
     drawingRef.current = false;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    setDraft((current) => {
-      const currentPath = current.identity === draftIdentity ? current.path : [];
-      const minimum = mode === "area" ? 3 : 2;
-      if (currentPath.length >= minimum) onFinishPath?.(currentPath);
-      return { identity: draftIdentity, path: [] };
-    });
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    finishDraft();
   }
 
-  return <div className={`construction-plan-canvas-shell ${compact ? "is-compact" : ""}`}>
+  function navigationDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (activeMode !== "navigate") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+    }
+  }
+
+  function navigationMove(event: React.PointerEvent<HTMLDivElement>) {
+    const previous = pointers.current.get(event.pointerId);
+    if (!previous || activeMode !== "navigate") return;
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.current.size === 2 && gesture.current) {
+      const [a, b] = [...pointers.current.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (gesture.current.distance > 0) setZoom(Math.max(1, Math.min(8, gesture.current.zoom * distance / gesture.current.distance)));
+    } else {
+      event.currentTarget.scrollLeft -= event.clientX - previous.x;
+      event.currentTarget.scrollTop -= event.clientY - previous.y;
+    }
+  }
+
+  function navigationUp(event: React.PointerEvent<HTMLDivElement>) {
+    pointers.current.delete(event.pointerId);
+    gesture.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  return <div className={`construction-plan-canvas-shell ${compact ? "is-compact" : ""} ${expanded ? "is-expanded" : ""}`}>
     <div className="construction-plan-canvas-toolbar">
-      <span><MousePointer2 size={15} /> {mode === "navigate" ? "Navegue pela planta" : mode === "calibrate" ? "Marque dois pontos" : mode === "area" ? "Contorne a área" : "Trace sobre o trecho"}</span>
-      <div><button type="button" onClick={() => setZoom((value) => Math.max(0.75, value - 0.25))} aria-label="Diminuir zoom"><Minus size={15} /></button><strong>{Math.round(zoom * 100)}%</strong><button type="button" onClick={() => setZoom((value) => Math.min(3, value + 0.25))} aria-label="Aumentar zoom"><Plus size={15} /></button></div>
+      <span><MousePointer2 size={15} /> {activeMode === "navigate" ? "Arraste para navegar; use dois dedos para ampliar" : mode === "navigate" ? "Navegue pela planta" : mode === "calibrate" ? "Marque dois pontos" : mode === "area" ? "Contorne a área" : "Trace sobre o trecho"}</span>
+      <div><button type="button" onClick={() => setZoom((value) => Math.max(1, value - 0.5))} aria-label="Diminuir zoom"><Minus size={15} /></button><strong>{Math.round(zoom * 100)}%</strong><button type="button" onClick={() => setZoom((value) => Math.min(8, value + 0.5))} aria-label="Aumentar zoom"><Plus size={15} /></button><button type="button" aria-label="Ajustar planta à tela" onClick={() => { setZoom(1); scrollRef.current?.scrollTo(0, 0); }}>1:1</button><button type="button" aria-label={expanded ? "Sair da tela cheia" : "Abrir em tela cheia"} onClick={() => setExpanded(!expanded)}>{expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button></div>
     </div>
-    <div className="construction-plan-scroll">
+    {mode !== "navigate" ? <div className="plan-touch-tools"><button type="button" aria-pressed={navigating} onClick={() => { if (draftPath.length) return; setNavigating(!navigating); }}>{navigating ? "Marcar trecho" : "Mover / zoom"}</button><span>{draftPath.length ? `${draftPath.length} pontos · conclua antes de mover` : "Para marcar no celular, toque nos pontos do trecho"}</span>{draftPath.length ? <><button type="button" aria-label="Desfazer ponto" onClick={() => { pathRef.current = pathRef.current.slice(0, -1); setDraft({ identity: draftIdentity, path: pathRef.current }); }}><Undo2 size={18} /></button><button type="button" disabled={draftPath.length < (mode === "area" ? 3 : 2)} onClick={finishDraft}><Check size={18} /> Concluir</button></> : null}</div> : null}
+    <div ref={scrollRef} className={`construction-plan-scroll ${activeMode === "navigate" ? "is-panning" : ""}`} onPointerDown={navigationDown} onPointerMove={navigationMove} onPointerUp={navigationUp} onPointerCancel={navigationUp}>
       <div className="construction-plan-page" style={{ width: `${zoom * 100}%`, aspectRatio: `${1 / aspectRatio}` }}>
         <canvas ref={canvasRef} />
         <svg
@@ -158,8 +212,8 @@ export function ConstructionPlanCanvas({
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerUp}
-          onPointerCancel={pointerUp}
-          className={mode === "navigate" ? "is-navigation" : "is-drawing"}
+          onPointerCancel={() => { drawingRef.current = false; pathRef.current = []; setDraft({ identity: draftIdentity, path: [] }); }}
+          className={activeMode === "navigate" ? "is-navigation" : "is-drawing"}
           aria-label="Área de medição da planta"
         >
           {overlays.map((overlay) => <g key={overlay.id} opacity={overlay.active ? 1 : 0.58}>
@@ -174,5 +228,6 @@ export function ConstructionPlanCanvas({
         {error ? <div className="construction-plan-error">Não foi possível renderizar o PDF.<small>{error}</small></div> : null}
       </div>
     </div>
+    {actions ? <div className="plan-canvas-footer">{actions}</div> : null}
   </div>;
 }

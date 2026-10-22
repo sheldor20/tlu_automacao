@@ -41,7 +41,7 @@ import {
   Undo2,
   Upload,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
 
 type DrawingMode = "navigate" | "calibrate" | "linear" | "area";
 
@@ -83,6 +83,9 @@ export function ConstructionProgressMap({
   const [plannedDraft, setPlannedDraft] = useState<PlanPath[]>([]);
   const [progressPaths, setProgressPaths] = useState<PlanPath[]>([]);
   const [progressNote, setProgressNote] = useState("");
+  const draftKey = selectedLayerId ? `plan-draft-v1:${construction.id}:${selectedLayerId}` : null;
+  const draftReady = useRef(false);
+  const [draftStatus, setDraftStatus] = useState("");
   const [progressPhoto, setProgressPhoto] = useState<File | null>(null);
 
   const load = useCallback(async () => {
@@ -138,15 +141,32 @@ export function ConstructionProgressMap({
   }, [documentLayers]);
 
   useEffect(() => {
+    draftReady.current = false;
     const timeout = window.setTimeout(() => {
-      setPlannedDraft(selectedLayer ? (selectedLayer.planned_paths || []).map((path) => path.map((point) => ({ ...point }))) : []);
-      setProgressPaths([]);
+      let recovered: { planned: PlanPath[]; progress: PlanPath[]; note: string; revision: string } | null = null;
+      try {
+        const raw = selectedLayer ? localStorage.getItem(`plan-draft-v1:${construction.id}:${selectedLayer.id}`) : null;
+        const value = raw ? JSON.parse(raw) : null;
+        const validPaths = (paths: unknown): paths is PlanPath[] => Array.isArray(paths) && paths.every((path) => Array.isArray(path) && path.every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y)));
+        if (value && value.revision === selectedLayer?.updated_at && validPaths(value.planned) && validPaths(value.progress) && typeof value.note === "string") recovered = value;
+      } catch { /* Storage may be unavailable in private browsing. */ }
+      setDraftStatus(recovered ? "Rascunho recuperado neste aparelho. Foto precisa ser selecionada novamente." : "");
+      setPlannedDraft(recovered ? recovered.planned : selectedLayer ? (selectedLayer.planned_paths || []).map((path) => path.map((point) => ({ ...point }))) : []);
+      setProgressPaths(recovered?.progress || []);
       setProgressPhoto(null);
-      setProgressNote("");
+      setProgressNote(recovered?.note || "");
+      draftReady.current = true;
       setMode("navigate");
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [selectedLayer]);
+  }, [selectedLayer, construction.id]);
+
+  useEffect(() => {
+    if (!draftReady.current || !draftKey || !selectedLayer) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ revision: selectedLayer.updated_at, planned: plannedDraft, progress: progressPaths, note: progressNote }));
+    } catch { /* The explicit save remains available if local storage is full. */ }
+  }, [draftKey, selectedLayer, plannedDraft, progressPaths, progressNote]);
 
   const metersPerCoordinate = useMemo(() => calibrationMetersPerCoordinate(calibrationPoints, Number(calibrationDistance || 0)), [calibrationDistance, calibrationPoints]);
   const overlays = useMemo<ConstructionPlanOverlay[]>(() => documentLayers.map((layer) => ({
@@ -284,6 +304,8 @@ export function ConstructionProgressMap({
     }).eq("id", selectedLayer.id);
     setSaving(false);
     if (result.error) return setMessage({ text: friendlyError(result.error), error: true });
+    if (draftKey) { try { localStorage.removeItem(draftKey); } catch {} }
+    draftReady.current = false;
     setMode("navigate");
     setMessage({ text: `Base salva: ${planMeasure(previewMetrics.plannedMeasure, selectedLayer.unit)} previstos.` });
     await load();
@@ -349,6 +371,8 @@ export function ConstructionProgressMap({
     }
     setSaving(false);
     setMode("navigate");
+    if (draftKey) { try { localStorage.removeItem(draftKey); } catch {} }
+    draftReady.current = false;
     setProgressPaths([]);
     setProgressNote("");
     setProgressPhoto(null);
@@ -382,11 +406,12 @@ export function ConstructionProgressMap({
         <div className="construction-plan-context"><div><StatusPill tone={selectedDocument.status === "approved" ? "success" : "warning"}>{selectedDocument.status === "approved" ? "Medição liberada" : "Preparação da base"}</StatusPill><strong>{selectedDocument.name}</strong><span>{dateBr(selectedDocument.created_at)} · página {selectedDocument.page_number}</span></div><div>{selectedDocument.signed_url ? <a href={selectedDocument.signed_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> PDF original</a> : null}{selectedDocument.status === "approved" ? <Button variant="ghost" onClick={() => void changeApproval("draft")} disabled={saving}><RotateCcw size={15} /> Reabrir base</Button> : <Button onClick={() => void changeApproval("approved")} disabled={saving || !documentLayers.length}><CheckCircle2 size={15} /> Aprovar base</Button>}<button type="button" className="plan-delete-document" disabled={selectedDocument.status === "approved" || saving} onClick={() => void deleteDocument(selectedDocument)}><Trash2 size={15} /></button></div></div>
         {selectedDocument.status === "draft" && (!selectedDocument.calibration_distance_m || mode === "calibrate") ? <div className="plan-calibration-panel"><div><Ruler size={20} /><span><strong>1. Calibrar escala</strong>Marque dois pontos de uma medida conhecida na planta e informe a distância real.</span></div><Field label="Distância real (m)"><input type="number" min="0.01" step="0.01" value={calibrationDistance} onChange={(event) => setCalibrationDistance(event.target.value)} /></Field><Button variant="secondary" onClick={() => { setCalibrationPoints([]); setMode("calibrate"); setResetKey((value) => value + 1); }}><PencilLine size={15} /> {calibrationPoints.length ? "Marcar novamente" : "Marcar pontos"}</Button><Button onClick={() => void saveCalibration()} loading={saving} disabled={calibrationPoints.length !== 2 || Number(calibrationDistance) <= 0}><Save size={15} /> Salvar escala</Button></div> : null}
         {selectedLayer ? <div className="plan-layer-summary"><div><i style={{ background: selectedLayer.color }} /><span><strong>{selectedLayer.name}</strong>{planDisciplineLabel(selectedLayer.discipline)} · {selectedLayer.micro_stage?.name || "Microetapa não encontrada"}</span></div><div><span>Previsto<strong>{planMeasure(previewMetrics?.plannedMeasure ?? selectedLayer.planned_measure, selectedLayer.unit)}</strong></span><span>Executado<strong>{planMeasure(previewMetrics?.executedMeasure ?? selectedLayer.executed_measure, selectedLayer.unit)}</strong></span><span>Avanço<strong>{Number(previewMetrics?.progressPercent ?? selectedLayer.progress_percent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong></span></div></div> : null}
-        <ConstructionPlanCanvas documentUrl={selectedDocument.signed_url} pageNumber={selectedDocument.page_number} overlays={overlays} mode={mode} drawingColor={selectedLayer?.color} calibrationPoints={calibrationPoints} onCalibrationPoint={addCalibrationPoint} onFinishPath={finishPath} onAspectRatio={setPageAspectRatio} resetKey={resetKey} />
-        {selectedLayer ? <div className="construction-plan-actions">
+        <ConstructionPlanCanvas documentUrl={selectedDocument.signed_url} pageNumber={selectedDocument.page_number} overlays={overlays} mode={mode} drawingColor={selectedLayer?.color} calibrationPoints={calibrationPoints} onCalibrationPoint={addCalibrationPoint} onFinishPath={finishPath} onAspectRatio={setPageAspectRatio} resetKey={resetKey} actions={<>
+        {selectedLayer ? <div className="construction-plan-actions"><Button variant="secondary" onClick={() => setMode("navigate")} disabled={saving}><MapIcon size={16} /> Navegar</Button>
           {selectedDocument.status === "draft" ? <><div><span>2. Desenhar total previsto</span><small>{selectedLayer.measurement_type === "area" ? "Contorne uma ou mais áreas." : "Trace um ou mais eixos sobre o projeto."}</small></div><Button variant="secondary" onClick={() => setMode(selectedLayer.measurement_type)} disabled={!metersPerCoordinate}><PencilLine size={15} /> Desenhar {selectedLayer.measurement_type === "area" ? "área" : "trecho"}</Button><Button variant="ghost" onClick={undoLastPath} disabled={!plannedDraft.length}><Undo2 size={15} /> Desfazer</Button><Button onClick={() => void savePlannedBase()} loading={saving} disabled={!plannedDraft.length || !metersPerCoordinate}><Save size={15} /> Salvar total</Button><button type="button" className="plan-delete-layer" disabled={Number(selectedLayer.executed_measure || 0) > 0 || saving} onClick={() => void deleteLayer(selectedLayer)}><Trash2 size={15} /> Excluir camada</button></> : <><div><span>Atualização de campo</span><small>O traçado é encaixado ao total planejado e não conta sobreposições duas vezes.</small></div><Button variant="secondary" onClick={() => setMode(selectedLayer.measurement_type)}><PencilLine size={15} /> Marcar executado</Button><Button variant="ghost" onClick={undoLastPath} disabled={!progressPaths.length}><Undo2 size={15} /> Desfazer</Button></>}
         </div> : null}
-        {selectedDocument.status === "approved" && selectedLayer && progressPaths.length ? <form className="plan-progress-submit" onSubmit={saveProgress}><div><strong>Confirmar medição</strong><span>{progressPaths.length} novo(s) traçado(s) · avanço calculado em {previewMetrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><Field label="Foto (opcional)"><label className="file-drop"><ImagePlus size={18} /><span>{progressPhoto?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressPhoto(event.target.files?.[0] || null)} /></label></Field><Field label="Comentário"><textarea value={progressNote} onChange={(event) => setProgressNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></Field><Button type="submit" loading={saving}><Save size={16} /> Registrar avanço</Button></form> : null}
+        {selectedDocument.status === "approved" && selectedLayer && progressPaths.length ? <form className="plan-progress-submit" onSubmit={saveProgress}><div><strong>Confirmar medição</strong><span>{progressPaths.length} novo(s) traçado(s) · avanço calculado em {previewMetrics?.progressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><Field label="Foto (opcional)"><label className="file-drop"><ImagePlus size={18} /><span>{progressPhoto?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressPhoto(event.target.files?.[0] || null)} /></label></Field><Field label="Comentário"><textarea value={progressNote} onChange={(event) => setProgressNote(event.target.value)} maxLength={1500} placeholder="Descreva o serviço executado" /></Field><Button type="submit" loading={saving}><Save size={16} /> Registrar avanço</Button></form> : null} </>} />
+        {draftStatus ? <small role="status">{draftStatus}</small> : null}
         {selectedLayer ? <ProgressBar value={Number(previewMetrics?.progressPercent ?? selectedLayer.progress_percent)} label={`Avanço medido · ${selectedLayer.name}`} /> : null}
       </div> : <div className="mini-empty">Não foi possível gerar o acesso temporário ao PDF.</div>}
     </div>}
