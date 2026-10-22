@@ -47,6 +47,7 @@ function harness({
       active: true,
       cash_date: "2026-10-01",
       amount: 1,
+      source_category: "9.118",
     })),
     operational_imports: [
       { kind: "paid", status: "success" },

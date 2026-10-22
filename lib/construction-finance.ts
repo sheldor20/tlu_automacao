@@ -51,7 +51,15 @@ export type MonthlyCashEntry = {
   cash_date: string | null;
   amount: number | string;
   active: boolean;
+  source_category?: string | null;
 };
+
+export function isRenovationExpense(category: string | null | undefined) {
+  const value = (category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /(?:^|[^a-z0-9])reformas(?:$|[^a-z0-9])/.test(value) ||
+    /(?:^|[^\d.])9\.118(?:$|\.\d|[^\d.])/.test(value);
+}
+
 export type MonthlyExpense = {
   month: string | null;
   paid: number | null;
@@ -74,6 +82,7 @@ export function monthlyConstructionExpenses(
   for (const entry of entries) {
     if (
       !entry.active ||
+      !isRenovationExpense(entry.source_category) ||
       !entry.work_key ||
       !keys.has(entry.work_key) ||
       seen.has(entry.id)
@@ -158,7 +167,7 @@ export function monthlyExpensesCsv(
     ...rows.map((r) => [
       name,
       units.join(" | "),
-      "Qlik / qlik-operations",
+      "Qlik / qlik-operations · Reformas / 9.118",
       r.month || "Sem data na origem",
       money(r.paid),
       money(r.payable),

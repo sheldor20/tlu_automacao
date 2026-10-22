@@ -60,7 +60,7 @@ export async function GET(request: Request) {
         ? allRows(
             db,
             "operational_cash_entries",
-            "id,work_key,kind,cash_date,amount,active",
+            "id,work_key,kind,cash_date,amount,active,source_category",
             {
               work_key: workKeys,
               active: true,
