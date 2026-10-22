@@ -81,7 +81,8 @@ export async function syncQlikOperations(kind: OperationalKind) {
     seen = new Set<string>();
   async function verifySource(cube: QlikCube) {
     if (!cube.revision) throw new Error("Versão da origem Qlik indisponível.");
-    const revision = `v1|${cube.revision}|${localToday()}`;
+    const schema = kind === "paid" || kind === "payable" ? "v2-financial-flow" : "v1";
+    const revision = `${schema}|${cube.revision}|${localToday()}`;
     if (sourceRevision && sourceRevision !== revision)
       throw new Error("qlik_source_changed");
     if (

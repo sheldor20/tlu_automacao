@@ -18,7 +18,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const { db, service, canWrite } = await operationsAccess(request, [
+    const { db, service, canWrite, actor } = await operationsAccess(request, [
       "obras",
     ]);
     const id = z.uuid().parse(new URL(request.url).searchParams.get("id"));
@@ -140,6 +140,7 @@ export async function GET(request: Request) {
       syncActive: connection.active,
       checkedAt: new Date().toISOString(),
       canWrite,
+      canSync: actor.admin,
     });
   } catch (e) {
     return paymentFailure(e);

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   mapOperationalPage,
+  operationalSpec,
+  OUTGOING_CATEGORY_DIMENSION,
   qlikDate,
 } from "../lib/qlik-operational-mapping.ts";
 const cells = (values: Array<string | number | null>) =>
@@ -70,4 +72,17 @@ test("vencidos trazidos para hoje ficam fora da previsão; datas futuras ajustad
   row[9] = {text:"12/10/2026",number:null};
   row[10] = {text:"10/10/2026",number:null};
   assert.equal(mapOperationalPage(cube,"receivable","2026-09-17").records.find(r=>r.entity==="entries")!.data.cash_date,"2026-10-12");
+});
+
+test("despesas importam CAP, código e classificação de fluxo financeiro, preservando receitas", () => {
+  for (const kind of ["paid", "payable"] as const) {
+    assert.equal(operationalSpec(kind).fields?.[11], OUTGOING_CATEGORY_DIMENSION);
+    for (const field of ["CAP", "Cód Tipo Fluxo Financeiro", "Tipo Fluxo Financeiro", "Agrupador Fluxo Financeiro"]) assert.ok(OUTGOING_CATEGORY_DIMENSION.includes(`[${field}]`));
+    const row = cells(["18","18|07","42",null,"Pago|18|07|123","1",null,null,"Fornecedor",46282,46282,"Pessoa Física · 9.118 · Reformas/Obras · Reformas",100]);
+    const result = mapOperationalPage({key:kind,headers:[],totalRows:1,rows:[row]},kind);
+    assert.equal(result.records[0].data.source_category,"Pessoa Física · 9.118 · Reformas/Obras · Reformas");
+    assert.equal(result.total,100);
+  }
+  assert.equal(operationalSpec("received").fields?.[11],"CAP");
+  assert.equal(operationalSpec("receivable").fields?.[11],"CAP");
 });

@@ -50,6 +50,7 @@ export type ConstructionFinanceData = {
   }>;
   stages: Array<{ id: string; name: string }>;
   canWrite: boolean;
+  canSync?: boolean;
 };
 const timestamp = (value: string | null) =>
   value
@@ -72,6 +73,9 @@ export function ConstructionFinance({
   );
   // Never display/export an old construction or stale successful response as current after a failed reload.
   const d = !o.error && !o.loading && o.data?.work.id === id ? o.data : null;
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
+  const [syncError, setSyncError] = useState("");
   const [link, setLink] = useState(false);
   const [codes, setCodes] = useState("");
   const [keys, setKeys] = useState<string[]>([]);
@@ -118,6 +122,15 @@ export function ConstructionFinance({
           >
             Recarregar dados
           </Button>
+          {d?.canSync ? <Button variant="secondary" loading={syncing} onClick={async () => {
+            setSyncing(true); setSyncError(""); setSyncNotice("");
+            try {
+              await paymentFetch("/api/operations/construction/refresh", { method: "POST" });
+              setSyncNotice("Sincronização Qlik iniciada. Aguarde a publicação e recarregue os dados.");
+              await o.reload();
+            } catch (error) { setSyncError(error instanceof Error ? error.message : "Falha ao iniciar sincronização."); }
+            finally { setSyncing(false); }
+          }}>Sincronizar Qlik</Button> : null}
           {d?.canWrite ? (
             <Button
               variant="secondary"
@@ -134,7 +147,8 @@ export function ConstructionFinance({
           ) : null}
         </div>
       </div>
-      <OperationsError message={o.error} />
+      <OperationsError message={o.error || syncError} />
+      {syncNotice ? <p role="status">{syncNotice}</p> : null}
       {o.loading ? <p role="status">Carregando gastos sincronizados…</p> : null}
       {d ? (
         <>

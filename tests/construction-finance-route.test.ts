@@ -201,7 +201,7 @@ function harness({
               assert.equal(modules.join(","), "obras");
               if (role === "outsider" || (write && role === "viewer"))
                 throw new PaymentError("forbidden", 403);
-              return { db, service, canWrite: role === "writer" };
+              return { db, service, canWrite: role === "writer", actor: { admin: role === "writer" } };
             },
           };
         throw new Error(name);

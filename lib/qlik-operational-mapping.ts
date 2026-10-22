@@ -48,6 +48,10 @@ export function mapOperationalPeople(cube: QlikCube): ImportRecord[] {
     "received",
   ).records.filter((r) => r.entity !== "entries");
 }
+// Keep the CAP grain while importing the actual financial-flow classification.
+export const OUTGOING_CATEGORY_DIMENSION = "=" + ["CAP", "Cód Tipo Fluxo Financeiro", "Tipo Fluxo Financeiro", "Agrupador Fluxo Financeiro"]
+  .map((field) => `If(IsNull([${field}]), '', [${field}])`).join(" & ' · ' & ");
+
 export function operationalSpec(
   kind: Exclude<OperationalKind, "catalog">,
 ): QlikCubeSpec {
@@ -72,7 +76,7 @@ export function operationalSpec(
             ? "Data Vencimento"
             : "Data Prorrogação Vencimento",
       "Data Vencimento",
-      "CAP",
+      kind === "paid" || kind === "payable" ? OUTGOING_CATEGORY_DIMENSION : "CAP",
     ],
   };
 }
