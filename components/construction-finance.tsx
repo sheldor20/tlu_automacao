@@ -1,61 +1,65 @@
 "use client";
-import { useState, type FormEvent } from "react";
-import { Button, Dialog, Field } from "./ui";
-import { QlikWorkSelect } from "./qlik-work-select";
+import { paymentFetch } from "@/lib/payment-client";
+import { useState } from "react";
+import { Button, Dialog } from "./ui";
+import { QlikWorkCodes } from "./qlik-work-select";
 import {
   useOperations,
   OperationsError,
-  OperationsDataStatus,
   money,
   day,
 } from "./operations-common";
-import { constructionBudget, type CashEntry } from "@/lib/operational-finance";
-type Commitment = {
-  id: string;
-  macro_stage_id: string | null;
-  supplier: string;
-  description: string;
-  due_date: string;
-  amount: number;
-  status: string;
-  payment_request_id: string | null;
-  cash_entry_id: string | null;
-};
-type Data = {
+import {
+  monthlyExpensesCsv,
+  type FinanceSources,
+  type MonthlyFinance,
+} from "@/lib/construction-finance";
+export type ConstructionFinanceData = {
   work: {
     id: string;
     name: string;
+    source_business_id: string | null;
     qlik_work_key: string | null;
-    planned_budget: number;
+    updated_at: string;
   };
-  commitments: Commitment[];
-  estimate: { remaining_uncommitted: number; note: string } | null;
-  entries: CashEntry[];
-  stages: Array<{
-    id: string;
+  workKeys: string[];
+  linkedWorks: Array<{
+    key: string;
     name: string;
-    progress_percent: number;
-    weight_percent: number;
+    company_id: string;
+    active: boolean;
+    qlik_companies: { name: string } | null;
   }>;
-  payments: Array<{
+  monthly: MonthlyFinance;
+  sources: FinanceSources;
+  checkedAt: string;
+  syncActive: boolean;
+  commitments: Array<{
     id: string;
-    title: string;
+    description: string;
+    supplier: string;
+    due_date: string;
     amount: number;
     status: string;
   }>;
-  mappings: Array<{ source_category: string; macro_stage_id: string }>;
+  estimate: { remaining_uncommitted: number; note: string } | null;
   stageBudgets: Array<{
     macro_stage_id: string;
     planned_budget: number;
     remaining_uncommitted: number | null;
   }>;
-  reconciliations: Array<{
-    request_id: string;
-    state: string;
-    cash_entry_id: string | null;
-  }>;
+  stages: Array<{ id: string; name: string }>;
   canWrite: boolean;
 };
+const timestamp = (value: string | null) =>
+  value
+    ? new Date(value).toLocaleString("pt-BR", { timeZone: "UTC" }) + " UTC"
+    : "Carga ainda não publicada";
+const amount = (value: number | null) =>
+  value === null ? "Sem registros" : money(value);
+const monthLabel = (value: string | null) =>
+  value ? `${value.slice(5, 7)}/${value.slice(0, 4)}` : "Sem data na origem";
+
 export function ConstructionFinance({
   id,
   progress,
@@ -63,525 +67,350 @@ export function ConstructionFinance({
   id: string;
   progress: number;
 }) {
-  const o = useOperations<Data>(`/api/operations/construction?id=${id}`);
-  const d = o.data;
+  const o = useOperations<ConstructionFinanceData>(
+    `/api/operations/construction?id=${id}`,
+  );
+  // Never display/export an old construction or stale successful response as current after a failed reload.
+  const d = !o.error && !o.loading && o.data?.work.id === id ? o.data : null;
   const [link, setLink] = useState(false);
-  const [workKey, setWorkKey] = useState("");
-  const [estimate, setEstimate] = useState(false);
-  const [edit, setEdit] = useState<Partial<Commitment> | null>(null);
-  const [supplier, setSupplier] = useState("");
-  const [stage, setStage] = useState("");
-  const [stageDialog, setStageDialog] = useState(false);
-  const remaining = d?.estimate
-    ? Number(d.estimate.remaining_uncommitted)
-    : null;
-  const budget = constructionBudget(
-    d?.entries || [],
-    d?.commitments || [],
-    d?.reconciliations || [],
-    remaining,
-  );
-  const { paid, committed, total } = budget;
-  const stageName = (e: CashEntry) =>
-    d?.stages.find(
-      (s) =>
-        s.id ===
-        d.mappings.find((m) => m.source_category === e.source_category)
-          ?.macro_stage_id,
-    )?.name ||
-    e.stage_name ||
-    "Não classificada";
-  const rawRows = [
-    ...(d?.entries || [])
-      .filter((e) => e.kind === "paid" || e.kind === "payable")
-      .map((e) => ({
-        id: e.id,
-        supplier: e.counterparty || "Sem fornecedor",
-        stage: stageName(e),
-        description: e.description,
-        date: e.cash_date,
-        amount: Number(e.amount),
-        kind: e.kind === "paid" ? "Pago no Qlik" : "A pagar no Qlik",
-        commitment: null as Commitment | null,
-      })),
-    ...(d?.commitments || [])
-      .filter((c) => budget.independent.some((b) => b.id === c.id))
-      .map((c) => ({
-        id: c.id,
-        supplier: c.supplier,
-        stage:
-          d?.stages.find((s) => s.id === c.macro_stage_id)?.name ||
-          "Não classificada",
-        description: c.description,
-        date: c.due_date,
-        amount: Number(c.amount),
-        kind: c.status === "paid" ? "Pagamento informado" : "Compromisso",
-        commitment: c,
-      })),
-  ];
-  const visible = rawRows.filter(
-    (r) =>
-      (!supplier || r.supplier === supplier) && (!stage || r.stage === stage),
-  );
-  async function saveCommitment(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    if (
-      await o.save("/api/operations/construction", {
-        action: "commitment",
-        id,
-        ...(edit?.id ? { commitment_id: edit.id } : {}),
-        macro_stage_id: String(f.get("macro_stage_id") || "") || null,
-        supplier: f.get("supplier"),
-        description: f.get("description"),
-        due_date: f.get("due_date"),
-        amount: Number(f.get("amount")),
-        status: f.get("status"),
-        payment_request_id: String(f.get("payment_request_id") || "") || null,
-        cash_entry_id: String(f.get("cash_entry_id") || "") || null,
-      })
-    )
-      setEdit(null);
+  const [codes, setCodes] = useState("");
+  const [keys, setKeys] = useState<string[]>([]);
+  const [valid, setValid] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const [year, setYear] = useState("");
+  const rows =
+    d?.monthly.rows.filter((r) => !year || r.month?.startsWith(year)) || [];
+  const unit = (key: string) => {
+    const w = d?.linkedWorks.find((w) => w.key === key);
+    return w
+      ? `${key} · ${w.name} · ${w.qlik_companies?.name || w.company_id}${w.active ? "" : " (inativa no catálogo)"}`
+      : `${key} · indisponível no catálogo`;
+  };
+  function exportCsv() {
+    if (!d || !rows.length) return;
+    const blob = new Blob(
+      [monthlyExpensesCsv(d.work.name, d.workKeys.map(unit), rows, d.sources)],
+      { type: "text/csv;charset=utf-8" },
+    );
+    const url = URL.createObjectURL(blob),
+      a = document.createElement("a");
+    a.href = url;
+    a.download = `gastos-qlik-${id}-${year || "todos"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
   return (
     <section className="ops-panel">
       <div className="ops-inline">
         <div>
-          <h2>Obra conectada ao orçamento</h2>
+          <h2>Gastos mensais · Qlik</h2>
           <p className="ops-subtle">
-            Realizado, compromissos e custo estimado para concluir, vinculados à
-            empresa e à obra do Qlik.
+            Somente leitura. Pagamentos por mês de pagamento e contas a pagar
+            por mês de vencimento.
           </p>
         </div>
-        {d?.canWrite ? (
+        <div className="ops-actions">
           <Button
             variant="secondary"
-            onClick={() => {
-              setWorkKey(d.work.qlik_work_key || "");
-              setLink(true);
-            }}
+            loading={o.loading}
+            onClick={() => void o.reload()}
           >
-            Vincular empresa e obra
+            Recarregar dados
           </Button>
-        ) : null}
-      </div>
-      <OperationsDataStatus sources={["paid", "payable", "catalog"]} />
-      <OperationsError message={o.error} />
-      {d?.work.qlik_work_key ? (
-        <>
-          <div className="ops-kpis">
-            <div className="ops-kpi">
-              <span>Avanço físico</span>
-              <strong>{progress.toFixed(1)}%</strong>
-              <small>
-                Avanço financeiro:{" "}
-                {d.work.planned_budget
-                  ? ((paid / Number(d.work.planned_budget)) * 100).toFixed(1) +
-                    "%"
-                  : "Orçamento a informar"}
-              </small>
-            </div>
-            <div className="ops-kpi">
-              <span>Gasto realizado</span>
-              <strong>{money(paid)}</strong>
-            </div>
-            <div className="ops-kpi">
-              <span>Comprometido a pagar</span>
-              <strong>{money(committed)}</strong>
-              <small>Qlik + compromissos sem título vinculado</small>
-            </div>
-            <div className="ops-kpi">
-              <span>Custo estimado final</span>
-              <strong>{money(total)}</strong>
-              <small>
-                Desvio:{" "}
-                {total === null
-                  ? "Estimativa pendente"
-                  : money(total - Number(d.work.planned_budget))}
-              </small>
-            </div>
-          </div>
-          <p className="ops-subtle">
-            Estimativa adicional para concluir: {money(remaining)}. Deve excluir
-            o que já está pago ou comprometido.
-          </p>
-          {d.canWrite ? (
-            <div className="ops-actions">
-              <Button variant="secondary" onClick={() => setStageDialog(true)}>
-                Orçamento e classificação por etapa
-              </Button>
-              <Button onClick={() => setEdit({ status: "committed" })}>
-                Novo compromisso
-              </Button>
-              <Button variant="secondary" onClick={() => setEstimate(true)}>
-                Atualizar estimativa restante
-              </Button>
-            </div>
+          {d?.canWrite ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCodes(d.workKeys.join("\n"));
+                setKeys(d.workKeys);
+                setValid(false);
+                setLinkError("");
+                setLink(true);
+              }}
+            >
+              Vincular empresa e obra
+            </Button>
           ) : null}
-          <div className="ops-filters">
-            <select
-              aria-label="Fornecedor"
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-            >
-              <option value="">Todos os fornecedores</option>
-              {[...new Set(rawRows.map((r) => r.supplier))].sort().map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Etapa"
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-            >
-              <option value="">Todas as etapas</option>
-              {[...new Set(rawRows.map((r) => r.stage))].sort().map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="ops-table-wrap">
-            <table className="ops-table">
-              <thead>
-                <tr>
-                  <th>Compromisso / lançamento</th>
-                  <th>Fornecedor e etapa</th>
-                  <th>Data</th>
-                  <th>Valor</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      {r.description}
-                      <small>{r.kind}</small>
-                    </td>
-                    <td>
-                      {r.supplier}
-                      <small>{r.stage}</small>
-                    </td>
-                    <td>{day(r.date)}</td>
-                    <td>{money(r.amount)}</td>
-                    <td>
-                      {r.commitment && d.canWrite ? (
-                        <Button
-                          variant="ghost"
-                          onClick={() => setEdit(r.commitment!)}
-                        >
-                          Editar / conciliar
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : (
-        <div className="ops-notice">
-          Vincule esta obra aos identificadores do Qlik para consultar os
-          lançamentos e registrar compromissos.
         </div>
-      )}
-      <Dialog
-        open={stageDialog}
-        onClose={() => setStageDialog(false)}
-        title="Orçamento e custos por etapa"
-        wide
-      >
-        <OperationsError message={o.error} />
-        <h3>Orçamento por etapa</h3>
-        {d?.stages.map((s) => {
-          const b = d.stageBudgets.find((b) => b.macro_stage_id === s.id);
-          const rows = rawRows.filter((r) => r.stage === s.name);
-          const actual = rows
-            .filter(
-              (r) =>
-                r.kind.includes("Pago") || r.kind === "Pagamento informado",
-            )
-            .reduce((v, r) => v + r.amount, 0);
-          const cost = rows.reduce((v, r) => v + r.amount, 0);
-          return (
-            <form
-              className="ops-panel"
-              key={s.id}
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                await o.save("/api/operations/construction", {
-                  action: "stage_budget",
-                  id,
-                  macro_stage_id: s.id,
-                  planned_budget: Number(f.get("planned")),
-                  remaining_uncommitted:
-                    f.get("remaining") === ""
-                      ? null
-                      : Number(f.get("remaining")),
-                });
-              }}
-            >
-              <h4>
-                {s.name} · avanço físico {Number(s.progress_percent).toFixed(1)}
-                %
-              </h4>
-              <p>
-                Realizado {money(actual)} · realizado + comprometido{" "}
-                {money(cost)} · desvio estimado{" "}
-                {b?.remaining_uncommitted !== null && b
-                  ? money(
-                      cost +
-                        Number(b.remaining_uncommitted) -
-                        Number(b.planned_budget),
-                    )
-                  : "A informar"}
-              </p>
-              <div className="form-grid">
-                <Field label="Orçamento da etapa">
-                  <input
-                    name="planned"
-                    type="number"
-                    min="0"
-                    step=".01"
-                    defaultValue={b?.planned_budget || ""}
-                    required
-                  />
-                </Field>
-                <Field label="Custo ainda não contratado">
-                  <input
-                    name="remaining"
-                    type="number"
-                    min="0"
-                    step=".01"
-                    defaultValue={b?.remaining_uncommitted ?? ""}
-                  />
-                </Field>
-                <Button loading={o.saving}>Salvar etapa</Button>
-              </div>
-            </form>
-          );
-        })}
-        <h3>Classificar categorias do Qlik</h3>
-        <p className="ops-subtle">
-          Vincule cada categoria de custo à etapa correspondente nesta obra.
-        </p>
-        {[
-          ...new Set(
-            d?.entries
-              .map((e) => e.source_category)
-              .filter((s): s is string => !!s),
-          ),
-        ]
-          .sort()
-          .map((category) => (
-            <form
-              className="ops-inline ops-panel"
-              key={category}
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                await o.save("/api/operations/construction", {
-                  action: "stage_mapping",
-                  id,
-                  source_category: category,
-                  macro_stage_id: f.get("stage"),
-                });
-              }}
-            >
-              <span>{category}</span>
-              <select
-                name="stage"
-                aria-label={`Etapa de ${category}`}
-                defaultValue={
-                  d?.mappings.find((m) => m.source_category === category)
-                    ?.macro_stage_id || ""
-                }
-                required
-              >
-                <option value="">Selecione a etapa</option>
-                {d?.stages.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+      </div>
+      <OperationsError message={o.error} />
+      {o.loading ? <p role="status">Carregando gastos sincronizados…</p> : null}
+      {d ? (
+        <>
+          <p className="ops-subtle">
+            Fonte: Qlik · qlik-operations. Consulta: {timestamp(d.checkedAt)}.
+            Avanço físico: {progress.toFixed(1)}%.
+          </p>
+          <div className="ops-notice" role="status">
+            <div>
+              Pagamentos publicados: {timestamp(d.sources.paid.at)}. Contas a
+              pagar publicadas: {timestamp(d.sources.payable.at)}.
+            </div>
+            {(["paid", "payable"] as const).map((kind) => {
+              const source = d.sources[kind],
+                label = kind === "paid" ? "pagamentos" : "contas a pagar";
+              const stale =
+                source.at &&
+                Date.parse(d.checkedAt) - Date.parse(source.at) > 36 * 3600000;
+              return (
+                <div key={kind}>
+                  {source.status === "error"
+                    ? `A última carga de ${label} falhou; exibimos a publicação anterior. `
+                    : source.status !== "success"
+                      ? `Atualização de ${label} pendente ou em andamento. `
+                      : ""}
+                  {stale
+                    ? `A publicação de ${label} tem mais de 36 horas.`
+                    : ""}
+                </div>
+              );
+            })}
+            {!d.syncActive ? (
+              <div>Sincronização automática pausada.</div>
+            ) : null}
+          </div>
+          {!d.workKeys.length ? (
+            <div className="ops-notice">
+              Vínculo pendente. Preencha o código Qlik em “Vincular empresa e
+              obra”. Nenhuma unidade foi escolhida automaticamente.
+            </div>
+          ) : (
+            <>
+              <div>
+                <strong>Unidades vinculadas</strong>
+                {d.workKeys.map((key) => (
+                  <p key={key}>{unit(key)}</p>
                 ))}
-              </select>
-              <Button loading={o.saving}>Vincular</Button>
-            </form>
-          ))}
-      </Dialog>
+              </div>
+              <div className="ops-kpis">
+                <div className="ops-kpi">
+                  <span>Pagamentos realizados · Qlik</span>
+                  <strong>{amount(d.monthly.paid)}</strong>
+                  <small>
+                    Todos os períodos disponíveis; somente pagamentos.
+                  </small>
+                </div>
+                <div className="ops-kpi">
+                  <span>Contas a pagar · Qlik</span>
+                  <strong>{amount(d.monthly.payable)}</strong>
+                  <small>
+                    Obrigações em aberto; não são gastos realizados.
+                  </small>
+                </div>
+              </div>
+              {d.monthly.missingPaidKeys.length ||
+              d.monthly.missingPayableKeys.length ? (
+                <div className="ops-notice">
+                  {d.monthly.missingPaidKeys.length ? (
+                    <p>
+                      Sem pagamentos disponíveis:{" "}
+                      {d.monthly.missingPaidKeys.join(", ")}.
+                    </p>
+                  ) : null}
+                  {d.monthly.missingPayableKeys.length ? (
+                    <p>
+                      Sem contas a pagar disponíveis:{" "}
+                      {d.monthly.missingPayableKeys.join(", ")}.
+                    </p>
+                  ) : null}
+                  Os totais abrangem apenas registros encontrados. Ausência de
+                  registros não confirma saldo zero.
+                </div>
+              ) : null}
+              <div className="ops-inline">
+                <label>
+                  Período{" "}
+                  <select
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                  >
+                    <option value="">Todos os períodos</option>
+                    {[
+                      ...new Set(
+                        d.monthly.rows.flatMap((r) =>
+                          r.month ? [r.month.slice(0, 4)] : [],
+                        ),
+                      ),
+                    ].map((y) => (
+                      <option key={y}>{y}</option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  variant="secondary"
+                  disabled={!rows.length}
+                  onClick={exportCsv}
+                >
+                  Exportar planilha mensal (CSV)
+                </Button>
+              </div>
+              {rows.length ? (
+                <div className="ops-table-wrap">
+                  <table className="ops-table">
+                    <caption>
+                      Fonte: Qlik / qlik-operations. Valores dos registros
+                      sincronizados; “Sem registros” não significa zero. Meses
+                      sem movimentos não são preenchidos com zero.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Mês</th>
+                        <th scope="col">Pagamentos realizados</th>
+                        <th scope="col">Contas a pagar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.month || "undated"}>
+                          <th scope="row">{monthLabel(r.month)}</th>
+                          <td>
+                            {amount(r.paid)}
+                            <small>{r.paidCount} registros</small>
+                          </td>
+                          <td>
+                            {amount(r.payable)}
+                            <small>{r.payableCount} registros</small>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="ops-notice">
+                  Nenhum lançamento disponível neste período para as unidades
+                  vinculadas. Isso não confirma gasto zero.
+                </div>
+              )}
+            </>
+          )}
+          <details className="ops-panel">
+            <summary>
+              Histórico manual legado · compromissos e estimativas
+            </summary>
+            <p>
+              Somente consulta. Estes valores não entram nos totais nem na
+              planilha Qlik.
+            </p>
+            {d.commitments.length ? (
+              <div className="ops-table-wrap">
+                <table className="ops-table">
+                  <thead>
+                    <tr>
+                      <th>Descrição / fornecedor</th>
+                      <th>Data informada</th>
+                      <th>Valor manual</th>
+                      <th>Status legado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.commitments.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          {c.description}
+                          <small>{c.supplier}</small>
+                        </td>
+                        <td>{day(c.due_date)}</td>
+                        <td>{money(c.amount)}</td>
+                        <td>
+                          {c.status === "paid"
+                            ? "Pago informado manualmente"
+                            : c.status === "cancelled"
+                              ? "Cancelado"
+                              : "Compromisso informado"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p>Sem compromissos manuais legados.</p>
+            )}
+            {d.estimate ? (
+              <p>
+                Estimativa manual restante:{" "}
+                {money(d.estimate.remaining_uncommitted)}. {d.estimate.note}
+              </p>
+            ) : null}
+            {d.stageBudgets.map((b) => (
+              <p key={b.macro_stage_id}>
+                {d.stages.find((s) => s.id === b.macro_stage_id)?.name ||
+                  "Etapa"}
+                : orçamento manual {money(b.planned_budget)}; estimativa
+                restante {money(b.remaining_uncommitted)}.
+              </p>
+            ))}
+          </details>
+        </>
+      ) : null}
       <Dialog
         open={link}
         onClose={() => setLink(false)}
-        title="Empresa e obra do Qlik"
+        title="Vincular empresa e obra por código"
       >
-        <form
-          className="form-grid"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (
-              await o.save("/api/operations/construction", {
-                action: "link",
-                id,
-                work_key: workKey || null,
-              })
-            )
-              setLink(false);
-          }}
-        >
-          <QlikWorkSelect value={workKey} onChange={setWorkKey} />
-          <p className="ops-subtle">
-            O mesmo vínculo será aplicado ao negócio de origem, quando houver.
-          </p>
-          <Button loading={o.saving}>Salvar vínculo</Button>
-        </form>
-      </Dialog>
-      <Dialog
-        open={estimate}
-        onClose={() => setEstimate(false)}
-        title="Estimativa para concluir"
-      >
-        <form
-          className="form-grid"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            if (
-              await o.save("/api/operations/construction", {
-                action: "estimate",
-                id,
-                remaining_uncommitted: Number(f.get("amount")),
-                note: String(f.get("note") || ""),
-              })
-            )
-              setEstimate(false);
-          }}
-        >
-          <Field
-            label="Custo ainda não contratado"
-            hint="Exclua valores já pagos e compromissos já registrados."
+        {link && d ? (
+          <form
+            className="form-grid"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!valid || saving) return;
+              setSaving(true);
+              setLinkError("");
+              try {
+                await paymentFetch("/api/operations/construction", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    action: "link",
+                    id,
+                    work_keys: keys,
+                    expected_updated_at: d.work.updated_at,
+                    confirmed: true,
+                  }),
+                });
+                setLink(false);
+                await o.reload();
+              } catch (error) {
+                setLinkError(
+                  error instanceof Error
+                    ? error.message
+                    : "Não foi possível salvar o vínculo.",
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
           >
-            <input
-              name="amount"
-              type="number"
-              min="0"
-              step="0.01"
-              defaultValue={d?.estimate?.remaining_uncommitted ?? ""}
-              required
+            <OperationsError message={linkError} />
+            <QlikWorkCodes
+              id={id}
+              value={codes}
+              onChange={(text, nextKeys, ok) => {
+                setCodes(text);
+                setKeys(nextKeys);
+                setValid(ok);
+              }}
             />
-          </Field>
-          <Field label="Premissas da estimativa">
-            <textarea
-              name="note"
-              defaultValue={d?.estimate?.note || ""}
-              maxLength={3000}
-            />
-          </Field>
-          <Button loading={o.saving}>Salvar estimativa</Button>
-        </form>
-      </Dialog>
-      <Dialog
-        open={!!edit}
-        onClose={() => setEdit(null)}
-        title="Compromisso da obra"
-        wide
-      >
-        <form className="form-grid" onSubmit={saveCommitment}>
-          <Field label="Fornecedor">
-            <input
-              name="supplier"
-              defaultValue={edit?.supplier || ""}
-              required
-              maxLength={300}
-            />
-          </Field>
-          <Field label="Etapa">
-            <select
-              name="macro_stage_id"
-              defaultValue={edit?.macro_stage_id || ""}
-            >
-              <option value="">Não classificada</option>
-              {d?.stages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Descrição" className="form-span-2">
-            <input
-              name="description"
-              defaultValue={edit?.description || ""}
-              required
-              maxLength={1000}
-            />
-          </Field>
-          <Field label="Data esperada de pagamento">
-            <input
-              name="due_date"
-              type="date"
-              defaultValue={edit?.due_date || ""}
-              required
-            />
-          </Field>
-          <Field label="Valor">
-            <input
-              name="amount"
-              type="number"
-              min="0.01"
-              step="0.01"
-              defaultValue={edit?.amount || ""}
-              required
-            />
-          </Field>
-          <Field label="Status">
-            <select name="status" defaultValue={edit?.status || "committed"}>
-              <option value="committed">Comprometido</option>
-              <option value="paid">Pago informado</option>
-              <option value="cancelled">Cancelado</option>
-            </select>
-          </Field>
-          <Field label="Solicitação já registrada">
-            <select
-              name="payment_request_id"
-              defaultValue={edit?.payment_request_id || ""}
-            >
-              <option value="">Sem solicitação vinculada</option>
-              {d?.payments.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title} · {money(p.amount)}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Título já registrado no Qlik" className="form-span-2">
-            <select
-              name="cash_entry_id"
-              defaultValue={edit?.cash_entry_id || ""}
-            >
-              <option value="">Ainda não registrado no Qlik</option>
-              {d?.entries
-                .filter((e) => e.kind === "paid" || e.kind === "payable")
-                .map((e) => (
-                  <option value={e.id} key={e.id}>
-                    {e.description || e.counterparty} · {day(e.cash_date)} ·{" "}
-                    {money(e.amount)}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <div className="form-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEdit(null)}
-            >
-              Cancelar
+            <p className="form-span-2 ops-subtle">
+              Confira empresa, nome e código antes de salvar. O primeiro código
+              é o vínculo principal; os demais adicionam unidades apenas a esta
+              obra. Limpar o campo remove o vínculo de obras sem negócio de
+              origem.
+            </p>
+            {d.work.source_business_id ? (
+              <p className="form-span-2 ops-notice">
+                O código principal é herdado do negócio de origem (
+                {d.work.qlik_work_key || "ainda sem vínculo"}). Para alterá-lo,
+                use Novos Negócios. Alterações no negócio exigem revisar as
+                unidades adicionais desta obra.
+              </p>
+            ) : null}
+            <Button type="submit" loading={saving} disabled={!valid || saving}>
+              Salvar vínculo
             </Button>
-            <Button loading={o.saving}>Salvar compromisso</Button>
-          </div>
-        </form>
+          </form>
+        ) : null}
       </Dialog>
     </section>
   );

@@ -14,7 +14,6 @@ import type { Construction, ConstructionBudget, ConstructionEvidence, Constructi
 import {
   ArrowLeft,
   ArrowUpRight,
-  Banknote,
   Camera,
   CalendarRange,
   ChevronDown,
@@ -96,7 +95,6 @@ export default function WorkDetailPage() {
   const [microMacroId, setMicroMacroId] = useState<string | null>(null);
   const [supplyMicro, setSupplyMicro] = useState<MicroStage | null>(null);
   const [progressMicro, setProgressMicro] = useState<MicroStage | null>(null);
-  const [budgetDialog, setBudgetDialog] = useState(false);
   const [inspectionDialog, setInspectionDialog] = useState(false);
   const [templateDialog, setTemplateDialog] = useState(false);
   const [templateId, setTemplateId] = useState("");
@@ -106,7 +104,6 @@ export default function WorkDetailPage() {
   const [supplyForm, setSupplyForm] = useState<ConstructionSupply[]>([]);
   const [progressSupplies, setProgressSupplies] = useState<ConstructionSupply[]>([]);
   const [progressForm, setProgressForm] = useState({ progress: "0", note: "", file: null as File | null });
-  const [budgetForm, setBudgetForm] = useState({ reference_month: new Date().toISOString().slice(0, 7), planned_amount: "", realized_amount: "", notes: "" });
   const [inspectionForm, setInspectionForm] = useState({ inspected_at: todayIso(), note: "" });
   const [summaryForm, setSummaryForm] = useState({ name: "", type: "loteamento" as Construction["type"], start_date: "", expected_end_date: "", planned_budget: "", address: "", status: "planejamento" as Construction["status"], responsible_user_id: "", inspection_interval_days: "15", notes: "" });
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -435,24 +432,6 @@ export default function WorkDetailPage() {
     setToast({ message: "Link público copiado. Quem receber poderá atualizar avanço, estoque e fotos, sem acessar o financeiro.", type: "success" });
   }
 
-  async function saveBudget(event: FormEvent) {
-    event.preventDefault();
-    if (!supabase || !construction) return;
-    setSaving(true);
-    const { error } = await supabase.from("construction_budgets").upsert({
-      construction_id: construction.id,
-      reference_month: `${budgetForm.reference_month}-01`,
-      planned_amount: Number(budgetForm.planned_amount || 0),
-      realized_amount: Number(budgetForm.realized_amount || 0),
-      notes: budgetForm.notes.trim() || null,
-    }, { onConflict: "construction_id,reference_month" });
-    setSaving(false);
-    if (error) return setToast({ message: friendlyError(error), type: "error" });
-    setBudgetDialog(false);
-    setToast({ message: "Competência financeira atualizada.", type: "success" });
-    await loadData();
-  }
-
   async function saveInspection(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !construction) return;
@@ -537,7 +516,6 @@ export default function WorkDetailPage() {
       <section className="kpi-grid">
         <KpiCard label="Avanço físico" value={`${Number(construction.progress_percent || 0).toFixed(0)}%`} helper="média ponderada" tone="success" icon={<Hammer size={17} />} />
         <KpiCard label="Orçamento previsto" value={currency(construction.planned_budget, true)} helper="orçamento total" icon={<CircleDollarSign size={17} />} />
-        <KpiCard label="Realizado" value={currency(construction.realized_total, true)} helper={`${construction.planned_budget ? (Number(construction.realized_total || 0) / construction.planned_budget * 100).toFixed(0) : 0}% utilizado`} icon={<Banknote size={17} />} />
         <KpiCard label="Peso estruturado" value={`${weightTotal.toFixed(0)}%`} helper={weightTotal === 100 ? "estrutura válida" : "precisa somar 100%"} tone={weightTotal === 100 ? "success" : "warning"} icon={<Save size={17} />} />
       </section>
 
@@ -629,8 +607,8 @@ export default function WorkDetailPage() {
       </section> : null}
 
       {activeTab === "financeiro" ? <section className="content-card detail-tab-panel">
-        <div className="content-card-head"><div><h2>Orçamento mensal</h2><p>Previsto versus realizado por competência</p></div><Button variant="secondary" onClick={() => setBudgetDialog(true)}><Plus size={16} /> Competência</Button></div>
-        {budgets.length ? <div className="budget-list budget-list-full">{budgets.map((budget) => <div key={budget.id}><div><strong>{monthBr(budget.reference_month)}</strong><span>{budget.notes || "Sem observações"}</span></div><div><small>Prev. {currency(budget.planned_amount, true)}</small><strong className={budget.realized_amount > budget.planned_amount ? "value-danger" : ""}>{currency(budget.realized_amount, true)}</strong></div></div>)}</div> : <EmptyState icon={<WalletCards size={22} />} title="Nenhuma competência" description="Registre o previsto e realizado de cada mês para acompanhar o orçamento." action={<Button onClick={() => setBudgetDialog(true)}><Plus size={16} /> Adicionar competência</Button>} />}
+        <div className="content-card-head"><div><h2>Competências manuais · legado</h2><p>Histórico preservado, somente leitura. Não somado aos gastos Qlik.</p></div></div>
+        {budgets.length ? <div className="budget-list budget-list-full">{budgets.map((budget) => <div key={budget.id}><div><strong>{monthBr(budget.reference_month)}</strong><span>{budget.notes || "Sem observações"}</span></div><div><small>Previsto manual: {currency(budget.planned_amount, true)}</small><strong>Realizado manual: {currency(budget.realized_amount, true)}</strong></div></div>)}</div> : <EmptyState icon={<WalletCards size={22} />} title="Sem histórico manual" description="Os gastos mensais são consultados na tabela Qlik acima." />}
       </section> : null}
 
       {activeTab === "arquivos" ? <div className="detail-files-grid detail-tab-panel">
@@ -665,7 +643,6 @@ export default function WorkDetailPage() {
       <Dialog open={Boolean(progressMicro)} onClose={() => setProgressMicro(null)} title={`Atualizar ${progressMicro?.name || "etapa"}`} description="Registre o avanço e a posição atual do estoque. A foto é opcional."><form className="form-grid" onSubmit={updateProgress}><Field label="Novo avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={progressForm.progress} onChange={(event) => setProgressForm({ ...progressForm, progress: event.target.value })} /><strong>{progressForm.progress}%</strong></div></Field><Field label="Foto (opcional)" hint="PNG, JPG ou WEBP. Evite imagens com dados pessoais."><label className="file-drop"><Upload size={20} /><span>{progressForm.file?.name || "Selecionar foto"}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProgressForm({ ...progressForm, file: event.target.files?.[0] || null })} /></label></Field>{progressSupplies.length ? <div className="progress-stock-editor form-span-2"><div><strong>Estoque após esta atualização</strong><span>Informe quanto restou de cada insumo. O sistema calcula o consumo automaticamente.</span></div>{progressSupplies.map((item, index) => <label key={`${item.name}-${index}`}><span>{item.name}<small>Total: {Number(item.total_quantity || 0).toLocaleString("pt-BR")}</small></span><input type="number" min="0" max={item.total_quantity} step="0.01" value={remainingSupplyQuantity(item)} onChange={(event) => setProgressSupplies((current) => current.map((supply, supplyIndex) => supplyIndex === index ? supplyWithRemainingQuantity(supply, Number(event.target.value)) : supply))} required /><small>{Number(item.used_quantity || 0).toLocaleString("pt-BR")} consumidos</small></label>)}</div> : null}<Field label="Comentário da atualização" className="form-span-2"><textarea value={progressForm.note} onChange={(event) => setProgressForm({ ...progressForm, note: event.target.value })} placeholder="O que foi executado desde a última atualização?" maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProgressMicro(null)}>Cancelar</Button><Button type="submit" loading={saving}><Camera size={16} /> Registrar avanço e estoque</Button></div></form></Dialog>
       <Dialog open={Boolean(editingUpdate)} onClose={() => setEditingUpdate(null)} title="Editar atualização" description="A foto, quando anexada, é preservada. Se esta for a atualização mais recente da microetapa, o avanço atual também será corrigido."><form className="form-grid" onSubmit={saveEditedUpdate}><Field label="Avanço"><div className="range-field"><input type="range" min="0" max="100" step="1" value={updateEditForm.progress} onChange={(event) => setUpdateEditForm({ ...updateEditForm, progress: event.target.value })} /><strong>{updateEditForm.progress}%</strong></div></Field><Field label="Comentário"><textarea value={updateEditForm.note} onChange={(event) => setUpdateEditForm({ ...updateEditForm, note: event.target.value })} maxLength={1500} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setEditingUpdate(null)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar correção</Button></div></form></Dialog>
       <Dialog open={inspectionDialog} onClose={() => setInspectionDialog(false)} title="Registrar vistoria" description={`O registro reinicia o ciclo de ${construction.inspection_interval_days} dia(s) desta obra.`}><form className="form-grid" onSubmit={saveInspection}><Field label="Data da vistoria"><input type="date" max={todayIso()} value={inspectionForm.inspected_at} onChange={(event) => setInspectionForm({ ...inspectionForm, inspected_at: event.target.value })} required /></Field><Field label="Observações" hint="Opcional"><textarea value={inspectionForm.note} onChange={(event) => setInspectionForm({ ...inspectionForm, note: event.target.value })} maxLength={1500} placeholder="Situação encontrada e providências combinadas" /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setInspectionDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}><ClipboardCheck size={16} /> Registrar</Button></div></form></Dialog>
-      <Dialog open={budgetDialog} onClose={() => setBudgetDialog(false)} title="Atualizar orçamento mensal" description="Se o mês já existir, os valores serão atualizados."><form className="form-grid" onSubmit={saveBudget}><Field label="Mês de referência"><input type="month" value={budgetForm.reference_month} onChange={(event) => setBudgetForm({ ...budgetForm, reference_month: event.target.value })} required /></Field><Field label="Previsto no mês"><input type="number" min="0" step="0.01" value={budgetForm.planned_amount} onChange={(event) => setBudgetForm({ ...budgetForm, planned_amount: event.target.value })} required /></Field><Field label="Realizado no mês"><input type="number" min="0" step="0.01" value={budgetForm.realized_amount} onChange={(event) => setBudgetForm({ ...budgetForm, realized_amount: event.target.value })} required /></Field><Field label="Observações"><textarea value={budgetForm.notes} onChange={(event) => setBudgetForm({ ...budgetForm, notes: event.target.value })} /></Field><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setBudgetDialog(false)}>Cancelar</Button><Button type="submit" loading={saving}>Salvar competência</Button></div></form></Dialog>
       {toast ? <Toast {...toast} onClose={() => setToast(null)} /> : null}
     </>
   );

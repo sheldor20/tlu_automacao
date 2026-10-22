@@ -6,6 +6,16 @@ import {
   paymentJson,
   PaymentError,
 } from "@/lib/payment-server";
+import {
+  constructionLinkSchema,
+  constructionWorkKeys,
+  inheritedLinkMatches,
+  MANUAL_FINANCE_DISABLED,
+  monthlyConstructionExpenses,
+  type FinanceSources,
+  type MonthlyCashEntry,
+} from "@/lib/construction-finance";
+
 export async function GET(request: Request) {
   try {
     const { db, service, canWrite } = await operationsAccess(request, [
@@ -15,273 +25,180 @@ export async function GET(request: Request) {
     const work = await checked(
       db
         .from("constructions")
-        .select("id,name,source_business_id,qlik_work_key,planned_budget")
+        .select(
+          "id,name,source_business_id,qlik_work_key,qlik_additional_work_keys,updated_at",
+        )
         .eq("id", id)
         .single(),
     );
-    const [commitments, estimate, entries, stages, mappings, stageBudgets] =
-      await Promise.all([
-        allRows(db, "construction_commitments", "*", { construction_id: id }),
-        checked(
-          db
-            .from("construction_cost_estimates")
-            .select("*")
-            .eq("construction_id", id)
-            .maybeSingle(),
-        ),
-        work.qlik_work_key
-          ? allRows(db, "operational_cash_entries", "*", {
-              work_key: work.qlik_work_key,
-              active: true,
-              kind: ["paid", "payable"],
-            })
-          : Promise.resolve([]),
-        checked(
-          db
-            .from("construction_macro_stages")
-            .select("id,name,weight_percent,progress_percent")
-            .eq("construction_id", id)
-            .order("position"),
-        ),
-        allRows(db, "construction_stage_mappings", "*", {
-          construction_id: id,
-        }),
-        allRows(db, "construction_stage_finances", "*", {
-          construction_id: id,
-        }),
-      ]);
-    const payments = work.qlik_work_key
-      ? await checked(
-          service
-            .from("payment_requests")
-            .select("id,title,status,amount,qlik_work_key")
-            .eq("qlik_work_key", work.qlik_work_key)
-            .is("deleted_at", null)
-            .limit(5000),
-        )
-      : [];
-    const reconciliations = payments.length
-      ? await checked(
-          service
-            .from("cash_reconciliations")
-            .select("request_id,state,cash_entry_id")
-            .in(
-              "request_id",
-              payments.map((p) => p.id),
-            ),
-        )
-      : [];
-    return paymentJson({
-      mappings,
-      stageBudgets,
-      reconciliations,
-      work,
+    const workKeys = constructionWorkKeys(work);
+    const connection = await checked(
+      service
+        .from("data_connections")
+        .select("active,settings")
+        .eq("slug", "qlik-operations")
+        .single(),
+    );
+    const [
       commitments,
       estimate,
       entries,
       stages,
-      payments,
+      stageBudgets,
+      linkedWorks,
+      runs,
+    ] = await Promise.all([
+      allRows(db, "construction_commitments", "*", { construction_id: id }),
+      checked(
+        db
+          .from("construction_cost_estimates")
+          .select("*")
+          .eq("construction_id", id)
+          .maybeSingle(),
+      ),
+      workKeys.length
+        ? allRows(
+            db,
+            "operational_cash_entries",
+            "id,work_key,kind,cash_date,amount,active",
+            {
+              work_key: workKeys,
+              active: true,
+              kind: ["paid", "payable"],
+            },
+          )
+        : Promise.resolve([]),
+      allRows(db, "construction_macro_stages", "id,name", {
+        construction_id: id,
+      }),
+      allRows(db, "construction_stage_finances", "*", { construction_id: id }),
+      workKeys.length
+        ? allRows(
+            db,
+            "qlik_works",
+            "key,company_id,work_id,name,active,qlik_companies(name)",
+            { key: workKeys },
+          )
+        : Promise.resolve([]),
+      // One latest run per source, so a busy importer cannot hide another source's state.
+      Promise.all(
+        ["paid", "payable"].map(async (kind) => ({
+          kind,
+          run: await checked(
+            service
+              .from("operational_imports")
+              .select("status")
+              .eq("kind", kind)
+              .order("started_at", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+          ),
+        })),
+      ),
+    ]);
+    // Pagination must not combine two different published snapshots.
+    const after = await checked(
+      service
+        .from("data_connections")
+        .select("settings")
+        .eq("slug", "qlik-operations")
+        .single(),
+    );
+    if (
+      ["paid", "payable"].some(
+        (kind) =>
+          connection.settings?.[kind]?.at !== after.settings?.[kind]?.at,
+      )
+    )
+      throw new PaymentError(
+        "Uma nova carga Qlik foi publicada durante a consulta. Recarregue os dados.",
+        409,
+      );
+    const sources = Object.fromEntries(
+      runs.map(({ kind, run }) => [
+        kind,
+        {
+          at: connection.settings?.[kind]?.at || null,
+          status: run?.status || "pending",
+        },
+      ]),
+    ) as FinanceSources;
+    return paymentJson({
+      work,
+      workKeys,
+      linkedWorks,
+      commitments,
+      estimate,
+      stageBudgets,
+      stages,
+      monthly: monthlyConstructionExpenses(
+        entries as MonthlyCashEntry[],
+        workKeys,
+        sources,
+      ),
+      sources,
+      syncActive: connection.active,
+      checkedAt: new Date().toISOString(),
       canWrite,
     });
   } catch (e) {
     return paymentFailure(e);
   }
 }
-const schema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("stage_budget"),
-    id: z.uuid(),
-    macro_stage_id: z.uuid(),
-    planned_budget: z.number().nonnegative().max(1e12),
-    remaining_uncommitted: z.number().nonnegative().max(1e12).nullable(),
-  }),
-  z.object({
-    action: z.literal("stage_mapping"),
-    id: z.uuid(),
-    macro_stage_id: z.uuid(),
-    source_category: z.string().min(1).max(500),
-  }),
-  z.object({
-    action: z.literal("link"),
-    id: z.uuid(),
-    work_key: z.string().nullable(),
-  }),
-  z.object({
-    action: z.literal("estimate"),
-    id: z.uuid(),
-    remaining_uncommitted: z.number().finite().nonnegative().max(1e12),
-    note: z.string().max(3000),
-  }),
-  z.object({
-    action: z.literal("commitment"),
-    id: z.uuid(),
-    commitment_id: z.uuid().optional(),
-    macro_stage_id: z.uuid().nullable(),
-    supplier: z.string().trim().min(1).max(300),
-    description: z.string().trim().min(1).max(1000),
-    due_date: z.iso.date(),
-    amount: z.number().finite().positive().max(1e12),
-    status: z.enum(["committed", "paid", "cancelled"]),
-    payment_request_id: z.uuid().nullable(),
-    cash_entry_id: z.string().nullable(),
-  }),
-]);
+
 export async function POST(request: Request) {
   try {
-    const { db, service, actor } = await operationsAccess(
-      request,
-      ["obras"],
-      true,
-    );
-    const b = schema.parse(await paymentBody(request));
+    const { db } = await operationsAccess(request, ["obras"], true);
+    const body = await paymentBody(request);
+    // Old clients must not be able to submit financial values after the UI changes.
+    if (body?.action !== "link")
+      throw new PaymentError(MANUAL_FINANCE_DISABLED, 405);
+    const b = constructionLinkSchema.parse(body);
     const work = await checked(
       db
         .from("constructions")
-        .select("id,source_business_id,qlik_work_key")
+        .select("id,source_business_id,qlik_work_key,updated_at")
         .eq("id", b.id)
         .single(),
     );
-    if (b.action === "stage_budget" || b.action === "stage_mapping") {
-      const stage = await checked(
-        db
-          .from("construction_macro_stages")
-          .select("construction_id")
-          .eq("id", b.macro_stage_id)
-          .single(),
+    if (
+      work.source_business_id &&
+      !inheritedLinkMatches(work.qlik_work_key, b.work_keys)
+    ) {
+      throw new PaymentError(
+        "O vínculo principal é herdado do negócio de origem. Altere-o em Novos Negócios antes de selecionar unidades adicionais nesta obra.",
+        409,
       );
-      if (stage.construction_id !== b.id)
-        throw new PaymentError("Etapa de outra obra.");
-      const base = {
-        construction_id: b.id,
-        macro_stage_id: b.macro_stage_id,
-        updated_by: actor.id,
-        updated_at: new Date().toISOString(),
-      };
-      if (b.action === "stage_budget")
-        await checked(
-          service.from("construction_stage_finances").upsert({
-            ...base,
-            planned_budget: b.planned_budget,
-            remaining_uncommitted: b.remaining_uncommitted,
-          }),
-        );
-      else
-        await checked(
-          service
-            .from("construction_stage_mappings")
-            .upsert({ ...base, source_category: b.source_category }),
-        );
-    } else if (b.action === "link") {
-      if (b.work_key)
-        await checked(
-          service
-            .from("qlik_works")
-            .select("key")
-            .eq("key", b.work_key)
-            .eq("active", true)
-            .single(),
-        );
-      if (work.source_business_id)
-        await checked(
-          service
-            .from("businesses")
-            .update({ qlik_work_key: b.work_key })
-            .eq("id", work.source_business_id),
-        );
-      await checked(
-        service
-          .from("constructions")
-          .update({ qlik_work_key: b.work_key })
-          .eq("id", b.id),
-      );
-    } else if (b.action === "estimate")
-      await checked(
-        service.from("construction_cost_estimates").upsert({
-          construction_id: b.id,
-          remaining_uncommitted: b.remaining_uncommitted,
-          note: b.note,
-          updated_by: actor.id,
-          updated_at: new Date().toISOString(),
-        }),
-      );
-    else {
-      if (!work.qlik_work_key)
+    }
+    if (b.work_keys.length) {
+      const available = await allRows(db, "qlik_works", "key", {
+        key: b.work_keys,
+        active: true,
+      });
+      if (available.length !== b.work_keys.length)
         throw new PaymentError(
-          "Vincule a obra ao Qlik antes de cadastrar compromissos.",
-        );
-      if (b.macro_stage_id) {
-        const stage = await checked(
-          db
-            .from("construction_macro_stages")
-            .select("construction_id")
-            .eq("id", b.macro_stage_id)
-            .single(),
-        );
-        if (stage.construction_id !== b.id)
-          throw new PaymentError("Etapa de outra obra.");
-      }
-      if (b.payment_request_id) {
-        const p = await checked(
-          service
-            .from("payment_requests")
-            .select("qlik_work_key,amount")
-            .eq("id", b.payment_request_id)
-            .is("deleted_at", null)
-            .single(),
-        );
-        if (
-          p.qlik_work_key !== work.qlik_work_key ||
-          p.amount === null ||
-          Math.abs(Number(p.amount) - b.amount) > 0.01
-        )
-          throw new PaymentError(
-            "A solicitação deve pertencer à mesma obra e ter o mesmo valor do compromisso.",
-          );
-      }
-      if (b.cash_entry_id) {
-        const c = await checked(
-          db
-            .from("operational_cash_entries")
-            .select("work_key,kind,active,amount")
-            .eq("id", b.cash_entry_id)
-            .single(),
-        );
-        if (
-          c.work_key !== work.qlik_work_key ||
-          !["payable", "paid"].includes(c.kind) ||
-          !c.active ||
-          Math.abs(Number(c.amount) - b.amount) > 0.01
-        )
-          throw new PaymentError("Lançamento de outra obra ou inválido.");
-      }
-      const data = {
-        construction_id: b.id,
-        macro_stage_id: b.macro_stage_id,
-        supplier: b.supplier,
-        description: b.description,
-        due_date: b.due_date,
-        amount: b.amount,
-        status: b.status,
-        payment_request_id: b.payment_request_id,
-        cash_entry_id: b.cash_entry_id,
-      };
-      if (b.commitment_id)
-        await checked(
-          service
-            .from("construction_commitments")
-            .update(data)
-            .eq("id", b.commitment_id)
-            .eq("construction_id", b.id)
-            .select("id")
-            .single(),
-        );
-      else
-        await checked(
-          service
-            .from("construction_commitments")
-            .insert({ ...data, created_by: actor.id }),
+          "Selecione apenas unidades ativas disponíveis no catálogo Qlik.",
+          422,
         );
     }
+    // One atomic update under the caller's existing RLS; no service-role write.
+    let update = db
+      .from("constructions")
+      .update({
+        qlik_work_key: b.work_keys[0] || null,
+        qlik_additional_work_keys: b.work_keys.slice(1),
+      })
+      .eq("id", b.id)
+      .eq("updated_at", b.expected_updated_at);
+    update = work.source_business_id
+      ? update.eq("source_business_id", work.source_business_id)
+      : update.is("source_business_id", null);
+    const saved = await checked(update.select("id").maybeSingle());
+    if (!saved)
+      throw new PaymentError(
+        "A obra mudou ou você não pode editá-la. Recarregue antes de confirmar o vínculo.",
+        409,
+      );
     return paymentJson({ ok: true });
   } catch (e) {
     return paymentFailure(e);
