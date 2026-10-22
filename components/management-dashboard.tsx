@@ -232,9 +232,9 @@ export function ManagementDashboard({ area }: { area: ManagementAreaSlug }) {
       setConstructions(((constructionResult.data || []) as ManagementConstructionSnapshot[]).map((item) => ({
         ...item,
         planned_budget: toNumber(item.planned_budget),
-        realized_total: toNumber(item.realized_total),
+        realized_total: item.realized_total == null ? null : toNumber(item.realized_total),
         physical_progress: toNumber(item.physical_progress),
-        financial_progress: toNumber(item.financial_progress),
+        financial_progress: item.financial_progress == null ? null : toNumber(item.financial_progress),
       })));
       const rental = (rentalResult.data || [])[0] as ManagementRentalSnapshot | undefined;
       setRentalSnapshot(rental ? {
@@ -713,16 +713,16 @@ function NewBusinessView({ stages, values }: { stages: ManagementBusinessStageSn
 
 function EngineeringView({ constructions }: { constructions: ManagementConstructionSnapshot[] }) {
   const totalBudget = constructions.reduce((sum, item) => sum + item.planned_budget, 0);
-  const totalRealized = constructions.reduce((sum, item) => sum + item.realized_total, 0);
+  const totalRealized = constructions.length && constructions.every((item) => item.realized_total != null) ? constructions.reduce((sum, item) => sum + Number(item.realized_total), 0) : null;
   const physical = constructions.length ? constructions.reduce((sum, item) => sum + item.physical_progress, 0) / constructions.length : 0;
-  const financial = totalBudget ? totalRealized / totalBudget * 100 : 0;
+  const financial = totalBudget && totalRealized !== null ? totalRealized / totalBudget * 100 : null;
   return (
     <div className="management-view-stack">
       <section className="management-kpi-grid">
         <KpiCard label="Obras em andamento" value={String(constructions.length)} helper="portfólio em execução" icon={<HardHat size={17} />} />
         <KpiCard label="Orçamento previsto" value={currency(totalBudget, true)} helper="total das obras em andamento" icon={<CircleDollarSign size={17} />} />
         <KpiCard label="Evolução física média" value={`${physical.toFixed(0)}%`} helper="média simples do portfólio" tone="success" icon={<Gauge size={17} />} />
-        <KpiCard label="Evolução financeira" value={`${financial.toFixed(0)}%`} helper={`${currency(totalRealized, true)} realizado`} icon={<WalletCards size={17} />} />
+        <KpiCard label="Evolução financeira" value={financial === null ? "Sem registros" : `${financial.toFixed(0)}%`} helper={totalRealized === null ? "Qlik · Reformas / 9.118 · dados incompletos" : `${currency(totalRealized, true)} realizado · Reformas / 9.118`} icon={<WalletCards size={17} />} />
       </section>
       <section className="management-panel">
         <div className="management-panel-head"><div><span>Resumo operacional</span><h2>Obras em andamento</h2><p>Comparação entre orçamento, realizado e avanços físico e financeiro por obra.</p></div><Link className="button button-secondary" href="/obras">Abrir operação <ArrowUpRight size={16} /></Link></div>
@@ -731,10 +731,10 @@ function EngineeringView({ constructions }: { constructions: ManagementConstruct
             {constructions.map((item) => (
               <article key={item.id}>
                 <div className="management-work-title"><div><HardHat size={18} /></div><span><strong>{item.name}</strong><small>Acompanhamento físico e financeiro</small></span></div>
-                <div className="management-work-progress"><ProgressBar label="Evolução física" value={item.physical_progress} /><ProgressBar label="Evolução financeira" value={item.financial_progress} /></div>
+                <div className="management-work-progress"><ProgressBar label="Evolução física" value={item.physical_progress} />{item.financial_progress === null ? <span>Evolução financeira: sem registros</span> : <ProgressBar label="Evolução financeira" value={item.financial_progress} />}</div>
                 <div className="management-work-budget">
-                  <div className={item.realized_total > item.planned_budget ? "is-over-budget" : ""}><span>Orçamento</span><strong>{currency(item.planned_budget, true)}</strong></div>
-                  <div><span>Realizado</span><strong>{currency(item.realized_total, true)}</strong></div>
+                  <div className={item.realized_total !== null && item.realized_total > item.planned_budget ? "is-over-budget" : ""}><span>Orçamento</span><strong>{currency(item.planned_budget, true)}</strong></div>
+                  <div><span>Realizado</span><strong>{item.realized_total === null ? "Sem registros" : currency(item.realized_total, true)}</strong></div>
                 </div>
               </article>
             ))}

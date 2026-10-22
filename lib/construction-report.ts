@@ -81,7 +81,7 @@ export async function generateConstructionReport({
   const cards = [
     ["Avanco fisico", `${Number(construction.progress_percent || 0).toFixed(0)}%`],
     ["Orcamento previsto", currency(construction.planned_budget)],
-    ["Realizado manual (legado, sem Qlik)", currency(construction.realized_total)],
+    ["Realizado Qlik - Reformas / 9.118", construction.realized_total == null ? "Sem registros" : currency(construction.realized_total)],
     ["Prazo", `${dateBr(construction.start_date)} a ${dateBr(construction.expected_end_date)}`],
   ];
   cards.forEach(([label, value], index) => {

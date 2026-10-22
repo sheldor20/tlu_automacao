@@ -82,8 +82,8 @@ export type Construction = {
   archived_at: string | null;
   archived_by: string | null;
   progress_percent?: number;
-  realized_total?: number;
-  realized_current_month?: number;
+  realized_total?: number | null;
+  realized_current_month?: number | null;
   stage_weight_total?: number;
   last_activity_at?: string;
   last_inspection_at?: string | null;
@@ -533,9 +533,9 @@ export type ManagementConstructionSnapshot = {
   name: string;
   status: Construction["status"];
   planned_budget: number;
-  realized_total: number;
+  realized_total: number | null;
   physical_progress: number;
-  financial_progress: number;
+  financial_progress: number | null;
 };
 
 export type ManagementRentalSnapshot = {
