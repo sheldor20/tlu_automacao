@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, ListPlus, MessageCircle, Plus, Send, Settings, Users } from "lucide-react";
+import { ArrowLeft, ListPlus, MessageCircle, Plus, Send, Settings, Users, Paperclip, Download, X } from "lucide-react";
 import { getSupabase, friendlyError } from "@/lib/supabase";
 import { initials, todayIso } from "@/lib/format";
 import type { ProjectCategory, UserProfile } from "@/lib/types";
@@ -12,7 +12,9 @@ import "./chat.css";
 
 type Person = Pick<UserProfile, "user_id" | "full_name" | "email">;
 type Conversation = { id: string; name: string | null; is_group: boolean; created_by: string; participants: Person[]; last_body: string | null; last_at: string; unread: number };
-type Message = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string };
+type Attachment = { id: string; name: string; mime_type: string; size: number };
+const messageColumns = "id,conversation_id,sender_id,body,created_at,chat_attachments(id,name,mime_type,size)";
+type Message = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string; chat_attachments?: Attachment[] };
 const time = (value: string) => new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const date = (value: string) => new Date(value).toLocaleDateString("pt-BR");
 
@@ -32,6 +34,9 @@ export function ChatWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File[]>>({});
+  const sendingRef = useRef(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -97,7 +102,7 @@ export function ChatWorkspace() {
     async function refresh() {
       const request = ++revision;
       try {
-        const { data, error } = await supabase!.from("chat_messages").select("id,conversation_id,sender_id,body,created_at")
+        const { data, error } = await supabase!.from("chat_messages").select(messageColumns)
           .eq("conversation_id", selected).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
         if (!active || request !== revision) return;
         if (error) throw error;
@@ -142,17 +147,58 @@ export function ChatWorkspace() {
   }
   async function send(event: FormEvent) {
     event.preventDefault(); const conversationId = selected; const body = (drafts[conversationId || ""] || "").trim();
-    if (!supabase || !conversationId || !body || sending) return;
+    const attachments = files[conversationId || ""] || [];
+    if (!supabase || !conversationId || (!body && !attachments.length) || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true); setError("");
     try {
-      const { data, error } = await supabase.from("chat_messages").insert({ conversation_id: conversationId, body }).select("id,conversation_id,sender_id,body,created_at").single();
-      if (error) throw error;
+      let messageId: string;
+      if (attachments.length) {
+        const encoded = await Promise.all(attachments.map(file => new Promise<{name:string;mime_type:string;data:string}>((resolve,reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error(`Não foi possível ler ${file.name}.`));
+          reader.onload = () => resolve({name:file.name,mime_type:file.type || "application/octet-stream",data:String(reader.result).split(",")[1]});
+          reader.readAsDataURL(file);
+        })));
+        const result = await supabase.rpc("send_chat_attachments", {p_conversation:conversationId,p_body:body,p_files:encoded});
+        if (result.error) throw result.error;
+        messageId = result.data;
+      } else {
+        const result = await supabase.from("chat_messages").insert({conversation_id:conversationId,body}).select("id").single();
+        if (result.error) throw result.error;
+        messageId = result.data.id;
+      }
       setDrafts(previous => ({ ...previous, [conversationId]: "" }));
+      setFiles(previous => ({ ...previous, [conversationId]: [] }));
+      const result = await supabase.from("chat_messages").select(messageColumns).eq("id",messageId).single();
+      if (result.error) throw result.error;
+      const data = result.data as Message;
       // Thread refresh is driven by realtime and the fallback timer; inbox refresh also confirms access.
       if (data && conversationId === selectionRef.current) setMessages(previous => previous.some(m => m.id === data.id) ? previous : [...previous, data]);
       await reloadInbox();
     } catch (err) { setError(friendlyError(err)); }
-    finally { setSending(false); }
+    finally { sendingRef.current = false; setSending(false); }
+  }
+  function addFiles(conversationId: string, incoming: File[]) {
+    const next = [...(files[conversationId] || []), ...incoming];
+    if (next.length > 5 || next.some(file => !file.size || file.size > 5 * 1024 * 1024) || next.reduce((sum,file) => sum + file.size,0) > 10 * 1024 * 1024) {
+      setError("Selecione até 5 arquivos não vazios, de até 5 MB cada e 10 MB no total."); return;
+    }
+    setError(""); setFiles(previous => ({...previous,[conversationId]:next}));
+  }
+  async function download(file: Attachment) {
+    if (!supabase || downloading) return;
+    setDownloading(file.id); setError("");
+    try {
+      const {data,error} = await supabase.rpc("download_chat_attachment",{p_id:file.id});
+      if (error) throw error;
+      if (!data?.length) throw new Error("Anexo indisponível ou acesso encerrado.");
+      const bytes = Uint8Array.from(atob(data[0].data.replace(/\s/g,"")), character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes],{type:data[0].mime_type}));
+      const link = document.createElement("a"); link.href=url; link.download=data[0].name; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url),60000);
+    } catch (err) { setError(friendlyError(err)); }
+    finally { setDownloading(null); }
   }
   function openTask(message: Message) {
     setTaskForm({ ...emptyProjectTaskDraft("", todayIso(), "a_fazer", [me]),
@@ -192,9 +238,11 @@ export function ChatWorkspace() {
           <div className="chat-history" role="log" aria-label="Histórico de mensagens" aria-live="polite">{messageLoading ? <p className="chat-empty">Carregando mensagens…</p> : <>{hasMore ? <Button variant="secondary" onClick={() => setLimit(n => n + 100)}>Carregar mensagens anteriores</Button> : null}{!messages.length ? <p className="chat-empty">Envie a primeira mensagem.</p> : messages.map((message, index) => {
             const author = current.participants.find(p => p.user_id === message.sender_id) || users.find(p => p.user_id === message.sender_id);
             const mine = message.sender_id === me;
-            return <div key={message.id}>{index === 0 || date(messages[index - 1].created_at) !== date(message.created_at) ? <div className="chat-date">{date(message.created_at)}</div> : null}<article className={`chat-bubble${mine ? " mine" : ""}`}>{current.is_group && !mine ? <strong>{author?.full_name || author?.email || "Ex-participante"}</strong> : null}<p>{message.body}</p>{taskCategories.length ? <button type="button" className="chat-create-task" onClick={() => openTask(message)}><ListPlus size={14} />Criar tarefa</button> : null}<time dateTime={message.created_at}>{time(message.created_at)}</time></article></div>;
+            return <div key={message.id}>{index === 0 || date(messages[index - 1].created_at) !== date(message.created_at) ? <div className="chat-date">{date(message.created_at)}</div> : null}<article className={`chat-bubble${mine ? " mine" : ""}`}>{current.is_group && !mine ? <strong>{author?.full_name || author?.email || "Ex-participante"}</strong> : null}<p>{message.body}</p>{message.chat_attachments?.map(file => <button key={file.id} type="button" className="chat-attachment" disabled={downloading !== null} onClick={() => void download(file)} aria-label={`Baixar ${file.name}`}><Download size={16} /><span>{downloading === file.id ? "Baixando…" : file.name}<small>{(file.size / 1024).toLocaleString("pt-BR", {maximumFractionDigits:0})} KB</small></span></button>)}{taskCategories.length ? <button type="button" className="chat-create-task" onClick={() => openTask(message)}><ListPlus size={14} />Criar tarefa</button> : null}<time dateTime={message.created_at}>{time(message.created_at)}</time></article></div>;
           })}</>}<div ref={bottom} /></div>
-          <form className="chat-composer" onSubmit={send}><textarea aria-label="Sua mensagem" placeholder="Escreva uma mensagem…" maxLength={4000} rows={2} value={drafts[current.id] || ""} disabled={sending} onChange={e => setDrafts(previous => ({ ...previous, [current.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} /><Button type="submit" loading={sending} disabled={!drafts[current.id]?.trim()} aria-label="Enviar mensagem"><Send size={19} /><span>Enviar</span></Button><small>Enter para enviar · Shift + Enter para nova linha</small></form>
+          <form className="chat-composer" onSubmit={send}>
+            <div className="chat-attachment-tools"><label className="chat-attach-button"><Paperclip size={17} />Anexar fotos e documentos<input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.odt,.ods" disabled={sending} onChange={e => { addFiles(current.id,Array.from(e.target.files || [])); e.target.value=""; }} /></label><small>Até 5 arquivos · 5 MB por arquivo · 10 MB por mensagem</small></div>
+            {(files[current.id] || []).length ? <ul className="chat-pending-files">{files[current.id].map((file,index) => <li key={`${file.name}-${index}`}><span>{file.name}</span><button type="button" disabled={sending} aria-label={`Remover ${file.name}`} onClick={() => setFiles(previous => ({...previous,[current.id]:(previous[current.id] || []).filter((_,i) => i !== index)}))}><X size={15} /></button></li>)}</ul> : null}<textarea aria-label="Sua mensagem" placeholder="Escreva uma mensagem…" maxLength={4000} rows={2} value={drafts[current.id] || ""} disabled={sending} onChange={e => setDrafts(previous => ({ ...previous, [current.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} /><Button type="submit" loading={sending} disabled={!drafts[current.id]?.trim() && !files[current.id]?.length} aria-label="Enviar mensagem"><Send size={19} /><span>Enviar</span></Button><small>Enter para enviar · Shift + Enter para nova linha</small></form>
         </>}
       </section>
     </div>
