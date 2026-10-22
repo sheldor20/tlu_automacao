@@ -744,23 +744,23 @@ export function PaymentRequestForm({
             </select>
           </Field>
           {method === "pix" && (
-            <Field label="Chave PIX *" className="form-span-2">
-              <input name="pix_key" defaultValue={initialRequest?.beneficiary.pix_key || ""} required maxLength={200} />
+            <Field label={`Chave PIX${materials ? "" : " *"}`} className="form-span-2">
+              <input name="pix_key" defaultValue={initialRequest?.beneficiary.pix_key || ""} required={!materials} maxLength={200} />
             </Field>
           )}
           {method === "transfer" && (
             <>
-              <Field label="Banco *">
-                <input name="bank" defaultValue={initialRequest?.beneficiary.bank || ""} required maxLength={100} />
+              <Field label={`Banco${materials ? "" : " *"}`}>
+                <input name="bank" defaultValue={initialRequest?.beneficiary.bank || ""} required={!materials} maxLength={100} />
               </Field>
-              <Field label="Agência e dígito *">
-                <input name="branch" defaultValue={initialRequest?.beneficiary.branch || ""} required maxLength={30} />
+              <Field label={`Agência e dígito${materials ? "" : " *"}`}>
+                <input name="branch" defaultValue={initialRequest?.beneficiary.branch || ""} required={!materials} maxLength={30} />
               </Field>
-              <Field label="Conta e dígito *">
-                <input name="account" defaultValue={initialRequest?.beneficiary.account || ""} required maxLength={50} />
+              <Field label={`Conta e dígito${materials ? "" : " *"}`}>
+                <input name="account" defaultValue={initialRequest?.beneficiary.account || ""} required={!materials} maxLength={50} />
               </Field>
-              <Field label="Titular da conta *">
-                <input name="account_holder" defaultValue={initialRequest?.beneficiary.account_holder || ""} required maxLength={200} />
+              <Field label={`Titular da conta${materials ? "" : " *"}`}>
+                <input name="account_holder" defaultValue={initialRequest?.beneficiary.account_holder || ""} required={!materials} maxLength={200} />
               </Field>
             </>
           )}

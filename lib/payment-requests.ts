@@ -113,6 +113,8 @@ const optionalBeneficiarySchema = beneficiaryFieldsSchema
         path: ["tax_id"],
         message: `Informe um ${b.person_type === "PF" ? "CPF" : "CNPJ"} válido.`,
       });
+  });
+export const beneficiarySchema = optionalBeneficiarySchema.superRefine((b, ctx) => {
     if (b.method === "pix" && !b.pix_key)
       ctx.addIssue({
         code: "custom",
@@ -128,8 +130,6 @@ const optionalBeneficiarySchema = beneficiaryFieldsSchema
         path: ["bank"],
         message: "Preencha banco, agência, conta e titular.",
       });
-  });
-export const beneficiarySchema = optionalBeneficiarySchema.superRefine((b, ctx) => {
   for (const [key, message] of [
     ["name", "Informe o nome do beneficiário."],
     ["tax_id", "Informe o CPF ou CNPJ do beneficiário."],
