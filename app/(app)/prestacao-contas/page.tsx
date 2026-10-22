@@ -108,7 +108,11 @@ export default function AccountabilityPage() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
-      setNotice(`Book e Excel enviados para ${BETA_RECIPIENT}.`);
+      setNotice(
+        body.processing
+          ? "Geração iniciada. O status será atualizado automaticamente após o envio."
+          : `Book e Excel enviados para ${BETA_RECIPIENT}.`,
+      );
       setSelected(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha no envio.");
@@ -123,15 +127,13 @@ export default function AccountabilityPage() {
     try {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) throw new Error("Entre novamente.");
-      const result = await supabase
-        .from("accountability_periods")
-        .upsert({
-          year,
-          month,
-          closed: true,
-          confirmed_by: auth.user.id,
-          confirmed_at: new Date().toISOString(),
-        });
+      const result = await supabase.from("accountability_periods").upsert({
+        year,
+        month,
+        closed: true,
+        confirmed_by: auth.user.id,
+        confirmed_at: new Date().toISOString(),
+      });
       if (result.error) throw result.error;
       await load();
     } catch {
