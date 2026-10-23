@@ -23,7 +23,7 @@ import {
   businessPortfolioSectionForStage,
 } from "@/lib/constants";
 import { currency, dateBr, daysBetween, todayIso } from "@/lib/format";
-import { extractKmzCenter, googleMapsUrl, kmzStoragePath } from "@/lib/kmz";
+import { extractKmzCenter, googleMapsUrl, kmzStoragePath, kmzErrorMessage } from "@/lib/kmz";
 import { friendlyError, getSupabase, storagePath } from "@/lib/supabase";
 import type { Business, BusinessPortfolioSection, BusinessStage, Project, StageHistory } from "@/lib/types";
 import {
@@ -125,10 +125,21 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
     if (error) setToast({ message: friendlyError(error), type: "error" });
     if (projectError) setToast({ message: friendlyError(projectError), type: "error" });
     const options = (projectData || []) as ProjectOption[];
-    setBusinesses(((businessData || []) as Business[]).map((business) => ({
+    const loaded = ((businessData || []) as Business[]).map((business) => ({
       ...business,
       project: options.find((project) => project.id === business.project_id) || null,
-    })));
+    }));
+    setBusinesses(loaded);
+    const requestedId = new URL(window.location.href).searchParams.get("business");
+    if (requestedId) {
+      const requested = loaded.find(business => business.id === requestedId);
+      if (requested) {
+        setFilter(requested.archived_at ? "archived" : "current");
+        setDetailBusiness(requested);
+      } else if (!error) {
+        setToast({ message: "O negócio de origem não está disponível nesta carteira. Verifique suas permissões ou reabra o vínculo pela obra.", type: "error" });
+      }
+    }
     setProjects(options.filter((project) => project.category === "operational" && !project.archived_at));
     setHistory((historyData || []) as StageHistory[]);
     setLoading(false);
@@ -264,7 +275,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       if (form.area_image) await validateAreaImage(form.area_image);
       const documents: Partial<Business> = {};
       if (form.kmz_file) {
-        if (!/\.kmz$/i.test(form.kmz_file.name) || form.kmz_file.size > 20 * 1024 * 1024) throw new Error("O KMZ deve ser válido e ter até 20 MB.");
+        if (!/\.kmz$/i.test(form.kmz_file.name)) throw new Error("Selecione um arquivo com extensão .kmz.");
         Object.assign(documents, await extractKmzCenter(form.kmz_file));
         const path = kmzStoragePath(businessId, form.kmz_file.name);
         const upload = await supabase.storage.from("business-locations").upload(path, new Blob([form.kmz_file], { type: "application/vnd.google-earth.kmz" }), { contentType: "application/vnd.google-earth.kmz", upsert: false });
@@ -304,7 +315,7 @@ export default function NewBusinessPortfolio({ section }: { section: BusinessPor
       if (result.error) throw result.error;
     } catch (error) {
       await Promise.allSettled(uploaded.map((item) => supabase.storage.from(item.bucket).remove([item.path])));
-      setToast({ message: error instanceof Error && error.message.startsWith("kmz_") ? "O KMZ não contém uma localização válida." : friendlyError(error), type: "error" });
+      setToast({ message: kmzErrorMessage(error) || friendlyError(error), type: "error" });
       setSaving(false);
       return;
     }

@@ -62,6 +62,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [offerDates, setOfferDates] = useState({ start: '', end: '' });
   const [details, setDetails] = useState<ClubOffer | null>(null);
   const [coupon, setCoupon] = useState<ClubVoucher | null>(null);
   const [credentials, setCredentials] = useState<ClubMember | null>(null);
@@ -100,7 +101,8 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
   }, [query]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
-    return () => { window.clearTimeout(timer); revision.current++; };
+    const requestRevision = revision;
+    return () => { window.clearTimeout(timer); requestRevision.current++; };
   }, [load]);
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible' && !operationLock.current) void load(); };
@@ -109,6 +111,13 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
     return () => { window.clearInterval(interval); window.removeEventListener('focus', refresh); };
   }, [load]);
 
+  function openEditor(next: Editor) {
+    if (next.kind === 'offer') {
+      const now = Date.now();
+      setOfferDates({ start: new Date(now).toISOString(), end: new Date(now + 30 * 86400000).toISOString() });
+    }
+    setEditor(next);
+  }
   function changeTab(next: ClubTab) {
     setData(current => current ? { ...current, items: [], total: 0 } : null);
     if (!['offers', 'vouchers'].includes(next)) setPartner('');
@@ -248,7 +257,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
             {data.partners.map(p => <option value={p.id} key={p.id}>{p.name}{p.active ? '' : ' (inativo)'}</option>)}</select> : null}
           {((tab === 'offers' && canEditOffers) || (tab === 'partners' && manager) || (tab === 'members' && manager)) ?
             <Button onClick={() => {
-              setEditor(tab === 'offers' ? { kind: 'offer' } : tab === 'partners' ? { kind: 'partner' } : { kind: 'member' });
+              openEditor(tab === 'offers' ? { kind: 'offer' } : tab === 'partners' ? { kind: 'partner' } : { kind: 'member' });
               setError(''); setMemberKind('partner'); setClientOptions([]); setClientQuery(''); setClientId('');
             }}><Plus size={17} />{tab === 'offers' ? 'Novo desconto' : tab === 'partners' ? 'Novo parceiro' : 'Novo acesso'}</Button> : null}
         </div>
@@ -271,7 +280,7 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
               : <p className={s.hint}>{offer.max_issues !== null ? `${Math.max(0, offer.max_issues - offer.issued_count)} cupons restantes · ` : ''}
                 {offer.per_client_limit} por cliente{offer.own_count ? ` · Você retirou ${offer.own_count}` : ''}</p>}
             <div className={s.actions}><Button variant="secondary" onClick={() => setDetails(offer)}>Regras e detalhes</Button>
-              {canEditOffers ? <Button variant="secondary" onClick={() => { setEditor({ kind: 'offer', item: offer }); setError(''); }}>Editar</Button> : null}
+              {canEditOffers ? <Button variant="secondary" onClick={() => { openEditor({ kind: 'offer', item: offer }); setError(''); }}>Editar</Button> : null}
               {role === 'client' ? <Button disabled={busy || soldOut || limitReached} onClick={() => setDetails(offer)}>
                 {limitReached ? 'Limite atingido' : soldOut ? 'Esgotado' : 'Retirar cupom'}</Button> : null}</div>
           </article>;
@@ -334,8 +343,8 @@ export function ClubWorkspace({ external = false }: { external?: boolean }) {
           <Field label="Benefício" hint="Ex.: 20% de desconto no almoço ou R$ 30 de desconto."><input name="benefit" defaultValue={selectedOffer?.benefit} minLength={3} maxLength={140} required /></Field>
           <Field label="Descrição"><textarea name="description" defaultValue={selectedOffer?.description} maxLength={2000} rows={2} /></Field>
           <Field label="Regras de utilização" hint="Informe dias, horários, produtos elegíveis, compra mínima e restrições."><textarea name="rules" defaultValue={selectedOffer?.rules} minLength={5} maxLength={5000} rows={4} required /></Field>
-          <div className={s.formGrid}><Field label="Início"><input type="datetime-local" name="starts_at" defaultValue={localDateTimeInput(selectedOffer?.starts_at || new Date().toISOString())} required /></Field>
-            <Field label="Fim"><input type="datetime-local" name="ends_at" defaultValue={localDateTimeInput(selectedOffer?.ends_at || new Date(Date.now() + 30 * 86400000).toISOString())} required /></Field></div>
+          <div className={s.formGrid}><Field label="Início"><input type="datetime-local" name="starts_at" defaultValue={localDateTimeInput(selectedOffer?.starts_at || offerDates.start)} required /></Field>
+            <Field label="Fim"><input type="datetime-local" name="ends_at" defaultValue={localDateTimeInput(selectedOffer?.ends_at || offerDates.end)} required /></Field></div>
           <p className={s.hint}>Horários do seu dispositivo. A validade do cupom nunca ultrapassa o fim da oferta.</p>
           <div className={s.formGrid}><Field label="Limite total de cupons" hint="Vazio = sem limite."><input name="max_issues" type="number" min={1} max={1000000} step={1} defaultValue={selectedOffer?.max_issues ?? ''} /></Field>
             <Field label="Limite por cliente"><input name="per_client_limit" type="number" min={1} max={100} step={1} defaultValue={selectedOffer?.per_client_limit ?? 1} required /></Field></div>

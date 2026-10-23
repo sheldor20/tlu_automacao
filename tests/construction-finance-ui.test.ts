@@ -260,3 +260,71 @@ test("campo de código executa validação e devolve chave exata somente sem amb
   assert.match(html, /Empresa A/);
   assert.match(html, /Unidade/);
 });
+
+type HandlerProps = {
+  children?: ReactNode; type?: string; disabled?: boolean; href?: string;
+  onClick?: () => void;
+  onSubmit?: (event: { preventDefault: () => void }) => Promise<void>;
+  onChange?: (text: string, keys: string[], valid: boolean) => void;
+};
+function linkFixture(source: string | null, primary: string | null) {
+  const state: unknown[] = []; let cursor = 0;
+  const posts: Array<{ method: string; body: string }> = [];
+  const Button = () => null, Codes = () => null;
+  const data = { ...base, work: { ...base.work, source_business_id: source, qlik_work_key: primary }, workKeys: primary ? [primary] : [] };
+  const loaded = load("../components/construction-finance.tsx", {
+    react: { ...React, useState: (initial: unknown) => {
+      const slot = cursor++;
+      if (!(slot in state)) state[slot] = initial;
+      return [state[slot], (value: unknown) => { state[slot] = typeof value === "function" ? value(state[slot]) : value; }];
+    } },
+    "next/link": { default: "a", __esModule: true },
+    "./ui": { Button, Dialog: () => null },
+    "./qlik-work-select": { QlikWorkCodes: Codes },
+    "@/lib/construction-finance": finance,
+    "@/lib/payment-client": { paymentFetch: async (_url: string, options: { method: string; body: string }) => { posts.push(options); } },
+    "./operations-common": { ...common, useOperations: () => ({ data, loading: false, error: "", reload: async () => {} }) },
+  });
+  const Component = loaded.ConstructionFinance as (props: { id: string; progress: number }) => ReactElement;
+  function find(node: ReactNode, predicate: (element: ReactElement<HandlerProps>) => boolean): ReactElement<HandlerProps>[] {
+    if (!React.isValidElement<HandlerProps>(node)) return [];
+    return [...(predicate(node) ? [node] : []), ...React.Children.toArray(node.props.children).flatMap(child => find(child, predicate))];
+  }
+  const render = () => { cursor = 0; return Component({ id, progress: 10 }); };
+  find(render(), node => node.type === Button && node.props.children === "Vincular empresa e obra")[0].props.onClick!();
+  const codes = () => find(render(), node => node.type === Codes)[0];
+  const submitButton = () => find(render(), node => node.type === Button && node.props.type === "submit")[0];
+  const submit = () => find(render(), node => node.type === "form")[0].props.onSubmit!({ preventDefault() {} });
+  return { posts, codes, submitButton, submit, links: () => find(render(), node => !!node.props.href) };
+}
+
+test("origem sem vínculo mostra acesso à origem e não permite submit nem consulta de códigos", async () => {
+  const f = linkFixture(id, null);
+  assert.equal(f.codes(), undefined);
+  assert.equal(f.submitButton().props.disabled, true);
+  assert.ok(f.links().some(link => link.props.href === `/novos-negocios/origem/${id}`));
+  await f.submit();
+  assert.equal(f.posts.length, 0);
+});
+
+test("vínculo herdado só permite adicionais com o principal preservado", async () => {
+  const f = linkFixture(id, "test|001");
+  f.codes().props.onChange!("other|002", ["other|002"], true);
+  assert.equal(f.submitButton().props.disabled, true);
+  await f.submit(); assert.equal(f.posts.length, 0);
+  f.codes().props.onChange!("test|001\nother|002", ["test|001", "other|002"], true);
+  assert.equal(f.submitButton().props.disabled, false);
+  await f.submit();
+  assert.deepEqual(JSON.parse(f.posts[0].body).work_keys, ["test|001", "other|002"]);
+});
+
+test("obra avulsa preserva vinculação manual e remoção explícita", async () => {
+  const f = linkFixture(null, null);
+  f.codes().props.onChange!("test|001", ["test|001"], true);
+  await f.submit();
+  assert.deepEqual(JSON.parse(f.posts[0].body).work_keys, ["test|001"]);
+  const clear = linkFixture(null, "test|001");
+  clear.codes().props.onChange!("", [], true);
+  await clear.submit();
+  assert.deepEqual(JSON.parse(clear.posts[0].body).work_keys, []);
+});
