@@ -713,7 +713,7 @@ function NewBusinessView({ stages, values }: { stages: ManagementBusinessStageSn
 
 function EngineeringView({ constructions }: { constructions: ManagementConstructionSnapshot[] }) {
   const totalBudget = constructions.reduce((sum, item) => sum + item.planned_budget, 0);
-  const totalRealized = constructions.length && constructions.every((item) => item.realized_total != null) ? constructions.reduce((sum, item) => sum + Number(item.realized_total), 0) : null;
+  const totalRealized = constructions.some((item) => item.realized_total != null) ? constructions.reduce((sum, item) => sum + Number(item.realized_total), 0) : null;
   const physical = constructions.length ? constructions.reduce((sum, item) => sum + item.physical_progress, 0) / constructions.length : 0;
   const financial = totalBudget && totalRealized !== null ? totalRealized / totalBudget * 100 : null;
   return (

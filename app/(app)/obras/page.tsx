@@ -108,8 +108,8 @@ export default function WorksPage() {
 
   const metrics = useMemo(() => {
     const planned = currentWorks.reduce((sum, work) => sum + Number(work.planned_budget || 0), 0);
-    const realized = currentWorks.length && currentWorks.every((work) => work.realized_total != null) ? currentWorks.reduce((sum, work) => sum + Number(work.realized_total), 0) : null;
-    const month = currentWorks.length && currentWorks.every((work) => work.realized_current_month != null) ? currentWorks.reduce((sum, work) => sum + Number(work.realized_current_month), 0) : null;
+    const realized = currentWorks.some((work) => work.realized_total != null) ? currentWorks.reduce((sum, work) => sum + Number(work.realized_total), 0) : null;
+    const month = currentWorks.some((work) => work.realized_current_month != null) ? currentWorks.reduce((sum, work) => sum + Number(work.realized_current_month), 0) : null;
     const progress = currentWorks.length ? currentWorks.reduce((sum, work) => sum + Number(work.progress_percent || 0), 0) / currentWorks.length : 0;
     return { planned, realized, month, progress };
   }, [currentWorks]);
