@@ -4,6 +4,14 @@ import { z } from "zod";
 import { canGenerateBook } from "@/lib/accountability/policy";
 import { exportConfigured } from "@/lib/accountability/book";
 import { sendAccountabilityDispatch } from "@/lib/accountability/send";
+import {
+  claimDispatch,
+  recoverDispatch,
+  processingExpired,
+  safeToRetry,
+  DispatchConflict,
+  type DispatchRecord,
+} from "@/lib/accountability/dispatch";
 export const runtime = "nodejs";
 export const maxDuration = 800;
 async function context(request: Request) {
@@ -34,26 +42,46 @@ export async function GET(request: Request) {
     );
   const params = new URL(request.url).searchParams;
   if (params.has("artifact")) {
-    const artifact = z.object({
-      dispatchId: z.string().uuid(),
-      artifact: z.enum(["pdf", "excel"]),
-    }).safeParse(Object.fromEntries(params));
+    const artifact = z
+      .object({
+        dispatchId: z.string().uuid(),
+        artifact: z.enum(["pdf", "excel"]),
+      })
+      .safeParse(Object.fromEntries(params));
     if (!artifact.success)
       return NextResponse.json({ error: "Arquivo inválido." }, { status: 400 });
-    const record = await ctx.client.from("accountability_dispatches")
+    const record = await ctx.client
+      .from("accountability_dispatches")
       .select("id,pdf_path,excel_path")
-      .eq("id", artifact.data.dispatchId).maybeSingle();
-    const path = artifact.data.artifact === "pdf"
-      ? record.data?.pdf_path : record.data?.excel_path;
-    if (record.error || !path || !path.startsWith(`${artifact.data.dispatchId}/`))
-      return NextResponse.json({ error: "Arquivo indisponível." }, { status: 404 });
-    const signed = await ctx.client.storage.from("accountability-books")
+      .eq("id", artifact.data.dispatchId)
+      .maybeSingle();
+    const path =
+      artifact.data.artifact === "pdf"
+        ? record.data?.pdf_path
+        : record.data?.excel_path;
+    if (
+      record.error ||
+      !path ||
+      !path.startsWith(`${artifact.data.dispatchId}/`)
+    )
+      return NextResponse.json(
+        { error: "Arquivo indisponível." },
+        { status: 404 },
+      );
+    const signed = await ctx.client.storage
+      .from("accountability-books")
       .createSignedUrl(path, 120);
     if (signed.error || !signed.data?.signedUrl)
-      return NextResponse.json({ error: "Não foi possível abrir o arquivo." }, { status: 503 });
-    return NextResponse.json({ url: signed.data.signedUrl }, {
-      headers: { "Cache-Control": "private, no-store" },
-    });
+      return NextResponse.json(
+        { error: "Não foi possível abrir o arquivo." },
+        { status: 503 },
+      );
+    return NextResponse.json(
+      { url: signed.data.signedUrl },
+      {
+        headers: { "Cache-Control": "private, no-store" },
+      },
+    );
   }
   const year = Number(params.get("year"));
   if (!Number.isInteger(year) || year < 2026 || year > 2100)
@@ -75,7 +103,13 @@ export async function GET(request: Request) {
     );
   return NextResponse.json({
     enterprises: enterprises.data,
-    dispatches: dispatches.data,
+    dispatches: dispatches.data.map((d) => ({
+      ...d,
+      needs_review:
+        d.status === "uncertain" ||
+        (d.status === "processing" && processingExpired(d)) ||
+        (d.status === "failed" && !safeToRetry(d as DispatchRecord)),
+    })),
     periods: periods.data,
     isAdmin: admin.data === true,
     configured:
@@ -95,15 +129,46 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   const parsed = z
-    .object({
-      enterpriseId: z.string().uuid(),
-      year: z.number().int(),
-      month: z.number().int().min(1).max(12),
-    })
-    .strict()
+    .union([
+      z
+        .object({
+          enterpriseId: z.string().uuid(),
+          year: z.number().int(),
+          month: z.number().int().min(1).max(12),
+        })
+        .strict(),
+      z
+        .object({ action: z.literal("recover"), dispatchId: z.string().uuid() })
+        .strict(),
+    ])
     .safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    return NextResponse.json(
+      { error: "Serviço indisponível." },
+      { status: 503 },
+    );
+  const service = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } },
+  );
+  if ("action" in parsed.data) {
+    try {
+      return NextResponse.json(
+        await recoverDispatch(service, parsed.data.dispatchId),
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error ? error.message : "Falha na conferência.",
+        },
+        { status: error instanceof DispatchConflict ? 409 : 503 },
+      );
+    }
+  }
   const { enterpriseId, year, month } = parsed.data;
   const [enterprise, period] = await Promise.all([
     ctx.client
@@ -145,47 +210,23 @@ export async function POST(request: Request) {
       },
       { status: 503 },
     );
-  const service = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } },
-  );
-  const values = {
-    enterprise_id: enterpriseId,
-    year,
-    month,
-    status: "processing",
-    requested_by: ctx.user.id,
-    error: null,
-  };
-  let job = await service
-    .from("accountability_dispatches")
-    .insert(values)
-    .select("id")
-    .single();
-  if (job.error?.code === "23505")
-    job = await service
-      .from("accountability_dispatches")
-      .update({ status: "processing", requested_by: ctx.user.id, error: null })
-      .eq("enterprise_id", enterpriseId)
-      .eq("year", year)
-      .eq("month", month)
-      .in("status", ["historical", "failed"])
-      .select("id")
-      .single();
-  if (job.error || !job.data)
+  let job: { id: string; token: string };
+  try {
+    job = await claimDispatch(service, enterpriseId, year, month, ctx.user.id);
+  } catch (error) {
     return NextResponse.json(
       {
         error:
-          "Este período já está em processamento ou já foi enviado no BETA.",
+          error instanceof Error ? error.message : "Falha no processamento.",
       },
-      { status: 409 },
+      { status: error instanceof DispatchConflict ? 409 : 503 },
     );
-  const id = job.data.id;
+  }
   after(async () => {
     await sendAccountabilityDispatch(
       service,
-      id,
+      job.id,
+      job.token,
       { name: enterprise.data.name, qlik_value: enterprise.data.qlik_value },
       year,
       month,
