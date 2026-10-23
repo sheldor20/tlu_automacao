@@ -22,7 +22,7 @@ test("compõe a ordem solicitada e mapeia somente rotas existentes", () => {
     ["Caixa projetado", "Prestação de contas"],
     ["Distratos administrativos", "Distratos judiciais", "Relatório de Ações"],
     ["Esteira de negócios", "Landing Bank", "Performance de empreendimentos", "Prospecção"],
-    ["Carteira de clientes", "Clube TLU"],
+    ["Carteira de clientes", "Clube TLU", "IPTUs Particulares"],
     ["Acordo de performance", "Governança", "Pendências", "Processos", "Projetos", "Reuniões"],
   ]);
   for (const link of linksOf(entries)) {
@@ -37,7 +37,7 @@ test("checklist original: todos os destinos mantêm a visibilidade em 8.192 comb
   const permissionByHref = {
     "/financeiro/caixa-projetado": "financeiro", "/prestacao-contas": "prestacao-contas", "/alugueis": "alugueis",
     "/distratos/relatorio-de-acoes": "distratos", "/distratos": "distratos", "/distratos/judiciais": "distratos", "/cobranca": "cobranca", "/projetos": "projetos", "/governanca": "governanca",
-    "/processos": "processos", "/pauta-ra": "pauta-ra", "/clientes": "clientes", "/clientes/clube-tlu": "clientes",
+    "/processos": "processos", "/pauta-ra": "pauta-ra", "/clientes": "clientes", "/clientes/clube-tlu": "clientes", "/clientes/iptus-particulares": "clientes",
     "/novos-negocios/prospeccao": "novos-negocios", "/novos-negocios/esteira-de-negocios": "novos-negocios",
     "/novos-negocios/landing-bank": "novos-negocios", "/novos-negocios/performance-de-empreendimentos": "novos-negocios", "/obras": "obras",
   } as const;
@@ -108,10 +108,10 @@ test("Clientes destaca apenas o submenu correto e mantém Clube TLU", () => {
   const entries = getMainNavigation({ departments: ["clientes"], indicatorAreas: [], isAdmin: false });
   const clients = groupsOf(entries).find(entry => entry.kind === "group" && entry.id === "clients");
   assert.ok(clients?.kind === "group");
-  for (const path of ["/clientes", "/clientes/clube-tlu", "/clientes/clube-tlu/detalhe"]) {
+  for (const path of ["/clientes", "/clientes/clube-tlu", "/clientes/clube-tlu/detalhe", "/clientes/iptus-particulares"]) {
     const selected: NavigationLink[] = navigationLinks(clients.links).filter(link => isNavigationLinkActive(path, link));
     assert.equal(selected.length, 1);
-    assert.equal(selected[0].href, path === "/clientes" ? "/clientes" : "/clientes/clube-tlu");
+    assert.equal(selected[0].href, path.startsWith("/clientes/clube-tlu") ? "/clientes/clube-tlu" : path);
   }
 });
 

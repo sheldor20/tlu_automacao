@@ -57,6 +57,7 @@ const clientsGroup: NavigationGroup = {
   links: [
     { kind: "link", href: "/clientes", label: "Carteira de clientes", icon: "clients", exact: true },
     { kind: "link", href: "/clientes/clube-tlu", label: "Clube TLU", icon: "club" },
+    { kind: "link", href: "/clientes/iptus-particulares", label: "IPTUs Particulares", icon: "notebook" },
   ],
 };
 
