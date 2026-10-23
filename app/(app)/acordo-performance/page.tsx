@@ -178,7 +178,7 @@ export default function PerformanceAgreementsPage() {
   }
 
   async function upload(file: File) {
-    if (!selected || !supabase || saving) return;
+    if (!selected || selected.archived_at || !supabase || saving) return;
     if (file.size > 20 * 1024 * 1024 || file.size === 0) { setFeedback({text: "Selecione um arquivo entre 1 byte e 20 MB.", error: true}); return; }
     setSaving(true);
     try {
@@ -324,7 +324,7 @@ export default function PerformanceAgreementsPage() {
           <nav className="performance-cycles content-card" aria-label="Ciclos de performance">
             {visible.map(agreement => <button key={agreement.id} type="button" className={selected.id === agreement.id ? "active" : ""}
               aria-current={selected.id === agreement.id ? "true" : undefined} disabled={saving} onClick={() => { setSelectedId(agreement.id); setFeedback(null); }}>
-              <strong>{agreement.cycle}</strong><span>{agreement.archived_at ? "Excluído" : contracts.some(document => document.agreement_id === agreement.id && document.agreement_version === agreement.version && acceptances.some(acceptance => acceptance.contract_id === document.id)) ? "Acordado" : "Aguardando assinatura"}</span><span>{dateBr(agreement.starts_on)} a {dateBr(agreement.ends_on)}</span>
+              <strong>{agreement.cycle}</strong><span>{agreement.archived_at ? "Excluído" : contracts.some(document => document.agreement_id === agreement.id && document.agreement_version === agreement.version && acceptances.some(acceptance => acceptance.contract_id === document.id)) ? "Acordado" : contracts.some(document => document.agreement_id === agreement.id && document.agreement_version === agreement.version) ? "Aguardando assinatura" : "Aguardando emissão"}</span><span>{dateBr(agreement.starts_on)} a {dateBr(agreement.ends_on)}</span>
             </button>)}
           </nav>
           <section className="content-card performance-detail">
@@ -350,7 +350,7 @@ export default function PerformanceAgreementsPage() {
               {signatures.filter(item => item.agreement_id === selected.id && item.agreement_version !== selected.version).map(item => <details key={item.id}><summary>Ciência anterior · Revisão {item.agreement_version} · {item.signature_name} · {performanceTimestamp(item.signed_at)}</summary><p>{item.statement}</p><p>{item.snapshot.cycle} · {item.snapshot.expectations}</p></details>)}
             </section>
             <section className="performance-goal"><h3>Arquivos do ciclo</h3><p>Líder e liderado podem anexar arquivos de até 20 MB.</p>
-              {selected.report_user_id === self || reportIds.includes(selected.report_user_id) ? <input type="file" aria-label="Anexar arquivo ao ciclo" disabled={saving} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /> : null}
+              {!selected.archived_at && (selected.report_user_id === self || reportIds.includes(selected.report_user_id)) ? <input type="file" aria-label="Anexar arquivo ao ciclo" disabled={saving} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /> : null}
               {filesError ? <p role="alert">{filesError} <Button variant="secondary" onClick={() => setFilesReload(value => value + 1)}>Tentar novamente</Button></p> : files.length === 0 ? <p>Nenhum arquivo anexado.</p> : <ul>{files.map(file => <li key={file.path}><Button variant="ghost" onClick={() => void download(file.path, file.name)}>{file.name}</Button> · {new Date(file.created_at).toLocaleString("pt-BR")}</li>)}</ul>}
             </section>
             <small>Último salvamento: {new Date(selected.updated_at).toLocaleString("pt-BR")} · Revisão {selected.version}</small>
