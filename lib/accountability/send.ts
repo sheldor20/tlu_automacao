@@ -4,7 +4,7 @@ import { monthlyEmail } from "./policy";
 export async function sendAccountabilityDispatch(
   service: SupabaseClient,
   id: string,
-  enterprise: string,
+  enterprise: { name: string; qlik_value: string },
   year: number,
   month: number,
   authorize?: () => Promise<boolean>,
@@ -14,7 +14,7 @@ export async function sendAccountabilityDispatch(
     const { pdf, excel, reference } = await accountabilityArtifacts(
       service,
       id,
-      enterprise,
+      enterprise.qlik_value,
       year,
       month,
     );
@@ -22,7 +22,9 @@ export async function sendAccountabilityDispatch(
       throw new Error(
         "A permissão foi revogada durante a geração. O envio foi cancelado.",
       );
-    const email = monthlyEmail(enterprise, reference);
+    if (!enterprise.name.trim())
+      throw new Error("O empreendimento não possui nome para o e-mail.");
+    const email = monthlyEmail(enterprise.name, reference);
     sending = true;
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",

@@ -186,7 +186,7 @@ export async function POST(request: Request) {
     await sendAccountabilityDispatch(
       service,
       id,
-      enterprise.data.qlik_value,
+      { name: enterprise.data.name, qlik_value: enterprise.data.qlik_value },
       year,
       month,
       async () => {
