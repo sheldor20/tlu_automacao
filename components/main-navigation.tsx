@@ -7,7 +7,7 @@ import {
   GitBranch, HandCoins, Home, Landmark, Layers, NotebookTabs, Scale,
   Search, ShieldCheck, Target, Ticket, TrendingUp, UserRound, Users, Wallet, Workflow, type LucideIcon,
 } from "lucide-react";
-import { getMainNavigation, isNavigationLinkActive, isNavigationPathActive, searchNavigation, type NavigationGroup } from "@/lib/app-navigation";
+import { getMainNavigation, isNavigationLinkActive, isNavigationPathActive, searchNavigation, navigationLinks, type NavigationGroup } from "@/lib/app-navigation";
 import type { DepartmentSlug, ManagementAreaSlug } from "@/lib/types";
 import { ChatNavigation } from "./chat-navigation";
 
@@ -18,7 +18,7 @@ const icons: Record<string, LucideIcon> = {
   governance: Landmark, processes: GitBranch, performance: Target,
   clients: Users, admin: ShieldCheck, profile: UserRound,
   club: Ticket, business: TrendingUp, prospecting: Search, pipeline: Workflow,
-  construction: Building2, land: Database,
+  construction: Building2, land: Database, departments: Layers,
 };
 
 function focusSearchWhenVisible(input: HTMLInputElement | null) {
@@ -40,7 +40,7 @@ function NavigationDisclosure({ group, pathname, collapsed, onExpand, onNavigate
   onNavigate: () => void;
 }) {
   const active = Boolean(group.activeHref && isNavigationPathActive(pathname, group.activeHref))
-    || group.links.some(link => isNavigationLinkActive(pathname, link));
+    || navigationLinks(group.links).some(link => isNavigationLinkActive(pathname, link));
   const [preference, setPreference] = useState({ pathname, open: active });
   const open = !collapsed && (preference.pathname === pathname ? preference.open : active);
   const button = useRef<HTMLButtonElement>(null);
@@ -72,6 +72,8 @@ function NavigationDisclosure({ group, pathname, collapsed, onExpand, onNavigate
       }
     }}>
       {group.links.map(link => {
+        if (link.kind === "group") return <NavigationDisclosure key={link.id} group={link} pathname={pathname}
+          collapsed={collapsed} onExpand={onExpand} onNavigate={onNavigate} />;
         const childActive = isNavigationLinkActive(pathname, link);
         const ChildIcon = icons[link.icon];
         return <Link key={link.href} href={link.href} className={`nav-sublink${childActive ? " active" : ""}`}

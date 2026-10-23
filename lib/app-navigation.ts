@@ -17,7 +17,7 @@ export type NavigationGroup = {
   label: string;
   icon: string;
   activeHref?: string;
-  links: NavigationLink[];
+  links: Array<NavigationLink | NavigationGroup>;
 };
 
 export type NavigationEntry = NavigationLink | NavigationGroup | { kind: "separator"; id: string };
@@ -28,14 +28,13 @@ const groups: NavigationGroup[] = [
     links: [
       { kind: "link", department: "financeiro", href: "/financeiro/caixa-projetado", label: "Caixa projetado", icon: "indicators" },
       { kind: "link", department: "prestacao-contas", href: "/prestacao-contas", label: "Prestação de contas", icon: "notebook" },
-      { kind: "link", department: "alugueis", href: "/alugueis", label: "Aluguéis", icon: "rentals" },
     ],
   },
   {
     kind: "group", id: "legal", label: "Jurídico", icon: "legal",
     links: [
-      { kind: "link", department: "distratos", href: "/distratos", label: "Distratos", icon: "terminations" },
-      { kind: "link", department: "cobranca", href: "/cobranca", label: "Cobrança", icon: "collections" },
+      { kind: "link", department: "distratos", href: "/distratos", label: "Distratos administrativos", icon: "terminations", exact: true },
+      { kind: "link", department: "distratos", href: "/distratos/judiciais", label: "Distratos judiciais", icon: "legal" },
     ],
   },
   {
@@ -43,8 +42,8 @@ const groups: NavigationGroup[] = [
     links: [
       { kind: "link", department: "projetos", href: "/projetos", label: "Projetos", icon: "projects" },
       { kind: "link", department: "governanca", href: "/governanca", label: "Governança", icon: "governance" },
-      { kind: "link", department: "processos", href: "/processos", label: "Processos", icon: "processes" },
       { kind: "link", department: "pauta-ra", href: "/pauta-ra", label: "Reuniões", icon: "notebook" },
+      { kind: "link", department: "processos", href: "/processos", label: "Processos", icon: "processes" },
       // This personal module already appears for every active internal profile.
       { kind: "link", href: "/acordo-performance", label: "Acordo de performance", icon: "performance" },
     ],
@@ -52,7 +51,7 @@ const groups: NavigationGroup[] = [
 ];
 
 const clientsGroup: NavigationGroup = {
-  kind: "group", id: "clients", label: "Clientes", icon: "clients", activeHref: "/clientes",
+  kind: "group", id: "clients", label: "Pós-vendas", icon: "clients", activeHref: "/clientes",
   links: [
     { kind: "link", href: "/clientes", label: "Carteira de clientes", icon: "clients", exact: true },
     { kind: "link", href: "/clientes/clube-tlu", label: "Clube TLU", icon: "club" },
@@ -64,7 +63,6 @@ const businessGroup: NavigationGroup = {
   links: [
     { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[0], icon: "prospecting" },
     { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[1], icon: "pipeline" },
-    { kind: "link", department: "obras", href: "/obras", label: "Obras", icon: "construction" },
     { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[2], icon: "land" },
     { kind: "link", href: "/novos-negocios/performance-de-empreendimentos", label: "Performance de empreendimentos", icon: "indicators" },
   ],
@@ -79,18 +77,21 @@ export function isNavigationLinkActive(pathname: string, link: NavigationLink): 
   return link.exact ? pathname === href : isNavigationPathActive(pathname, href);
 }
 
+export function navigationLinks(entries: readonly NavigationEntry[]): NavigationLink[] {
+  return entries.flatMap(entry => entry.kind === "group" ? navigationLinks(entry.links) : entry.kind === "link" ? [entry] : []);
+}
+
 export function searchNavigation(entries: NavigationEntry[], query: string): NavigationLink[] {
   const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
   const terms = normalize(query).trim().split(/\s+/).filter(Boolean);
   if (!terms.length) return [];
-  return entries.flatMap(entry => {
+  const search = (items: NavigationEntry[], parents: string): NavigationLink[] => items.flatMap(entry => {
     if (entry.kind === "separator") return [];
-    const links = entry.kind === "group" ? entry.links : [entry];
-    return links.filter(link => {
-      const text = normalize(`${entry.kind === "group" ? entry.label : ""} ${link.label}`);
-      return terms.every(term => text.includes(term));
-    });
+    if (entry.kind === "group") return search(entry.links, `${parents} ${entry.label}`);
+    const text = normalize(`${parents} ${entry.label}`);
+    return terms.every(term => text.includes(term)) ? [entry] : [];
   });
+  return search(entries, "");
 }
 
 // Presentation only: route guards and module permissions remain in AppShell/pages.
@@ -107,22 +108,23 @@ export function getMainNavigation({ departments, indicatorAreas, isAdmin }: {
   }
   entries.push(
     { kind: "link", href: "/hoje", label: "Hoje", icon: "today" },
-    { kind: "separator", id: "departments" },
+    { kind: "separator", id: "main-modules" },
   );
-  for (const group of groups) {
-    const links = group.links.filter(link => !link.department || departments.includes(link.department));
-    if (links.length > 0) entries.push({ ...group, links });
-  }
-  if (departments.includes("clientes")) {
-    entries.push(clientsGroup);
-  }
-  // Preserve every earlier menu item omitted from the requested reordering.
+  const authorizedGroup = (group: NavigationGroup): NavigationGroup => ({
+    ...group, links: group.links.filter(link => link.kind === "group" || !link.department || departments.includes(link.department)),
+  });
+  const departmentEntries: Array<NavigationLink | NavigationGroup> = groups.slice(0, 2).map(authorizedGroup).filter(group => group.links.length > 0);
+  if (departments.includes("alugueis")) departmentEntries.push({ kind: "link", department: "alugueis", href: "/alugueis", label: "Aluguéis", icon: "rentals" });
+  if (departments.includes("cobranca")) departmentEntries.push({ kind: "link", department: "cobranca", href: "/cobranca", label: "Cobrança", icon: "collections" });
+  if (departments.includes("clientes")) departmentEntries.push(clientsGroup);
+  if (departments.includes("novos-negocios")) departmentEntries.push(businessGroup);
+  if (departments.includes("obras")) departmentEntries.push({
+    kind: "group", id: "engineering", label: "Engenharia", icon: "construction",
+    links: [{ kind: "link", department: "obras", href: "/obras", label: "Obras", icon: "construction" }],
+  });
+  if (departmentEntries.length) entries.push({ kind: "group", id: "departments", label: "Departamentos", icon: "departments", links: departmentEntries });
   entries.push({ kind: "link", href: "/pagamentos", label: "Solicitações", icon: "finance" });
-  if (departments.includes("novos-negocios")) {
-    entries.push({ ...businessGroup, links: businessGroup.links.filter(link => !link.department || departments.includes(link.department)) });
-  } else if (departments.includes("obras")) {
-    entries.push({ kind: "link", department: "obras", href: "/obras", label: "Obras", icon: "construction" });
-  }
+  entries.push(authorizedGroup(groups[2]));
   entries.push({ kind: "separator", id: "account" });
   if (isAdmin) entries.push({ kind: "link", href: "/administracao", label: "Administração", icon: "admin" });
   entries.push({ kind: "link", href: "/perfil", label: "Meu perfil", icon: "profile" });
