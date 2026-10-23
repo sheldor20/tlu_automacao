@@ -11,11 +11,14 @@ export async function accountabilityArtifacts(
   enterprise: string,
   year: number,
   month: number,
+  token: string,
 ) {
   const record = await service
     .from("accountability_dispatches")
     .select("pdf_path,excel_path,pdf_sha256,excel_sha256")
     .eq("id", id)
+    .eq("processing_token", token)
+    .eq("status", "processing")
     .single();
   if (record.error)
     throw new Error("Não foi possível consultar os anexos desta prestação.");
@@ -45,19 +48,15 @@ export async function accountabilityArtifacts(
     pdfPath = `${root}/book.pdf`,
     excelPath = `${root}/recebiveis.xlsx`;
   const [p, x] = await Promise.all([
-    service.storage
-      .from(BUCKET)
-      .upload(pdfPath, result.pdf, {
-        contentType: "application/pdf",
-        upsert: false,
-      }),
-    service.storage
-      .from(BUCKET)
-      .upload(excelPath, result.excel, {
-        contentType:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        upsert: false,
-      }),
+    service.storage.from(BUCKET).upload(pdfPath, result.pdf, {
+      contentType: "application/pdf",
+      upsert: false,
+    }),
+    service.storage.from(BUCKET).upload(excelPath, result.excel, {
+      contentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      upsert: false,
+    }),
   ]);
   if (p.error || x.error) {
     await service.storage.from(BUCKET).remove([pdfPath, excelPath]);
@@ -75,9 +74,16 @@ export async function accountabilityArtifacts(
       source_revision: result.sourceRevision,
       generated_at: new Date().toISOString(),
     })
-    .eq("id", id);
-  if (saved.error) {
-    await service.storage.from(BUCKET).remove([pdfPath, excelPath]);
+    .eq("id", id)
+    .eq("processing_token", token)
+    .eq("status", "processing")
+    .is("provider_attempted_at", null)
+    .select("id")
+    .maybeSingle();
+  if (saved.error || !saved.data) {
+    // On an uncertain DB response the paths may have committed. Preserve bytes.
+    if (!saved.error)
+      await service.storage.from(BUCKET).remove([pdfPath, excelPath]);
     throw new Error("Não foi possível registrar os anexos originais.");
   }
   return result;

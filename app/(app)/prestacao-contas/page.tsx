@@ -7,6 +7,7 @@ import { Check, FileText, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import "./accountability.css";
 type Enterprise = { id: string; name: string };
 type Dispatch = {
+  needs_review: boolean;
   historical_sent: boolean;
   id: string;
   enterprise_id: string;
@@ -123,16 +124,47 @@ export default function AccountabilityPage() {
       await load();
     }
   }
+  async function recover(dispatch: Dispatch) {
+    if (!supabase) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const response = await fetch("/api/accountability", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.session?.access_token || ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "recover", dispatchId: dispatch.id }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setNotice(body.message);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Não foi possível conferir o envio.",
+      );
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  }
   async function download(dispatch: Dispatch, artifact: "pdf" | "excel") {
     if (!supabase) return;
     setBusy(true);
     setError("");
     try {
       const { data: session } = await supabase.auth.getSession();
-      const response = await fetch(`/api/accountability?dispatchId=${dispatch.id}&artifact=${artifact}`, {
-        headers: { Authorization: `Bearer ${session.session?.access_token || ""}` },
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/accountability?dispatchId=${dispatch.id}&artifact=${artifact}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.session?.access_token || ""}`,
+          },
+          cache: "no-store",
+        },
+      );
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       const file = await fetch(body.url);
@@ -146,7 +178,9 @@ export default function AccountabilityPage() {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível baixar o arquivo.");
+      setError(
+        e instanceof Error ? e.message : "Não foi possível baixar o arquivo.",
+      );
     } finally {
       setBusy(false);
     }
@@ -312,7 +346,16 @@ export default function AccountabilityPage() {
                       const eligible = canGenerateBook(year, month, closed);
                       return (
                         <td key={label}>
-                          {dispatch?.status === "sent_beta" ? (
+                          {dispatch?.needs_review ? (
+                            <button
+                              className="accountability-send"
+                              disabled={busy}
+                              title="Consultar a tentativa original, sem gerar arquivos ou enviar e-mail"
+                              onClick={() => void recover(dispatch)}
+                            >
+                              Conferir processamento
+                            </button>
+                          ) : dispatch?.status === "sent_beta" ? (
                             <span
                               className="accountability-sent"
                               title={
@@ -369,14 +412,20 @@ export default function AccountabilityPage() {
                             </>
                           )}
                           {dispatch?.pdf_path ? (
-                            <button className="accountability-send" disabled={busy}
-                              onClick={() => void download(dispatch, "pdf")}>
+                            <button
+                              className="accountability-send"
+                              disabled={busy}
+                              onClick={() => void download(dispatch, "pdf")}
+                            >
                               <FileText size={13} /> Baixar book
                             </button>
                           ) : null}
                           {dispatch?.excel_path ? (
-                            <button className="accountability-send" disabled={busy}
-                              onClick={() => void download(dispatch, "excel")}>
+                            <button
+                              className="accountability-send"
+                              disabled={busy}
+                              onClick={() => void download(dispatch, "excel")}
+                            >
                               <FileText size={13} /> Baixar Excel
                             </button>
                           ) : null}

@@ -1,15 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { accountabilityArtifacts } from "./artifacts";
 import { monthlyEmail } from "./policy";
+import { PROCESSING_TIMEOUT_MS, isProviderId } from "./dispatch";
+
 export async function sendAccountabilityDispatch(
   service: SupabaseClient,
   id: string,
+  token: string,
   enterprise: { name: string; qlik_value: string },
   year: number,
   month: number,
   authorize?: () => Promise<boolean>,
 ) {
   let sending = false;
+  let providerId: string | null = null;
   try {
     const { pdf, excel, reference } = await accountabilityArtifacts(
       service,
@@ -17,6 +21,7 @@ export async function sendAccountabilityDispatch(
       enterprise.qlik_value,
       year,
       month,
+      token,
     );
     if (authorize && !(await authorize()))
       throw new Error(
@@ -25,7 +30,37 @@ export async function sendAccountabilityDispatch(
     if (!enterprise.name.trim())
       throw new Error("O empreendimento não possui nome para o e-mail.");
     const email = monthlyEmail(enterprise.name, reference);
+    const from = process.env.RESEND_FROM_EMAIL;
+    if (!from || !process.env.RESEND_API_KEY)
+      throw new Error("Envio de e-mail não configurado.");
+    // Mark the attempt durably BEFORE contacting the provider. A crashed worker
+    // with this marker can only be reconciled, never blindly retried.
     sending = true;
+    const armed = await service
+      .from("accountability_dispatches")
+      .update({
+        provider_attempted_at: new Date().toISOString(),
+        email_snapshot: { from, ...email },
+      })
+      .eq("id", id)
+      .eq("status", "processing")
+      .eq("processing_token", token)
+      .is("provider_attempted_at", null)
+      .gt(
+        "processing_started_at",
+        new Date(Date.now() - PROCESSING_TIMEOUT_MS).toISOString(),
+      )
+      .select("id")
+      .maybeSingle();
+    if (armed.error)
+      throw new Error(
+        "Não foi possível confirmar o registro da tentativa. Conferência necessária.",
+      );
+    if (!armed.data)
+      return {
+        sent: false as const,
+        error: "O processamento expirou ou mudou. Nenhum envio foi iniciado.",
+      };
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -34,8 +69,12 @@ export async function sendAccountabilityDispatch(
         "Idempotency-Key": `accountability-beta-${id}`,
       },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM_EMAIL,
+        from,
         ...email,
+        tags: [
+          { name: "dispatch_id", value: id },
+          { name: "attempt_id", value: token },
+        ],
         attachments: [
           {
             filename: `Prestacao-contas-${year}-${String(month).padStart(2, "0")}.pdf`,
@@ -49,39 +88,49 @@ export async function sendAccountabilityDispatch(
       }),
       signal: AbortSignal.timeout(30000),
     });
-    if (!response.ok) {
-      sending = false;
+    if (!response.ok)
       throw new Error(
-        `O provedor de e-mail recusou o envio (${response.status}).`,
+        `O provedor retornou ${response.status}. Confira a tentativa original antes de qualquer reenvio.`,
       );
-    }
     const result = await response.json();
-    if (typeof result.id !== "string")
-      throw new Error("Não foi possível confirmar o envio.");
+    if (!isProviderId(result.id))
+      throw new Error("Não foi possível confirmar a aceitação pelo provedor.");
+    providerId = result.id;
     const saved = await service
       .from("accountability_dispatches")
       .update({
         status: "sent_beta",
-        provider_id: result.id,
+        provider_id: providerId,
         sent_at: new Date().toISOString(),
         error: null,
       })
-      .eq("id", id);
-    if (saved.error)
+      .eq("id", id)
+      .eq("processing_token", token)
+      .eq("status", "processing")
+      .select("id")
+      .maybeSingle();
+    if (saved.error || !saved.data)
       throw new Error(
         "O provedor aceitou o envio, mas o registro precisa ser reconciliado.",
       );
-    return { sent: true as const, providerId: result.id };
+    return { sent: true as const, providerId };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha na geração do book.";
-    await service
+    const values = {
+      status: sending ? "uncertain" : "failed",
+      error: message.slice(0, 500),
+      ...(providerId ? { provider_id: providerId } : {}),
+    };
+    // Fence late workers and never downgrade an already accepted/reconciled job.
+    let update = service
       .from("accountability_dispatches")
-      .update({
-        status: sending ? "uncertain" : "failed",
-        error: message.slice(0, 500),
-      })
-      .eq("id", id);
+      .update(values)
+      .eq("id", id)
+      .eq("processing_token", token)
+      .eq("status", "processing");
+    if (!sending) update = update.is("provider_attempted_at", null);
+    await update;
     return { sent: false as const, error: message, uncertain: sending };
   }
 }
