@@ -36,8 +36,10 @@ export default function PerformanceAgreementsPage() {
   const [contracts, setContracts] = useState<PerformanceContract[]>([]);
   const [acceptances, setAcceptances] = useState<PerformanceContractAcceptance[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [files, setFiles] = useState<{name: string; path: string; created_at: string}[]>([]);
-  const [filesError, setFilesError] = useState("");
+  const [fileResult, setFileResult] = useState<{
+    agreementId: string; reload: number;
+    files: {name: string; path: string; created_at: string}[]; error: string;
+  } | null>(null);
   const [filesReload, setFilesReload] = useState(0);
   const [reload, setReload] = useState(0);
 
@@ -103,6 +105,10 @@ export default function PerformanceAgreementsPage() {
   const owner = people.find(person => person.user_id === ownerId);
   const visible = agreements.filter(agreement => (view === "all" && canReview || agreement.report_user_id === ownerId) && (includeArchived || !agreement.archived_at));
   const selected = visible.find(agreement => agreement.id === selectedId) || visible[0];
+  const selectedAgreementId = selected?.id || "";
+  const currentFiles = fileResult?.agreementId === selectedAgreementId && fileResult.reload === filesReload ? fileResult : null;
+  const files = currentFiles?.files || [];
+  const filesError = currentFiles?.error || "";
 
   const currentSignature = selected && signatures.find(item => item.agreement_id === selected.id && item.agreement_version === selected.version);
   const canEdit = view === "team" && reports.some(person => person.user_id === ownerId);
@@ -119,9 +125,8 @@ export default function PerformanceAgreementsPage() {
 
   useEffect(() => {
     let active = true;
-    setFiles([]); setFilesError("");
-    if (!selected || !supabase) return;
-    const id = selected.id;
+    if (!selectedAgreementId || !supabase) return;
+    const id = selectedAgreementId;
     void (async () => {
       try {
         const folders = await supabase.storage.from("performance-files").list(id, { limit: 1000 });
@@ -131,11 +136,11 @@ export default function PerformanceAgreementsPage() {
           if (result.error) throw result.error;
           return (result.data || []).filter(file => file.id).map(file => ({ name: file.name.slice(37), path: `${id}/${folder.name}/${file.name}`, created_at: file.created_at || "" }));
         }));
-        if (active) setFiles(groups.flat());
-      } catch { if (active) setFilesError("Não foi possível carregar os anexos. Tente novamente."); }
+        if (active) setFileResult({ agreementId: id, reload: filesReload, files: groups.flat(), error: "" });
+      } catch { if (active) setFileResult({ agreementId: id, reload: filesReload, files: [], error: "Não foi possível carregar os anexos. Tente novamente." }); }
     })();
     return () => { active = false; };
-  }, [selected?.id, supabase, filesReload]);
+  }, [selectedAgreementId, supabase, filesReload]);
 
   async function issueContract(name: string) {
     if (!selected || !canEdit || selected.archived_at || !supabase || saving) return;
