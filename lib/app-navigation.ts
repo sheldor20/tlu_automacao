@@ -40,6 +40,7 @@ const groups: NavigationGroup[] = [
   {
     kind: "group", id: "management", label: "Gestão", icon: "management",
     links: [
+      { kind: "link", href: "/pendencias", label: "Pendências", icon: "today" },
       { kind: "link", department: "projetos", href: "/projetos", label: "Projetos", icon: "projects" },
       { kind: "link", department: "governanca", href: "/governanca", label: "Governança", icon: "governance" },
       { kind: "link", department: "pauta-ra", href: "/pauta-ra", label: "Reuniões", icon: "notebook" },
