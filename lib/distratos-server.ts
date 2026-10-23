@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { allRows, checked } from "./operations-server";
 import { paymentActor, paymentDb, PaymentError } from "./payment-server";
-import type { DistratoReceipt, DistratoUnit } from "./distratos";
+import { displayWorkCode, type DistratoReceipt, type DistratoUnit } from "./distratos";
 
 export async function distratoAccess(request: Request, write = false) {
   const db = paymentDb();
@@ -27,7 +27,7 @@ export async function loadDistratoUnit(db: ReturnType<typeof paymentDb>, contrac
   const receipts: DistratoReceipt[] = entries.filter((e) => Number(e.amount) !== 0).map((e) => ({ id: String(e.id), date: String(e.cash_date), amount: Number(e.amount), description: String(e.description || "Recebimento") })).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const unit: DistratoUnit = {
     contractId, contractNumber: contract.contract_number, companyId: contract.company_id, companyName: company.name,
-    workKey: work.key, workCode: work.work_id, workName: work.name, block: contract.block, lot: contract.lot,
+    workKey: work.key, workCode: displayWorkCode(work.work_id), workName: work.name, block: contract.block, lot: contract.lot,
     buyerName: buyer.name, synchronizedAt: publication.published_at, receipts,
   };
   return { unit, sourceRevision: createHash("sha256").update(JSON.stringify(unit)).digest("hex") };

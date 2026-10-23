@@ -6,7 +6,7 @@ import { Button, Field, PageIntro } from "@/components/ui";
 import { paymentFetch } from "@/lib/payment-client";
 import { getSupabase } from "@/lib/supabase";
 import { localToday } from "@/lib/operational-finance";
-import { brl, brDate, REGIME_LABELS, unitIdentifier, type DistratoDocument, type DistratoInput, type DistratoUnit } from "@/lib/distratos";
+import { brl, brDate, displayWorkCode, REGIME_LABELS, unitIdentifier, type DistratoDocument, type DistratoInput, type DistratoUnit } from "@/lib/distratos";
 import "./distratos.css";
 
 type Work = { key: string; company_id: string; work_id: string; name: string };
@@ -122,7 +122,7 @@ export default function DistratosPage() {
     <section className="distrato-panel">
       <div className="distrato-panel-title"><FileX2 size={22} /><div><h2>1. Empreendimento e unidade</h2><p>O contrato identifica a empresa, a obra e o cliente dos recebimentos.</p></div></div>
       <fieldset disabled={loading || generating || downloading} className="distrato-fields">
-        <Field label="Empreendimento / Obra" className="distrato-wide"><select value={workKey} onChange={(e) => void selectWork(e.target.value)}><option value="">{loading ? "Carregando empreendimentos…" : "Selecione o empreendimento"}</option>{works.map((w) => <option key={w.key} value={w.key}>{w.name} · Obra {w.work_id} · {companies.find((c) => c.id === w.company_id)?.name}</option>)}</select></Field>
+        <Field label="Empreendimento / Obra" className="distrato-wide"><select value={workKey} onChange={(e) => void selectWork(e.target.value)}><option value="">{loading ? "Carregando empreendimentos…" : "Selecione o empreendimento"}</option>{works.map((w) => <option key={w.key} value={w.key}>{w.name} · Obra {displayWorkCode(w.work_id)} · {companies.find((c) => c.id === w.company_id)?.name}</option>)}</select></Field>
         <Field label="Quadra"><select value={block} disabled={!contracts.length || loadingUnit} onChange={(e) => { resetUnit(); setBlock(e.target.value); setLot(""); }}><option value="">Selecione a quadra</option>{blocks.map((b) => <option key={b}>{b}</option>)}</select></Field>
         <Field label="Lote"><select value={lot} disabled={!block || loadingUnit} onChange={(e) => { const next = e.target.value; setLot(next); const found = contracts.filter((c) => c.block === block && c.lot === next); if (found.length === 1) void selectContract(found[0].id); else resetUnit(); }}><option value="">Selecione o lote</option>{lots.map((l) => <option key={l}>{l}</option>)}</select></Field>
         {unitContracts.length > 1 ? <Field label="Contrato / Cliente" className="distrato-wide" hint="Este lote possui mais de um contrato. Selecione o cliente correto."><select value={unit?.contractId || ""} onChange={(e) => void selectContract(e.target.value)}><option value="">Selecione o contrato</option>{unitContracts.map((c) => <option key={c.id} value={c.id}>{c.buyerName} · Contrato {c.contract_number}</option>)}</select></Field> : null}

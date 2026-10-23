@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateDistrato, distratoTerm, distratoInputSchema, type CorrectedValue, type DistratoUnit } from "../lib/distratos.ts";
+import { calculateDistrato, distratoTerm, distratoInputSchema, displayWorkCode, type CorrectedValue, type DistratoUnit } from "../lib/distratos.ts";
 import { juriscalcPayload, parseJuriscalcResponse, correctDistratoValues } from "../lib/distratos-juriscalc.ts";
 
 const value = (corrected: number, id = "imovel"): CorrectedValue => ({ id, date: "2025-01-10", original: corrected, corrected, factor: 1, indices: [] });
 const input = { requestId: "11111111-1111-4111-8111-111111111111", contractId: "20|33|67", sourceRevision: "a".repeat(64), regime: "com_lei" as const, correctionDate: "2026-10-22", saleDate: "2025-01-10", saleValue: 224785.98, fruitionMonths: 37, brokerage: 0, municipalTaxes: 4580.73, sellerDocument: "", sellerAddress: "", sellerRepresentative: "", buyerDocument: "", buyerQualification: "", buyerAddress: "", registration: "", registryOffice: "", reason: "", possession: "", refundTerms: "", city: "", notes: "" };
 const unit: DistratoUnit = { contractId: input.contractId, contractNumber: "67", companyId: "20", companyName: "Vendedora Exemplo", workKey: "20|33", workCode: "033", workName: "Empreendimento Exemplo", block: "007", lot: "003", buyerName: "Cliente Exemplo", synchronizedAt: "2026-10-22T09:00:00Z", receipts: [{ id: "rec-1", date: "2025-01-10", amount: 77902.84, description: "Principal" }] };
+test("identificador exibe o código da obra, preservando sua chave exata para consultas", () => {
+  assert.equal(displayWorkCode("20|33"), "033");
+  assert.equal(displayWorkCode("033"), "033");
+  assert.equal(displayWorkCode("2|A33"), "A33");
+});
 
 test("com lei reproduz o exemplo Fernando, incluindo o saldo negativo", () => {
   const result = calculateDistrato(input, value(224785.98), [value(77902.84, "parcela-1")]);

@@ -57,7 +57,11 @@ export type DistratoDocument = {
 export const roundMoney = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 export const brDate = (date: string) => date.slice(0, 10).split("-").reverse().join("/");
-export const unitIdentifier = (unit: Pick<DistratoUnit, "workCode" | "block" | "lot">) => [unit.workCode, unit.block, unit.lot].join(".");
+export const displayWorkCode = (value: string) => {
+  const code = value.split("|").at(-1) || value;
+  return /^\d+$/.test(code) ? code.padStart(3, "0") : code;
+};
+export const unitIdentifier = (unit: Pick<DistratoUnit, "workCode" | "block" | "lot">) => [displayWorkCode(unit.workCode), unit.block, unit.lot].join(".");
 
 export function calculateDistrato(input: Pick<DistratoInput, "regime" | "fruitionMonths" | "brokerage" | "municipalTaxes">, property: CorrectedValue, receipts: CorrectedValue[]): DistratoCalculation {
   if (!receipts.length || !Number.isFinite(property.corrected) || property.corrected <= 0 || receipts.some((r) => !Number.isFinite(r.corrected) || !Number.isFinite(r.original))) throw new Error("Valores atualizados inválidos ou pagamentos ausentes.");
