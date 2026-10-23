@@ -2168,3 +2168,6 @@ fieldset.payment-section { padding-top: 18px; }
   .plan-canvas-footer button { min-height: 44px; }
   .plan-canvas-footer .plan-progress-submit { grid-template-columns: 1fr; }
 }
+
+.nav-submenu .nav-group .nav-parent { font-size: 13px; }
+.nav-submenu .nav-submenu { margin-left: 12px; }
