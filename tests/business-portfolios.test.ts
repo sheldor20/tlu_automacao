@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { resumableStorageEndpoint } from "../lib/business-storage-upload.ts";
 import {
   BUSINESS_PORTFOLIO_STAGE_KEYS,
+  BUSINESS_PORTFOLIO_SECTIONS,
   BUSINESS_STAGES,
   businessPortfolioSectionForStage,
 } from "../lib/constants.ts";
@@ -17,10 +18,11 @@ const fileManager = readFileSync(new URL("../components/business-file-manager.ts
 const storageUpload = readFileSync(new URL("../lib/business-storage-upload.ts", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../components/app-shell.tsx", import.meta.url), "utf8");
 
-test("mantém os três menus de Novos Negócios", () => {
+test("mantém as três páginas de Novos Negócios mesmo fora do menu principal", () => {
   assert.match(migration, /portfolio_section in \('prospeccao', 'esteira_negocios', 'landing_bank'\)/);
-  assert.match(shell, /BUSINESS_PORTFOLIO_SECTIONS/);
-  assert.match(shell, /label: "Obras", href: "\/obras"/);
+  for (const section of BUSINESS_PORTFOLIO_SECTIONS) {
+    assert.ok(existsSync(new URL(`../app/(app)${section.href}/page.tsx`, import.meta.url)));
+  }
 });
 
 test("particiona o funil único pela fase atual", () => {
@@ -67,10 +69,10 @@ test("carrega os 21 status individuais da planilha preservando fases compatívei
   assert.doesNotMatch(funnelMigration, /create temporary table|pg_temp\./);
 });
 
-test("permite abrir e fechar os submenus de Novos negócios", () => {
-  assert.match(shell, /businessMenuOpen/);
-  assert.match(shell, /aria-expanded=\{businessMenuOpen\}/);
-  assert.match(shell, /hidden=\{!businessMenuOpen\}/);
+test("preserva a proteção das rotas de Novos negócios e Obras", () => {
+  assert.match(shell, /slug: "novos-negocios", href: "\/novos-negocios"/);
+  assert.match(shell, /slug: "obras", href: "\/obras"/);
+  assert.match(shell, /currentDepartment && !assigned.includes\(currentDepartment.slug\)/);
 });
 
 test("aceita anexos multimídia e localização KMZ", () => {

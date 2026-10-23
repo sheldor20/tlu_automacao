@@ -228,11 +228,14 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-link:hover { background: rgba(255,255,255,.055); color: white; }
 .nav-link.active { background: white; color: var(--moss-950); box-shadow: 0 9px 26px rgba(0,0,0,.15); }
 .nav-group { display: grid; gap: 5px; }
+.nav-separator { width: 100%; margin: 10px 0; border: 0; border-top: 1px solid rgba(255,255,255,.16); }
+.nav-link:focus-visible, .nav-sublink:focus-visible { outline: 2px solid var(--sage-300); outline-offset: 3px; }
+.nav-link > svg, .nav-sublink > svg { flex-shrink: 0; }
 .nav-parent-chevron { margin-left: auto; transition: transform .16s ease; }
 .nav-parent-chevron.open { transform: rotate(180deg); }
 .nav-submenu { margin: 0 0 3px 22px; padding: 2px 0 3px 13px; border-left: 1px solid rgba(255,255,255,.14); display: grid; gap: 3px; }
 .nav-submenu[hidden] { display: none; }
-.nav-sublink { min-height: 34px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.55); font-size: 11px; font-weight: 650; transition: .16s ease; }
+.nav-sublink { min-height: 38px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.55); font-size: 11px; font-weight: 650; transition: .16s ease; }
 .nav-sublink:hover { color: white; background: rgba(255,255,255,.055); }
 .nav-sublink.active { color: white; background: rgba(255,255,255,.12); }
 .nav-alert-badge { min-width: 21px; height: 21px; margin-left: auto; padding: 0 6px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: #d92d20; color: white; box-shadow: 0 4px 11px rgba(217,45,32,.32); font-size: 9px; font-weight: 850; line-height: 1; }
@@ -1057,6 +1060,7 @@ h1, h2, h3, p { margin-top: 0; }
   .app-frame-collapsed .side-user { margin-top: 28px; justify-content: initial; gap: 10px; }
   .app-frame-collapsed .side-user > button { display: grid; }
   .mobile-bottom-nav { display: none; }
+  .nav-sublink { min-height: 44px; }
   .page-intro { align-items: flex-start; flex-direction: column; margin-bottom: 24px; }
   .page-intro h1 { font-size: 34px; }
   .page-intro p { font-size: 13px; }

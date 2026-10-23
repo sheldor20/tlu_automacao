@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { isNavigationPathActive } from "@/lib/app-navigation";
 import { MessageCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
@@ -25,5 +26,5 @@ export function ChatNavigation({ pathname, onNavigate }: { pathname: string; onN
     window.addEventListener("focus", schedule);
     return () => { active = false; clearTimeout(timer); clearInterval(interval); window.removeEventListener("chat-unread-changed", schedule); window.removeEventListener("focus", schedule); void supabase.removeChannel(channel); };
   }, [supabase]);
-  return <Link href="/mensagens" className={pathname.startsWith("/mensagens") ? "nav-link active" : "nav-link"} title="Mensagens" onClick={onNavigate}><MessageCircle size={19} /><span>Mensagens</span>{unread > 0 ? <span className="nav-alert-badge" aria-label={`${unread} mensagens não lidas`}>{unread > 99 ? "99+" : unread}</span> : null}</Link>;
+  return <Link href="/mensagens" className={isNavigationPathActive(pathname, "/mensagens") ? "nav-link active" : "nav-link"} title="Mensagens" aria-label="Mensagens" aria-current={isNavigationPathActive(pathname, "/mensagens") ? "page" : undefined} onClick={onNavigate}><MessageCircle size={19} /><span>Mensagens</span>{unread > 0 ? <span className="nav-alert-badge" aria-label={`${unread} mensagens não lidas`}>{unread > 99 ? "99+" : unread}</span> : null}</Link>;
 }
