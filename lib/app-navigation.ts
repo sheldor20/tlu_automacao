@@ -96,6 +96,31 @@ export function searchNavigation(entries: NavigationEntry[], query: string): Nav
   return search(entries, "");
 }
 
+const navigationCollator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+
+// Keep visual sections in place and alphabetize every level within each section.
+function alphabetizeNavigation(entries: readonly NavigationEntry[]): NavigationEntry[] {
+  const result: NavigationEntry[] = [];
+  let section: Array<NavigationLink | NavigationGroup> = [];
+  const flush = () => {
+    section.sort((a, b) => navigationCollator.compare(a.label, b.label));
+    result.push(...section);
+    section = [];
+  };
+  for (const entry of entries) {
+    if (entry.kind === "separator") {
+      flush();
+      result.push(entry);
+    } else if (entry.kind === "group") {
+      section.push({ ...entry, links: alphabetizeNavigation(entry.links) as Array<NavigationLink | NavigationGroup> });
+    } else {
+      section.push(entry);
+    }
+  }
+  flush();
+  return result;
+}
+
 // Presentation only: route guards and module permissions remain in AppShell/pages.
 export function getMainNavigation({ departments, indicatorAreas, isAdmin }: {
   departments: readonly DepartmentSlug[];
@@ -130,5 +155,5 @@ export function getMainNavigation({ departments, indicatorAreas, isAdmin }: {
   entries.push({ kind: "separator", id: "account" });
   if (isAdmin) entries.push({ kind: "link", href: "/administracao", label: "Administração", icon: "admin" });
   entries.push({ kind: "link", href: "/perfil", label: "Meu perfil", icon: "profile" });
-  return entries;
+  return alphabetizeNavigation(entries);
 }

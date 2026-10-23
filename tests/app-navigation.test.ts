@@ -12,18 +12,18 @@ const groupsOf = (entries: NavigationEntry[]): import("../lib/app-navigation.ts"
 test("compõe a ordem solicitada e mapeia somente rotas existentes", () => {
   const entries = getMainNavigation({ departments, indicatorAreas, isAdmin: true });
   assert.deepEqual(entries.map(entry => entry.kind === "separator" ? "---" : entry.label), [
-    "Mensagens", "Indicadores", "Hoje", "---", "Departamentos", "Solicitações", "Gestão", "---", "Administração", "Meu perfil",
+    "Hoje", "Indicadores", "Mensagens", "---", "Departamentos", "Gestão", "Solicitações", "---", "Administração", "Meu perfil",
   ]);
   const departmentGroup = entries.find(entry => entry.kind === "group" && entry.id === "departments");
   assert.ok(departmentGroup?.kind === "group");
-  assert.deepEqual(departmentGroup.links.map(entry => entry.label), ["Financeiro", "Jurídico", "Aluguéis", "Cobrança", "Pós-vendas", "Novos negócios", "Engenharia"]);
+  assert.deepEqual(departmentGroup.links.map(entry => entry.label), ["Aluguéis", "Cobrança", "Engenharia", "Financeiro", "Jurídico", "Novos negócios", "Pós-vendas"]);
   assert.deepEqual(groupsOf(entries).filter(group => group.id !== "departments").map(group => group.links.map(link => link.label)), [
+    ["Obras"],
     ["Caixa projetado", "Prestação de contas"],
     ["Distratos administrativos", "Distratos judiciais", "Relatório de Ações"],
+    ["Esteira de negócios", "Landing Bank", "Performance de empreendimentos", "Prospecção"],
     ["Carteira de clientes", "Clube TLU"],
-    ["Prospecção", "Esteira de negócios", "Landing Bank", "Performance de empreendimentos"],
-    ["Obras"],
-    ["Pendências", "Projetos", "Governança", "Reuniões", "Processos", "Acordo de performance"],
+    ["Acordo de performance", "Governança", "Pendências", "Processos", "Projetos", "Reuniões"],
   ]);
   for (const link of linksOf(entries)) {
     const route = link.href.startsWith("/indicadores/") ? "/indicadores/[area]" : link.href;
@@ -44,6 +44,16 @@ test("checklist original: todos os destinos mantêm a visibilidade em 8.192 comb
   for (let mask = 0; mask < 2 ** departments.length; mask++) {
     const assigned = departments.filter((_, index) => mask & (1 << index));
     const entries = getMainNavigation({ departments: assigned, indicatorAreas, isAdmin: false });
+    const checkOrder = (items: NavigationEntry[]) => {
+      let previous: string | undefined;
+      for (const item of items) {
+        if (item.kind === "separator") { previous = undefined; continue; }
+        if (previous) assert.ok(previous.localeCompare(item.label, "pt-BR", { sensitivity: "base", numeric: true }) <= 0, `${previous} antes de ${item.label}`);
+        previous = item.label;
+        if (item.kind === "group") checkOrder(item.links);
+      }
+    };
+    checkOrder(entries);
     const hrefs = linksOf(entries).map(link => link.href);
     for (const [href, permission] of Object.entries(permissionByHref)) {
       assert.equal(hrefs.includes(href), assigned.includes(permission), `${assigned}: ${href}`);
@@ -71,7 +81,7 @@ test("Indicadores exige departamento e uma visão liberada, usando a primeira au
 
 test("Administração continua exclusiva e o perfil sem departamentos mantém seus módulos pessoais", () => {
   assert.deepEqual(linksOf(getMainNavigation({ departments: [], indicatorAreas: [], isAdmin: false })).map(link => link.href), [
-    "/mensagens", "/hoje", "/pagamentos", "/pendencias", "/acordo-performance", "/perfil",
+    "/hoje", "/mensagens", "/acordo-performance", "/pendencias", "/pagamentos", "/perfil",
   ]);
   assert.ok(linksOf(getMainNavigation({ departments, indicatorAreas, isAdmin: true })).some(link => link.href === "/administracao"));
 });
@@ -114,7 +124,7 @@ test("páginas auxiliares e entradas dos grupos continuam existentes", () => {
 test("busca do menu encontra rótulos e grupos sem distinguir acentos ou caixa", () => {
   const entries = getMainNavigation({ departments, indicatorAreas, isAdmin: true });
   assert.deepEqual(searchNavigation(entries, "GOVERNANCA").map(link => link.href), ["/governanca"]);
-  assert.deepEqual(searchNavigation(entries, "novos negocios").map(link => link.href), ["/novos-negocios/prospeccao", "/novos-negocios/esteira-de-negocios", "/novos-negocios/landing-bank", "/novos-negocios/performance-de-empreendimentos"]);
+  assert.deepEqual(searchNavigation(entries, "novos negocios").map(link => link.href), ["/novos-negocios/esteira-de-negocios", "/novos-negocios/landing-bank", "/novos-negocios/performance-de-empreendimentos", "/novos-negocios/prospeccao"]);
   assert.deepEqual(searchNavigation(entries, "clube").map(link => link.href), ["/clientes/clube-tlu"]);
   assert.deepEqual(searchNavigation(entries, "  "), []);
   assert.deepEqual(searchNavigation(entries, "inexistente"), []);
