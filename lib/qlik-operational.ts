@@ -8,6 +8,8 @@ export type QlikCubeSpec = {
   limit?: number;
   offset?: number;
   rowBudget?: number;
+  filters?: Array<{ field: string; value: string }>;
+  maxRows?: number;
 };
 export type QlikCell = { text: string; number: number | null };
 export type QlikCube = {
@@ -153,6 +155,11 @@ export async function readOperationalQlik(
               revision?: string;
             }> = [];
             for (const spec of specs) {
+              for (const filter of spec.filters || []) {
+                const field = handle(await call(doc, "GetField", { qFieldName: filter.field, qStateName: "$" }));
+                const selected = await call(field, "SelectValues", { qFieldValues: [{ qText: filter.value }], qToggleMode: false, qSoftLock: false });
+                if (selected.qReturn !== true) throw new Error(`Não foi possível selecionar ${filter.field} no Qlik.`);
+              }
               const h = spec.objectId
                 ? handle(await call(doc, "GetObject", { qId: spec.objectId }))
                 : handle(
@@ -191,6 +198,7 @@ export async function readOperationalQlik(
                 cube.qDimensionInfo.some((d) => d.qError)
               )
                 throw new Error(`Tabela Qlik inválida: ${spec.key}`);
+              if (spec.maxRows !== undefined && cube.qSize.qcy > spec.maxRows) throw new Error("A consulta da venda retornou mais registros que o esperado.");
               const height = Math.max(
                 1,
                 Math.min(1000, Math.floor(10000 / cube.qSize.qcx)),

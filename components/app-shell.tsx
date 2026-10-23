@@ -31,6 +31,7 @@ import {
   Users,
   UserRound,
   HandCoins,
+  FileX2,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -46,6 +47,7 @@ const departmentLinks: Array<{
 }> = [
   { slug: "financeiro", href: "/financeiro", label: "Financeiro", icon: Wallet },
   { slug: "clientes", href: "/clientes", label: "Clientes", icon: Users },
+  { slug: "distratos", href: "/distratos", label: "Distratos", icon: FileX2 },
   { slug: "cobranca", href: "/cobranca", label: "Cobrança", icon: HandCoins },
   { slug: "novos-negocios", href: "/novos-negocios", label: "Novos negócios", icon: TrendingUp },
   { slug: "obras", href: "/obras", label: "Obras", icon: Building2 },

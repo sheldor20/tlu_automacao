@@ -164,7 +164,7 @@ export type TodayVisibleUser = Pick<UserProfile, "user_id" | "full_name" | "emai
   is_self: boolean;
 };
 
-export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "governanca" | "alugueis" | "processos" | "pauta-ra" | "indicadores" | "financeiro" | "clientes" | "cobranca" | "prestacao-contas";
+export type DepartmentSlug = "novos-negocios" | "obras" | "projetos" | "governanca" | "alugueis" | "processos" | "pauta-ra" | "indicadores" | "financeiro" | "clientes" | "cobranca" | "prestacao-contas" | "distratos";
 
 export type Department = {
   slug: DepartmentSlug;

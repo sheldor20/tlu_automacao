@@ -1,6 +1,7 @@
 import type { BusinessPortfolioSection, BusinessStage, Department, ManagementAreaSlug, TaskStatus } from "@/lib/types";
 
 export const DEPARTMENTS: Department[] = [
+  { slug: "distratos", name: "Distratos", position: 13 },
   { slug: "prestacao-contas", name: "Prestação de contas", position: 12 },
   { slug: "financeiro", name: "Financeiro", position: 9 },
   { slug: "clientes", name: "Clientes", position: 10 },
