@@ -1,6 +1,7 @@
 "use client";
 import { paymentFetch } from "@/lib/payment-client";
 import { useState } from "react";
+import Link from "next/link";
 import { Button, Dialog } from "./ui";
 import { QlikWorkCodes } from "./qlik-work-select";
 import {
@@ -11,6 +12,7 @@ import {
 } from "./operations-common";
 import {
   monthlyExpensesCsv,
+  inheritedLinkMatches,
   type FinanceSources,
   type MonthlyFinance,
 } from "@/lib/construction-finance";
@@ -83,6 +85,13 @@ export function ConstructionFinance({
   const [saving, setSaving] = useState(false);
   const [linkError, setLinkError] = useState("");
   const [year, setYear] = useState("");
+  const inherited = Boolean(d?.work.source_business_id);
+  const missingInherited = inherited && !d?.work.qlik_work_key;
+  const inheritanceMatches = !inherited || inheritedLinkMatches(d!.work.qlik_work_key, keys);
+  const sourceHref = d?.work.source_business_id
+    ? `/novos-negocios/origem/${encodeURIComponent(d.work.source_business_id)}`
+    : null;
+  const canSaveLink = valid && !saving && !missingInherited && inheritanceMatches;
   const rows =
     d?.monthly.rows.filter((r) => !year || r.month?.startsWith(year)) || [];
   const unit = (key: string) => {
@@ -186,8 +195,10 @@ export function ConstructionFinance({
           </div>
           {!d.workKeys.length ? (
             <div className="ops-notice">
-              Vínculo pendente. Preencha o código Qlik em “Vincular empresa e
-              obra”. Nenhuma unidade foi escolhida automaticamente.
+              {missingInherited ? <>O negócio de origem ainda não tem vínculo principal.
+                Defina-o em <Link href={sourceHref!}>Novos Negócios — abrir origem</Link> e recarregue esta obra.</>
+                : <>Vínculo pendente. Preencha o código Qlik em “Vincular empresa e obra”.</>}
+              {" "}Nenhuma unidade foi escolhida automaticamente.
             </div>
           ) : (
             <>
@@ -369,7 +380,7 @@ export function ConstructionFinance({
             className="form-grid"
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!valid || saving) return;
+              if (!canSaveLink) return;
               setSaving(true);
               setLinkError("");
               try {
@@ -397,7 +408,14 @@ export function ConstructionFinance({
             }}
           >
             <OperationsError message={linkError} />
-            <QlikWorkCodes
+            {sourceHref ? <div className="form-span-2 ops-notice">
+              {missingInherited
+                ? "O negócio de origem ainda não tem vínculo principal. Defina esse vínculo antes de adicionar unidades a esta obra."
+                : `O primeiro código (${d.work.qlik_work_key}) é herdado e deve permanecer como principal. Edite abaixo somente as unidades adicionais.`}
+              {" "}<Link href={sourceHref}>Abrir negócio de origem</Link>.
+              {" "}Depois de alterar a origem, recarregue esta obra e revise as unidades adicionais.
+            </div> : null}
+            {!missingInherited ? <QlikWorkCodes
               id={id}
               value={codes}
               onChange={(text, nextKeys, ok) => {
@@ -405,22 +423,19 @@ export function ConstructionFinance({
                 setKeys(nextKeys);
                 setValid(ok);
               }}
-            />
+            /> : null}
             <p className="form-span-2 ops-subtle">
-              Confira empresa, nome e código antes de salvar. O primeiro código
+              Confira empresa, nome, etapa e código antes de salvar. Um código reconhecido no catálogo não confirma a etapa desta obra. O primeiro código
               é o vínculo principal; os demais adicionam unidades apenas a esta
               obra. Limpar o campo remove o vínculo de obras sem negócio de
               origem.
             </p>
-            {d.work.source_business_id ? (
-              <p className="form-span-2 ops-notice">
-                O código principal é herdado do negócio de origem (
-                {d.work.qlik_work_key || "ainda sem vínculo"}). Para alterá-lo,
-                use Novos Negócios. Alterações no negócio exigem revisar as
-                unidades adicionais desta obra.
+            {inherited && !missingInherited && !inheritanceMatches ? (
+              <p className="form-span-2 ops-notice" role="alert">
+                Mantenha {d.work.qlik_work_key} como primeiro código. Para mudar o vínculo principal, abra o negócio de origem.
               </p>
             ) : null}
-            <Button type="submit" loading={saving} disabled={!valid || saving}>
+            <Button type="submit" loading={saving} disabled={!canSaveLink}>
               Salvar vínculo
             </Button>
           </form>
