@@ -131,7 +131,7 @@ test("Jurídico seleciona somente o distrato correspondente e a busca reconhece 
   const legal = groupsOf(entries).find(group => group.id === "legal");
   assert.ok(legal);
   for (const path of ["/distratos", "/distratos/judiciais", "/distratos/judiciais/detalhe"]) {
-    const selected = navigationLinks(legal.links).filter(link => isNavigationLinkActive(path, link));
+    const selected: NavigationLink[] = navigationLinks(legal.links).filter(link => isNavigationLinkActive(path, link));
     assert.deepEqual(selected.map(link => link.href), [path === "/distratos" ? "/distratos" : "/distratos/judiciais"]);
   }
   assert.deepEqual(searchNavigation(entries, "departamentos engenharia").map(link => link.href), ["/obras"]);
