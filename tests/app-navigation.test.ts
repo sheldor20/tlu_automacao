@@ -19,7 +19,7 @@ test("compõe a ordem solicitada e mapeia somente rotas existentes", () => {
   assert.deepEqual(departmentGroup.links.map(entry => entry.label), ["Financeiro", "Jurídico", "Aluguéis", "Cobrança", "Pós-vendas", "Novos negócios", "Engenharia"]);
   assert.deepEqual(groupsOf(entries).filter(group => group.id !== "departments").map(group => group.links.map(link => link.label)), [
     ["Caixa projetado", "Prestação de contas"],
-    ["Distratos administrativos", "Distratos judiciais"],
+    ["Distratos administrativos", "Distratos judiciais", "Relatório de Ações"],
     ["Carteira de clientes", "Clube TLU"],
     ["Prospecção", "Esteira de negócios", "Landing Bank", "Performance de empreendimentos"],
     ["Obras"],
@@ -36,7 +36,7 @@ test("checklist original: todos os destinos mantêm a visibilidade em 8.192 comb
   // Each original link has exactly the same permission; groups only change its position.
   const permissionByHref = {
     "/financeiro/caixa-projetado": "financeiro", "/prestacao-contas": "prestacao-contas", "/alugueis": "alugueis",
-    "/distratos": "distratos", "/distratos/judiciais": "distratos", "/cobranca": "cobranca", "/projetos": "projetos", "/governanca": "governanca",
+    "/distratos/relatorio-de-acoes": "distratos", "/distratos": "distratos", "/distratos/judiciais": "distratos", "/cobranca": "cobranca", "/projetos": "projetos", "/governanca": "governanca",
     "/processos": "processos", "/pauta-ra": "pauta-ra", "/clientes": "clientes", "/clientes/clube-tlu": "clientes",
     "/novos-negocios/prospeccao": "novos-negocios", "/novos-negocios/esteira-de-negocios": "novos-negocios",
     "/novos-negocios/landing-bank": "novos-negocios", "/novos-negocios/performance-de-empreendimentos": "novos-negocios", "/obras": "obras",

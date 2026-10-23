@@ -35,6 +35,7 @@ const groups: NavigationGroup[] = [
     links: [
       { kind: "link", department: "distratos", href: "/distratos", label: "Distratos administrativos", icon: "terminations", exact: true },
       { kind: "link", department: "distratos", href: "/distratos/judiciais", label: "Distratos judiciais", icon: "legal" },
+      { kind: "link", department: "distratos", href: "/distratos/relatorio-de-acoes", label: "Relatório de Ações", icon: "notebook" },
     ],
   },
   {
