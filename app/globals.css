@@ -249,6 +249,8 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-submenu { margin: 0 0 3px 22px; padding: 2px 0 3px 13px; border-left: 1px solid rgba(255,255,255,.14); display: grid; gap: 3px; }
 .nav-submenu[hidden] { display: none; }
 .nav-sublink { min-height: 38px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.55); font-size: 11px; font-weight: 650; transition: .16s ease; }
+#departments-submenu > .nav-sublink { min-height: 48px; padding: 0 13px; gap: 12px; color: rgba(255,255,255,.67); font-size: 14px; font-weight: 600; }
+#departments-submenu > .nav-sublink > svg { width: 19px; height: 19px; }
 .nav-sublink:hover { color: white; background: rgba(255,255,255,.055); }
 .nav-sublink.active { color: white; background: rgba(255,255,255,.12); }
 .nav-alert-badge { min-width: 21px; height: 21px; margin-left: auto; padding: 0 6px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: #d92d20; color: white; box-shadow: 0 4px 11px rgba(217,45,32,.32); font-size: 9px; font-weight: 850; line-height: 1; }
