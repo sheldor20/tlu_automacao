@@ -32,7 +32,7 @@ export function RentalContractUpload({ rentalId, refreshKey, busy, onBusy, onFil
   }, [db, rentalId, refreshKey]);
 
   async function choose(files: FileList | null) {
-    if (!files) return;
+    if (!files || working || busy || uploaded.length > 0) return;
     setWorking(true); onBusy(true);
     try {
       const items: Candidate[] = [];
@@ -59,10 +59,10 @@ export function RentalContractUpload({ rentalId, refreshKey, busy, onBusy, onFil
     finally { setWorking(false); onBusy(false); }
   }
   async function uploadAndAnalyze() {
-    if (!db || !selected.length) return;
+    if (!db || working || busy || uploaded.length > 0 || !selected.length || selected.length > 8) return;
     setWorking(true); onBusy(true); setMessage("Enviando documentos…");
+    const files: RentalContractFile[] = [];
     try {
-      const files: RentalContractFile[] = [];
       let total = 0;
       for (const item of candidates.filter(i => selected.includes(i.name))) {
         const blob = await item.read(); total += blob.size;
@@ -72,6 +72,8 @@ export function RentalContractUpload({ rentalId, refreshKey, busy, onBusy, onFil
         const { error } = await db.storage.from(RENTAL_CONTRACT_BUCKET).upload(path, blob, { contentType: "application/pdf" });
         if (error) throw new Error("Não foi possível enviar o documento. Confira seu acesso e tente novamente.");
         files.push({ path, name: item.name.slice(0, 240) });
+        // Preserve each successful upload even if a later file fails.
+        setUploaded([...files]); onFiles([...files]);
       }
       setUploaded(files); onFiles(files); setMessage("Lendo contrato e aditivos…");
       const { data } = await db.auth.getSession();
@@ -79,7 +81,10 @@ export function RentalContractUpload({ rentalId, refreshKey, busy, onBusy, onFil
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Não foi possível ler o contrato.");
       onDraft(result.draft); setMessage("Dados preenchidos. Revise o formulário abaixo e salve a nova versão.");
-    } catch (error) { setMessage(""); onError(error instanceof Error ? error.message : "Falha ao ler os documentos."); }
+    } catch (error) {
+      setMessage(files.length ? `${files.length} documento(s) enviado(s). Revise e salve esta versão antes de selecionar outros arquivos.` : "");
+      onError(error instanceof Error ? error.message : "Falha ao ler os documentos.");
+    }
     finally { setWorking(false); onBusy(false); }
   }
   async function download(file: RentalContractFile) {
@@ -90,7 +95,7 @@ export function RentalContractUpload({ rentalId, refreshKey, busy, onBusy, onFil
   return <section className="content-card rental-edit-card">
     <div className="content-card-head"><div><h2>Contrato e aditivos</h2><p>Envie PDF ou abra o ZIP e selecione somente os documentos deste imóvel. Cada salvamento mantém o histórico anterior.</p></div></div>
     <div className="content-card-body">
-      <label>Selecionar documentos<input aria-label="Selecionar contrato PDF ou ZIP" type="file" accept=".pdf,.zip" multiple disabled={working || busy} onChange={event => void choose(event.target.files)} /></label>
+      <label>Selecionar documentos<input aria-label="Selecionar contrato PDF ou ZIP" type="file" accept=".pdf,.zip" multiple disabled={working || busy || uploaded.length > 0} onChange={event => void choose(event.target.files)} /></label>
       {candidates.length ? <div className="rental-document-choices">{candidates.map(item => <label key={item.name}><input type="checkbox" checked={selected.includes(item.name)} disabled={working || busy || uploaded.length > 0} onChange={event => setSelected(values => event.target.checked ? [...values,item.name] : values.filter(v => v!==item.name))} />{item.name}<small>{(item.size/1024/1024).toFixed(1)} MB</small></label>)}</div> : null}
       <Button type="button" loading={working} disabled={busy || !selected.length || selected.length > 8 || uploaded.length > 0} onClick={() => void uploadAndAnalyze()}>Enviar e preencher dados</Button>
       <p role="status">{message || (uploaded.length ? "Documentos enviados. Preencha ou revise os dados abaixo e salve a versão." : "Até 8 PDFs deste imóvel por versão. Dados ausentes não substituem os já cadastrados.")}</p>

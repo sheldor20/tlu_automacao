@@ -6,10 +6,10 @@ import {
 } from "./payment-requests";
 export async function paymentFetch(
   path: string,
-  options: RequestInit & { anonymous?: boolean } = {},
+  options: RequestInit & { anonymous?: boolean; retryRateLimit?: boolean } = {},
   trackingToken?: string,
 ) {
-  const { anonymous, ...requestOptions } = options;
+  const { anonymous, retryRateLimit, ...requestOptions } = options;
   const headers = new Headers(options.headers);
   if (trackingToken) headers.set("X-Payment-Token", trackingToken);
   else if (!anonymous) {
@@ -21,11 +21,20 @@ export async function paymentFetch(
       );
   }
   if (options.body) headers.set("Content-Type", "application/json");
-  const response = await fetch(path, {
-    ...requestOptions,
-    headers,
-    cache: "no-store",
-  });
+  let response: Response;
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch(path, { ...requestOptions, headers, cache: "no-store" });
+    // Upload routes reject 429 before creating/confirming a file. Retry only
+    // that known rejection; never repeat an uncertain upload or another POST.
+    if (!retryRateLimit || response.status !== 429 || attempt >= 3) break;
+    const retryAfter = response.headers.get("Retry-After");
+    const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter)
+      : retryAfter ? (Date.parse(retryAfter) - Date.now()) / 1000 : 61;
+    const delay = Number.isFinite(seconds) ? Math.max(1, seconds) * 1000 : 61_000;
+    if (delay > 5 * 60_000) break;
+    await response.body?.cancel();
+    await new Promise<void>(resolve => setTimeout(resolve, delay));
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok)
     throw new Error(
@@ -51,6 +60,7 @@ export async function uploadPaymentFile(
     `/api/payments/${id}/files`,
     {
       method: "POST",
+      retryRateLimit: true,
       body: JSON.stringify({
         name: file.name,
         size: file.size,
@@ -64,7 +74,7 @@ export async function uploadPaymentFile(
     const { Upload } = await import("tus-js-client");
     const endpoint = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);
     endpoint.hostname = endpoint.hostname.replace(/\.supabase\.(co|in|red)$/, ".storage.supabase.$1");
-    endpoint.pathname = "/storage/v1/upload/resumable";
+    endpoint.pathname = "/storage/v1/upload/resumable/sign";
     endpoint.search = "";
     endpoint.hash = "";
     await new Promise<void>((resolve, reject) => {
@@ -91,7 +101,7 @@ export async function uploadPaymentFile(
   }
   await paymentFetch(
     `/api/payments/${id}/files/${prepared.id}`,
-    { method: "POST" },
+    { method: "POST", retryRateLimit: true },
     token,
   );
 }
