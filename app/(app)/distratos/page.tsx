@@ -6,15 +6,16 @@ import { Button, Field, PageIntro } from "@/components/ui";
 import { paymentFetch } from "@/lib/payment-client";
 import { getSupabase } from "@/lib/supabase";
 import { SearchableSelect } from "./searchable-select";
+import { salePrefill } from "@/lib/distratos-prefill";
 import { localToday } from "@/lib/operational-finance";
 import { brl, brDate, displayWorkCode, REGIME_LABELS, unitIdentifier, type DistratoDocument, type DistratoInput, type DistratoUnit } from "@/lib/distratos";
 import "./distratos.css";
 
 type Work = { key: string; company_id: string; work_id: string; name: string };
 type Contract = { id: string; block: string; lot: string; contract_number: string; buyerName: string };
-type Form = Omit<DistratoInput, "requestId" | "sourceRevision" | "contractId" | "regime"> & { regime: DistratoInput["regime"] | "" };
+type Form = Omit<DistratoInput, "requestId" | "sourceRevision" | "contractId" | "regime" | "fruitionMonths" | "brokerage" | "municipalTaxes"> & { regime: DistratoInput["regime"] | ""; fruitionMonths: number | ""; brokerage: number | ""; municipalTaxes: number | "" };
 type Detail = { unit: DistratoUnit; sourceRevision: string; history: Array<Pick<DistratoDocument, "id" | "created_at" | "draft" | "input" | "calculation">> };
-const blank = (): Form => ({ regime: "", correctionDate: localToday(), saleDate: "", saleValue: 0, fruitionMonths: 0, brokerage: 0, municipalTaxes: 0, sellerDocument: "", sellerAddress: "", sellerRepresentative: "", buyerDocument: "", buyerQualification: "", buyerAddress: "", registration: "", registryOffice: "", reason: "", possession: "", refundTerms: "", city: "", notes: "" });
+const blank = (): Form => ({ regime: "", correctionDate: localToday(), saleDate: "", saleValue: 0, fruitionMonths: "", brokerage: "", municipalTaxes: "", sellerDocument: "", sellerAddress: "", sellerRepresentative: "", buyerDocument: "", buyerQualification: "", buyerAddress: "", registration: "", registryOffice: "", reason: "", possession: "", refundTerms: "", city: "", notes: "" });
 
 export default function DistratosPage() {
   const [works, setWorks] = useState<Work[]>([]);
@@ -64,12 +65,13 @@ export default function DistratosPage() {
     try {
       const data: Detail = await paymentFetch(`/api/distratos?contractId=${encodeURIComponent(id)}`);
       if (selection.current !== id) return;
-      setDetail(data); setLoadingUnit(false); setSaleLoading(true);
+      setDetail(data); setForm((current) => ({ ...current, fruitionMonths: data.unit.paidInstallments?.count ?? "" })); setLoadingUnit(false); setSaleLoading(true);
       try {
         const sale = await paymentFetch(`/api/distratos/sale?contractId=${encodeURIComponent(id)}`);
         if (selection.current !== id) return;
-        setForm((current) => ({ ...current, saleDate: current.saleDate || sale.saleDate || "", saleValue: current.saleValue || sale.saleValue }));
-        setSaleMessage(`Data e valor da venda consultados no ${sale.source}. Confira com o contrato.`);
+        const confirmed = salePrefill(sale, localToday());
+        setForm((current) => ({ ...current, ...confirmed }));
+        setSaleMessage(confirmed.saleDate && confirmed.saleValue ? `Data e valor da venda consultados no ${sale.source}. Confira com o contrato.` : "Data ou valor original não confirmados pela fonte. Confira os campos pendentes no contrato.");
       } catch {
         if (selection.current === id) setSaleMessage("A data e o valor original da venda precisam ser preenchidos conforme o contrato. Os pagamentos abaixo vieram da base do Qlik.");
       } finally { if (selection.current === id) setSaleLoading(false); }
@@ -114,7 +116,7 @@ export default function DistratosPage() {
   const lots = [...new Set(contracts.filter((c) => c.block === block).map((c) => c.lot))].sort();
   const unitContracts = contracts.filter((c) => c.block === block && c.lot === lot);
   const unit = detail?.unit;
-  const correctionDateValid = form.saleDate && form.saleValue > 0 && form.regime;
+  const correctionDateValid = form.saleDate && form.saleValue > 0 && form.regime && form.fruitionMonths !== "" && form.brokerage !== "" && form.municipalTaxes !== "" && !saleLoading;
   const textField = (key: keyof Form, label: string) => <Field label={label}><input value={String(form[key])} maxLength={4000} onChange={(e) => change(key, e.target.value as never)} /></Field>;
 
   return <div className="distratos-page">
@@ -139,12 +141,12 @@ export default function DistratosPage() {
           <div className="distrato-regimes" role="group" aria-label="Enquadramento do distrato">{Object.entries(REGIME_LABELS).map(([value, label]) => <label key={value} className={form.regime === value ? "selected" : ""}><input required type="radio" name="regime" value={value} checked={form.regime === value} onChange={() => change("regime", value as DistratoInput["regime"])} /><span><strong>{label}</strong><small>{value === "com_lei" ? "10% do imóvel + fruição de 0,75% ao mês" : "5% + 5% dos pagamentos, multa de 10% e fruição de 1% ao mês"}</small></span></label>)}</div>
           {saleLoading ? <p role="status">Consultando a data e o valor original da venda no Qlik…</p> : <p className="distrato-help">{saleMessage}</p>}
           <div className="distrato-fields">
-            <Field label="Data da venda"><input required type="date" min="1994-07-01" max={form.correctionDate} value={form.saleDate} onChange={(e) => change("saleDate", e.target.value)} /></Field>
-            <Field label="Valor original de venda (R$)"><input required type="number" min="0.01" max="10000000000" step="0.01" value={form.saleValue || ""} onChange={(e) => change("saleValue", Number(e.target.value))} /></Field>
+            <Field label="Data da venda"><input disabled={saleLoading} required type="date" min="1994-07-01" max={form.correctionDate} value={form.saleDate} onChange={(e) => change("saleDate", e.target.value)} /></Field>
+            <Field label="Valor original de venda (R$)"><input disabled={saleLoading} required type="number" min="0.01" max="10000000000" step="0.01" value={form.saleValue || ""} onChange={(e) => change("saleValue", Number(e.target.value))} /></Field>
             <Field label="Atualizar até"><input required type="date" max={localToday()} min={form.saleDate || "1994-07-01"} value={form.correctionDate} onChange={(e) => change("correctionDate", e.target.value)} /></Field>
-            <Field label="Meses de fruição" hint={form.regime === "com_lei" ? "Meses considerados desde a posse." : "Meses considerados desde o inadimplemento."}><input required type="number" min="0" max="1200" step="1" value={form.fruitionMonths} onChange={(e) => change("fruitionMonths", Number(e.target.value))} /></Field>
-            <Field label="Intermediação e corretagem (R$)"><input required type="number" min="0" max="10000000000" step="0.01" value={form.brokerage} onChange={(e) => change("brokerage", Number(e.target.value))} /></Field>
-            <Field label="IPTU e tributos municipais (R$)"><input required type="number" min="0" max="10000000000" step="0.01" value={form.municipalTaxes} onChange={(e) => change("municipalTaxes", Number(e.target.value))} /></Field>
+            <Field label="Meses de fruição" hint={unit.paidInstallments?.count != null ? `Preenchido automaticamente: ${unit.paidInstallments.count} parcela(s) paga(s). ${unit.paidInstallments.reason}` : `Meses de fruição = total de parcelas pagas. ${unit.paidInstallments?.reason || "Total ainda não confirmado pela fonte."} Informe somente um total conferido.`}><input required readOnly={unit.paidInstallments?.count != null} placeholder="Total não confirmado" type="number" min="0" max="1200" step="1" value={form.fruitionMonths} onChange={(e) => change("fruitionMonths", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+            <Field label="Intermediação e corretagem (R$)" hint="Sem fonte confirmada vinculada ao contrato. Informe o valor conferido; zero somente se confirmado."><input required type="number" min="0" max="10000000000" step="0.01" placeholder="Não informado" value={form.brokerage} onChange={(e) => change("brokerage", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+            <Field label="IPTU e tributos municipais (R$)" hint="Sem fonte confirmada vinculada ao contrato. Informe o valor conferido; zero somente se confirmado."><input required type="number" min="0" max="10000000000" step="0.01" placeholder="Não informado" value={form.municipalTaxes} onChange={(e) => change("municipalTaxes", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
           </div>
           <p className="distrato-help">Atualização pelo INPC no TJDFT, pagamento por pagamento, sem juros. As taxas seguem a planilha de referência; confira a aplicação ao contrato.</p>
         </section>
