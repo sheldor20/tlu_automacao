@@ -1,18 +1,14 @@
 "use client";
 
-import { ChatNavigation } from "./chat-navigation";
-import { ClientsNavigation } from "./clients-navigation";
+import { MainNavigation } from "./main-navigation";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import { getSupabase } from "@/lib/supabase";
 import { initials } from "@/lib/format";
-import { BUSINESS_PORTFOLIO_SECTIONS, MANAGEMENT_AREAS } from "@/lib/constants";
+import { MANAGEMENT_AREAS } from "@/lib/constants";
 import type { DepartmentSlug, ManagementAreaSlug } from "@/lib/types";
 import {
   Building2,
   ChartNoAxesCombined,
-  CalendarDays,
-  ChevronDown,
-  Database,
   FolderKanban,
   GitBranch,
   Home,
@@ -23,13 +19,9 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   NotebookTabs,
-  Search,
   TrendingUp,
-  Target,
-  Workflow,
   Wallet,
   Users,
-  UserRound,
   HandCoins,
   FileX2,
   X,
@@ -39,6 +31,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+// Keep the complete route-access registry, including modules omitted from the main menu.
 const departmentLinks: Array<{
   slug: DepartmentSlug;
   href: string;
@@ -61,16 +54,6 @@ const departmentLinks: Array<{
 ];
 
 const adminLink = { href: "/administracao", label: "Administração", icon: ShieldCheck };
-const todayLink = { href: "/hoje", label: "Hoje", icon: CalendarDays };
-const indicatorsLink = departmentLinks.find((link) => link.slug === "indicadores")!;
-const businessSubmenuLinks = [
-  { ...BUSINESS_PORTFOLIO_SECTIONS[0], icon: Search },
-  { ...BUSINESS_PORTFOLIO_SECTIONS[1], icon: Workflow },
-  { key: "obras", label: "Obras", href: "/obras", icon: Building2 },
-  { ...BUSINESS_PORTFOLIO_SECTIONS[2], icon: Database },
-  { key: "enterprise-performance", label: "Performance de empreendimentos", href: "/novos-negocios/performance-de-empreendimentos", icon: ChartNoAxesCombined },
-];
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -86,22 +69,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const businessAreaPathActive = pathname.startsWith("/novos-negocios") || pathname.startsWith("/obras");
-  const [businessMenuPreference, setBusinessMenuPreference] = useState({
-    pathname,
-    open: businessAreaPathActive,
-  });
-  const businessMenuOpen = businessMenuPreference.pathname === pathname
-    ? businessMenuPreference.open
-    : businessAreaPathActive;
-  const financeAreaPathActive = pathname.startsWith("/financeiro");
-  const [financeMenuPreference, setFinanceMenuPreference] = useState({
-    pathname,
-    open: financeAreaPathActive,
-  });
-  const financeMenuOpen = financeMenuPreference.pathname === pathname
-    ? financeMenuPreference.open
-    : financeAreaPathActive;
   const [todayAlertCount, setTodayAlertCount] = useState(0);
 
   useEffect(() => {
@@ -263,9 +230,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [pathname, router, supabase, profileRevision]);
 
-  const visibleDepartmentLinks = departmentLinks.filter((link) => link.slug !== "indicadores" && allowedDepartments.includes(link.slug));
-  const showIndicators = allowedDepartments.includes("indicadores") && allowedIndicatorAreas.length > 0;
-  const resolvedIndicatorsLink = { ...indicatorsLink, href: `/indicadores/${allowedIndicatorAreas[0] || "empresa"}` };
   async function signOut() {
     await supabase?.auth.signOut();
     router.replace("/login");
@@ -339,123 +303,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span>Gestão integrada</span>
         </div>
 
-        <nav aria-label="Departamentos">
-          <span className="nav-caption">Operação</span>
-          <ChatNavigation pathname={pathname} onNavigate={() => setMobileMenu(false)} />
-          <Link
-            href={todayLink.href}
-            className={pathname.startsWith(todayLink.href) ? "nav-link active" : "nav-link"}
-            title={todayLink.label}
-            onClick={() => setMobileMenu(false)}
-          >
-            <CalendarDays size={19} />
-            <span>{todayLink.label}</span>
-            {todayAlertCount > 0 ? <span className="nav-alert-badge" aria-label={`${todayAlertCount} alertas pendentes`}>{todayAlertCount > 99 ? "99+" : todayAlertCount}</span> : null}
-          </Link>
-          <Link href="/acordo-performance" className={pathname.startsWith("/acordo-performance") ? "nav-link active" : "nav-link"} title="Acordo de Performance" onClick={() => setMobileMenu(false)}>
-            <Target size={19} /><span>Acordo de Performance</span>
-          </Link>
-          {showIndicators ? (
-            <Link
-              href={resolvedIndicatorsLink.href}
-              className={pathname.startsWith("/indicadores") ? "nav-link active" : "nav-link"}
-              title="Indicadores"
-              onClick={() => setMobileMenu(false)}
-            >
-              <ChartNoAxesCombined size={19} />
-              <span>Indicadores</span>
-            </Link>
-          ) : null}
-          <span className="nav-caption nav-caption-spaced">Departamentos</span>
-          <Link href="/pagamentos" className={pathname.startsWith("/pagamentos") ? "nav-link active" : "nav-link"} title="Solicitações de pagamento" onClick={() => setMobileMenu(false)}>
-            <Wallet size={19} /><span>Solicitações</span>
-          </Link>
-          {visibleDepartmentLinks.map(({ slug, href, label, icon: Icon }) => {
-            if (slug === "clientes") return <ClientsNavigation key={href} pathname={pathname} onNavigate={() => setMobileMenu(false)} />;
-            if (slug === "obras" && allowedDepartments.includes("novos-negocios")) return null;
-            if (slug === "financeiro") {
-              return <div className="nav-group" key={href}>
-                <button
-                  type="button"
-                  className={financeAreaPathActive ? "nav-link nav-parent active" : "nav-link nav-parent"}
-                  title={label}
-                  aria-expanded={financeMenuOpen}
-                  aria-controls="finance-submenu"
-                  onClick={() => setFinanceMenuPreference({ pathname, open: !financeMenuOpen })}
-                >
-                  <Icon size={19} />
-                  <span>{label}</span>
-                  <ChevronDown className={`nav-parent-chevron${financeMenuOpen ? " open" : ""}`} size={15} />
-                </button>
-                <div id="finance-submenu" className="nav-submenu" aria-label="Submenus de Financeiro" hidden={!financeMenuOpen}>
-                  <Link href="/financeiro/caixa-projetado" className={pathname === "/financeiro/caixa-projetado" ? "nav-sublink active" : "nav-sublink"} onClick={() => setMobileMenu(false)}>
-                    <ChartNoAxesCombined size={15} />
-                    <span>Caixa projetado</span>
-                  </Link>
-                </div>
-              </div>;
-            }
-            if (slug === "novos-negocios") {
-              const businessAreaActive = pathname.startsWith("/novos-negocios") || (allowedDepartments.includes("obras") && pathname.startsWith("/obras"));
-              return <div className="nav-group" key={href}>
-                <button
-                  type="button"
-                  className={businessAreaActive ? "nav-link nav-parent active" : "nav-link nav-parent"}
-                  title={label}
-                  aria-expanded={businessMenuOpen}
-                  aria-controls="new-business-submenu"
-                  onClick={() => setBusinessMenuPreference({ pathname, open: !businessMenuOpen })}
-                >
-                  <Icon size={19} />
-                  <span>{label}</span>
-                  <ChevronDown className={`nav-parent-chevron${businessMenuOpen ? " open" : ""}`} size={15} />
-                </button>
-                <div id="new-business-submenu" className="nav-submenu" aria-label="Submenus de Novos negócios" hidden={!businessMenuOpen}>
-                  {businessSubmenuLinks.map(({ href: childHref, label: childLabel, icon: ChildIcon }) => {
-                    if (childHref === "/obras" && !allowedDepartments.includes("obras")) return null;
-                    const childActive = childHref === "/obras" ? pathname.startsWith("/obras") : pathname === childHref;
-                    return <Link key={childHref} href={childHref} className={childActive ? "nav-sublink active" : "nav-sublink"} onClick={() => setMobileMenu(false)}>
-                      <ChildIcon size={15} />
-                      <span>{childLabel}</span>
-                    </Link>;
-                  })}
-                </div>
-              </div>;
-            }
-            const active = pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={active ? "nav-link active" : "nav-link"}
-                title={label}
-                onClick={() => setMobileMenu(false)}
-              >
-                <Icon size={19} />
-                <span>{label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {isAdmin ? (
-          <nav className="admin-nav" aria-label="Administração">
-            <span className="nav-caption">Sistema</span>
-            <Link
-              href={adminLink.href}
-              className={pathname.startsWith(adminLink.href) ? "nav-link active" : "nav-link"}
-              title={adminLink.label}
-              onClick={() => setMobileMenu(false)}
-            >
-              <ShieldCheck size={19} />
-              <span>{adminLink.label}</span>
-            </Link>
-          </nav>
-        ) : null}
-
-        <nav aria-label="Conta pessoal">
-          <Link href="/perfil" className={pathname === "/perfil" ? "nav-link active" : "nav-link"} title="Meu perfil" onClick={() => setMobileMenu(false)}><UserRound size={19} /><span>Meu perfil</span></Link>
-        </nav>
+        <MainNavigation
+          pathname={pathname}
+          departments={allowedDepartments}
+          indicatorAreas={allowedIndicatorAreas}
+          isAdmin={isAdmin}
+          todayAlertCount={todayAlertCount}
+          collapsed={collapsed && !mobileMenu}
+          onExpand={() => {
+            setCollapsed(false);
+            window.localStorage.setItem("terra-lotus-sidebar-collapsed", "false");
+          }}
+          onNavigate={() => setMobileMenu(false)}
+        />
         <div className="side-user">
           <Link href="/perfil" className="user-avatar" aria-label="Editar meu perfil">{avatar ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} /> : initials(fullName)}</Link>
           <div className="user-meta">
