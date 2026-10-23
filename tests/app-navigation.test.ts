@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import test from "node:test";
-import { getMainNavigation, isNavigationLinkActive, isNavigationPathActive, type NavigationEntry, type NavigationLink } from "../lib/app-navigation.ts";
+import { getMainNavigation, isNavigationLinkActive, isNavigationPathActive, searchNavigation, type NavigationEntry, type NavigationLink } from "../lib/app-navigation.ts";
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "../lib/constants.ts";
 
 const departments = DEPARTMENTS.map(department => department.slug);
@@ -107,4 +107,19 @@ test("páginas auxiliares e entradas dos grupos continuam existentes", () => {
   for (const route of ["/pagamentos/nova", "/pagamentos/contratos/[id]", "/novos-negocios", "/financeiro"]) {
     assert.ok(existsSync(new URL(`../app/(app)${route}/page.tsx`, import.meta.url)), route);
   }
+});
+
+test("busca do menu encontra rótulos e grupos sem distinguir acentos ou caixa", () => {
+  const entries = getMainNavigation({ departments, indicatorAreas, isAdmin: true });
+  assert.deepEqual(searchNavigation(entries, "GOVERNANCA").map(link => link.href), ["/governanca"]);
+  assert.deepEqual(searchNavigation(entries, "novos negocios").map(link => link.href), ["/novos-negocios/prospeccao", "/novos-negocios/esteira-de-negocios", "/obras", "/novos-negocios/landing-bank", "/novos-negocios/performance-de-empreendimentos"]);
+  assert.deepEqual(searchNavigation(entries, "clube").map(link => link.href), ["/clientes/clube-tlu"]);
+  assert.deepEqual(searchNavigation(entries, "  "), []);
+  assert.deepEqual(searchNavigation(entries, "inexistente"), []);
+});
+
+test("busca indexa somente módulos autorizados, inclusive filhos de grupos compartilhados", () => {
+  const entries = getMainNavigation({ departments: ["prestacao-contas"], indicatorAreas: [], isAdmin: false });
+  assert.deepEqual(searchNavigation(entries, "financeiro").map(link => link.href), ["/prestacao-contas"]);
+  for (const query of ["caixa", "alugueis", "prospeccao", "administracao", "clube"]) assert.deepEqual(searchNavigation(entries, query), []);
 });

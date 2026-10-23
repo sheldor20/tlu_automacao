@@ -315,6 +315,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             window.localStorage.setItem("terra-lotus-sidebar-collapsed", "false");
           }}
           onNavigate={() => setMobileMenu(false)}
+          onSearchReveal={() => {
+            setCollapsed(false);
+            window.localStorage.setItem("terra-lotus-sidebar-collapsed", "false");
+            if (window.matchMedia("(max-width: 780px)").matches) setMobileMenu(true);
+          }}
         />
         <div className="side-user">
           <Link href="/perfil" className="user-avatar" aria-label="Editar meu perfil">{avatar ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} /> : initials(fullName)}</Link>

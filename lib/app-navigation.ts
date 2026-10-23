@@ -79,6 +79,20 @@ export function isNavigationLinkActive(pathname: string, link: NavigationLink): 
   return link.exact ? pathname === href : isNavigationPathActive(pathname, href);
 }
 
+export function searchNavigation(entries: NavigationEntry[], query: string): NavigationLink[] {
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+  const terms = normalize(query).trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  return entries.flatMap(entry => {
+    if (entry.kind === "separator") return [];
+    const links = entry.kind === "group" ? entry.links : [entry];
+    return links.filter(link => {
+      const text = normalize(`${entry.kind === "group" ? entry.label : ""} ${link.label}`);
+      return terms.every(term => text.includes(term));
+    });
+  });
+}
+
 // Presentation only: route guards and module permissions remain in AppShell/pages.
 export function getMainNavigation({ departments, indicatorAreas, isAdmin }: {
   departments: readonly DepartmentSlug[];
