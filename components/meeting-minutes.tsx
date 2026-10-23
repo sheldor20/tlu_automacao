@@ -5,7 +5,7 @@ import { Button, Dialog, Field, StatusPill } from "@/components/ui";
 import { friendlyError, getSupabase } from "@/lib/supabase";
 import { dateBr } from "@/lib/format";
 import type { RaMeeting } from "@/lib/types";
-import { FileText, History, Mail, Pencil, Save } from "lucide-react";
+import { Download, FileText, History, Mail, Pencil, Save } from "lucide-react";
 
 type Revision = { id: string; revision: number; previous_text: string | null; minutes_text: string; edited_at: string; edited_by: string };
 export function MeetingMinutes({ meeting, canEdit, canResend, onResend, onSaved, onError, userName }: {
@@ -17,6 +17,26 @@ export function MeetingMinutes({ meeting, canEdit, canResend, onResend, onSaved,
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<Revision[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  async function downloadMinutesPdf() {
+    if (!meeting.minutes_text) return;
+    try {
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF();
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      const lines: string[] = meeting.minutes_text.split("\n").flatMap((line) => line ? pdf.splitTextToSize(line, 174) : [""]);
+      let y = 20;
+      for (const line of lines) {
+        if (y > 277) { pdf.addPage(); y = 20; }
+        pdf.text(line, 18, y);
+        y += 5.5;
+      }
+      pdf.save(`ata-${meeting.scheduled_at.slice(0, 10)}-${meeting.id}.pdf`);
+    } catch {
+      onError("Não foi possível baixar a ATA em PDF. Tente novamente.");
+    }
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     const client = getSupabase();
@@ -44,6 +64,7 @@ export function MeetingMinutes({ meeting, canEdit, canResend, onResend, onSaved,
         {canEdit ? <Button variant="secondary" onClick={() => { setDraft(meeting.minutes_text || ""); setEditing(true); }}><Pencil size={15} /> Editar ata</Button> : null}
         {meeting.minutes_revision > 0 ? <Button variant="ghost" loading={historyLoading} onClick={() => void showHistory()}><History size={15} /> Histórico</Button> : null}
         {canResend ? <Button variant="secondary" onClick={() => void onResend()}><Mail size={15} /> Reenviar ATA</Button> : null}
+        <Button variant="secondary" onClick={() => void downloadMinutesPdf()} disabled={!meeting.minutes_text}><Download size={15} /> Baixar ATA em PDF</Button>
       </div>
     </div>
     <pre>{meeting.minutes_text}</pre>
