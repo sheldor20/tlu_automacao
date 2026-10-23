@@ -228,6 +228,19 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-link:hover { background: rgba(255,255,255,.055); color: white; }
 .nav-link.active { background: white; color: var(--moss-950); box-shadow: 0 9px 26px rgba(0,0,0,.15); }
 .nav-group { display: grid; gap: 5px; }
+.nav-search { margin-top: 28px; }
+.nav-search-field { min-height: 44px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.24); border-radius: 10px; padding: 0 9px; color: rgba(255,255,255,.75); }
+.nav-search-field:focus-within { outline: 2px solid var(--sage-300); outline-offset: 2px; }
+.nav-search-field input { min-width: 0; width: 100%; height: 42px; border: 0; outline: 0; background: transparent; color: white; font: inherit; font-size: 12px; }
+.nav-search-field input::placeholder { color: rgba(255,255,255,.65); }
+.nav-search-field kbd { flex-shrink: 0; font-size: 9px; color: rgba(255,255,255,.55); }
+.nav-search-toggle { display: none; width: 100%; min-height: 44px; border: 1px solid rgba(255,255,255,.24); border-radius: 10px; background: transparent; color: white; align-items: center; justify-content: center; }
+.nav-search-status { color: rgba(255,255,255,.7); font-size: 12px; padding: 8px; }
+.side-nav .nav-search + nav, .app-frame-collapsed .side-nav .nav-search + nav { margin-top: 16px; }
+@media (min-width: 781px) {
+  .app-frame-collapsed .nav-search-field { display: none; }
+  .app-frame-collapsed .nav-search-toggle { display: flex; }
+}
 .nav-separator { width: 100%; margin: 10px 0; border: 0; border-top: 1px solid rgba(255,255,255,.16); }
 .nav-link:focus-visible, .nav-sublink:focus-visible { outline: 2px solid var(--sage-300); outline-offset: 3px; }
 .nav-link > svg, .nav-sublink > svg { flex-shrink: 0; }

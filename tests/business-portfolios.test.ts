@@ -18,7 +18,7 @@ const fileManager = readFileSync(new URL("../components/business-file-manager.ts
 const storageUpload = readFileSync(new URL("../lib/business-storage-upload.ts", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../components/app-shell.tsx", import.meta.url), "utf8");
 
-test("mantém as três páginas de Novos Negócios mesmo fora do menu principal", () => {
+test("mantém as três páginas de Novos Negócios", () => {
   assert.match(migration, /portfolio_section in \('prospeccao', 'esteira_negocios', 'landing_bank'\)/);
   for (const section of BUSINESS_PORTFOLIO_SECTIONS) {
     assert.ok(existsSync(new URL(`../app/(app)${section.href}/page.tsx`, import.meta.url)));

@@ -1,4 +1,5 @@
 import type { DepartmentSlug, ManagementAreaSlug } from "./types.ts";
+import { BUSINESS_PORTFOLIO_SECTIONS } from "./constants.ts";
 
 export type NavigationLink = {
   kind: "link";
@@ -7,6 +8,7 @@ export type NavigationLink = {
   icon: string;
   department?: DepartmentSlug;
   activeHref?: string;
+  exact?: boolean;
 };
 
 export type NavigationGroup = {
@@ -14,6 +16,7 @@ export type NavigationGroup = {
   id: string;
   label: string;
   icon: string;
+  activeHref?: string;
   links: NavigationLink[];
 };
 
@@ -48,8 +51,46 @@ const groups: NavigationGroup[] = [
   },
 ];
 
+const clientsGroup: NavigationGroup = {
+  kind: "group", id: "clients", label: "Clientes", icon: "clients", activeHref: "/clientes",
+  links: [
+    { kind: "link", href: "/clientes", label: "Carteira de clientes", icon: "clients", exact: true },
+    { kind: "link", href: "/clientes/clube-tlu", label: "Clube TLU", icon: "club" },
+  ],
+};
+
+const businessGroup: NavigationGroup = {
+  kind: "group", id: "new-business", label: "Novos negócios", icon: "business", activeHref: "/novos-negocios",
+  links: [
+    { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[0], icon: "prospecting" },
+    { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[1], icon: "pipeline" },
+    { kind: "link", department: "obras", href: "/obras", label: "Obras", icon: "construction" },
+    { kind: "link", ...BUSINESS_PORTFOLIO_SECTIONS[2], icon: "land" },
+    { kind: "link", href: "/novos-negocios/performance-de-empreendimentos", label: "Performance de empreendimentos", icon: "indicators" },
+  ],
+};
+
 export function isNavigationPathActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function isNavigationLinkActive(pathname: string, link: NavigationLink): boolean {
+  const href = link.activeHref || link.href;
+  return link.exact ? pathname === href : isNavigationPathActive(pathname, href);
+}
+
+export function searchNavigation(entries: NavigationEntry[], query: string): NavigationLink[] {
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+  const terms = normalize(query).trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  return entries.flatMap(entry => {
+    if (entry.kind === "separator") return [];
+    const links = entry.kind === "group" ? entry.links : [entry];
+    return links.filter(link => {
+      const text = normalize(`${entry.kind === "group" ? entry.label : ""} ${link.label}`);
+      return terms.every(term => text.includes(term));
+    });
+  });
 }
 
 // Presentation only: route guards and module permissions remain in AppShell/pages.
@@ -73,7 +114,14 @@ export function getMainNavigation({ departments, indicatorAreas, isAdmin }: {
     if (links.length > 0) entries.push({ ...group, links });
   }
   if (departments.includes("clientes")) {
-    entries.push({ kind: "link", department: "clientes", href: "/clientes", label: "Clientes", icon: "clients" });
+    entries.push(clientsGroup);
+  }
+  // Preserve every earlier menu item omitted from the requested reordering.
+  entries.push({ kind: "link", href: "/pagamentos", label: "Solicitações", icon: "finance" });
+  if (departments.includes("novos-negocios")) {
+    entries.push({ ...businessGroup, links: businessGroup.links.filter(link => !link.department || departments.includes(link.department)) });
+  } else if (departments.includes("obras")) {
+    entries.push({ kind: "link", department: "obras", href: "/obras", label: "Obras", icon: "construction" });
   }
   entries.push({ kind: "separator", id: "account" });
   if (isAdmin) entries.push({ kind: "link", href: "/administracao", label: "Administração", icon: "admin" });
