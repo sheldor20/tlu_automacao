@@ -5,12 +5,13 @@ import { FileDown, FileX2, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button, Field, PageIntro } from "@/components/ui";
 import { paymentFetch } from "@/lib/payment-client";
 import { getSupabase } from "@/lib/supabase";
+import { searchDistratoContracts, type DistratoSearchContract } from "@/lib/distratos-search";
 import { localToday } from "@/lib/operational-finance";
 import { brl, brDate, displayWorkCode, REGIME_LABELS, unitIdentifier, type DistratoDocument, type DistratoInput, type DistratoUnit } from "@/lib/distratos";
 import "./distratos.css";
 
 type Work = { key: string; company_id: string; work_id: string; name: string };
-type Contract = { id: string; block: string; lot: string; contract_number: string; buyerName: string };
+type Contract = DistratoSearchContract;
 type Form = Omit<DistratoInput, "requestId" | "sourceRevision" | "contractId" | "regime"> & { regime: DistratoInput["regime"] | "" };
 type Detail = { unit: DistratoUnit; sourceRevision: string; history: Array<Pick<DistratoDocument, "id" | "created_at" | "draft" | "input" | "calculation">> };
 const blank = (): Form => ({ regime: "", correctionDate: localToday(), saleDate: "", saleValue: 0, fruitionMonths: 0, brokerage: 0, municipalTaxes: 0, sellerDocument: "", sellerAddress: "", sellerRepresentative: "", buyerDocument: "", buyerQualification: "", buyerAddress: "", registration: "", registryOffice: "", reason: "", possession: "", refundTerms: "", city: "", notes: "" });
@@ -21,6 +22,8 @@ export default function DistratosPage() {
   const [canWrite, setCanWrite] = useState(false);
   const [workKey, setWorkKey] = useState("");
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [search, setSearch] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   const [block, setBlock] = useState("");
   const [lot, setLot] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -48,7 +51,7 @@ export default function DistratosPage() {
     selection.current = ""; setLoadingUnit(false); setDetail(null); setDocument(null); setForm(blank()); setSaleMessage(""); setSaleLoading(false); setError("");
   }
   async function selectWork(key: string) {
-    resetUnit(); setWorkKey(key); setContracts([]); setBlock(""); setLot("");
+    resetUnit(); setWorkKey(key); setContracts([]); setBlock(""); setLot(""); setSearch("");
     if (!key) return;
     selection.current = key; setLoadingUnit(true);
     try {
@@ -112,6 +115,8 @@ export default function DistratosPage() {
   const blocks = [...new Set(contracts.map((c) => c.block))].sort();
   const lots = [...new Set(contracts.filter((c) => c.block === block).map((c) => c.lot))].sort();
   const unitContracts = contracts.filter((c) => c.block === block && c.lot === lot);
+  const workCode = works.find((work) => work.key === workKey)?.work_id || "";
+  const searchResults = search.trim() ? searchDistratoContracts(contracts, search, workCode, { block, lot }) : [];
   const unit = detail?.unit;
   const correctionDateValid = form.saleDate && form.saleValue > 0 && form.regime;
   const textField = (key: keyof Form, label: string) => <Field label={label}><input value={String(form[key])} maxLength={4000} onChange={(e) => change(key, e.target.value as never)} /></Field>;
@@ -125,6 +130,14 @@ export default function DistratosPage() {
         <Field label="Empreendimento / Obra" className="distrato-wide"><select value={workKey} onChange={(e) => void selectWork(e.target.value)}><option value="">{loading ? "Carregando empreendimentos…" : "Selecione o empreendimento"}</option>{works.map((w) => <option key={w.key} value={w.key}>{w.name} · Obra {displayWorkCode(w.work_id)} · {companies.find((c) => c.id === w.company_id)?.name}</option>)}</select></Field>
         <Field label="Quadra"><select value={block} disabled={!contracts.length || loadingUnit} onChange={(e) => { resetUnit(); setBlock(e.target.value); setLot(""); }}><option value="">Selecione a quadra</option>{blocks.map((b) => <option key={b}>{b}</option>)}</select></Field>
         <Field label="Lote"><select value={lot} disabled={!block || loadingUnit} onChange={(e) => { const next = e.target.value; setLot(next); const found = contracts.filter((c) => c.block === block && c.lot === next); if (found.length === 1) void selectContract(found[0].id); else resetUnit(); }}><option value="">Selecione o lote</option>{lots.map((l) => <option key={l}>{l}</option>)}</select></Field>
+        <div className="distrato-wide distrato-search">
+          <Field label="Buscar cliente, contrato ou unidade" hint="Busca no empreendimento selecionado, respeitando os filtros de quadra e lote."><input ref={searchInput} type="search" value={search} disabled={!contracts.length || loadingUnit} placeholder="Nome, contrato ou código Obra.Quadra.Lote" onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSearch(""); } }} /></Field>
+          {search ? <Button type="button" variant="secondary" onClick={() => { setSearch(""); searchInput.current?.focus(); }}>Limpar busca</Button> : null}
+          {search.trim() && !loadingUnit ? <div className="distrato-search-results">
+            <p role="status">{searchResults.length ? `${searchResults.length} contrato(s) encontrado(s). Selecione o contrato.` : "Nenhum contrato encontrado nos filtros atuais."}</p>
+            {searchResults.length ? <ul aria-label="Contratos encontrados">{searchResults.map((contract) => <li key={contract.id}><button type="button" onClick={() => { setBlock(contract.block); setLot(contract.lot); setSearch(""); void selectContract(contract.id); }}><strong>{contract.buyerName}</strong><span>{unitIdentifier({ workCode, block: contract.block, lot: contract.lot })} · Contrato {contract.contract_number}</span></button></li>)}</ul> : null}
+          </div> : null}
+        </div>
         {unitContracts.length > 1 ? <Field label="Contrato / Cliente" className="distrato-wide" hint="Este lote possui mais de um contrato. Selecione o cliente correto."><select value={unit?.contractId || ""} onChange={(e) => void selectContract(e.target.value)}><option value="">Selecione o contrato</option>{unitContracts.map((c) => <option key={c.id} value={c.id}>{c.buyerName} · Contrato {c.contract_number}</option>)}</select></Field> : null}
       </fieldset>
       {loadingUnit ? <p role="status">Consultando a unidade e os recebimentos…</p> : null}
