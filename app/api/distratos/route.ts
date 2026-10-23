@@ -6,6 +6,7 @@ import { distratoAccess, loadDistratoUnit } from "@/lib/distratos-server";
 import { allRows, checked } from "@/lib/operations-server";
 import { paymentBody, paymentFailure, paymentJson, paymentLimit, PaymentError } from "@/lib/payment-server";
 import { localToday } from "@/lib/operational-finance";
+import { assertFruitionMonths } from "@/lib/distratos-prefill";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -53,6 +54,8 @@ export async function POST(request: Request) {
     await paymentLimit(db, `distrato:${actor.id}`, 30, 3600);
     const { unit, sourceRevision } = await loadDistratoUnit(db, input.contractId);
     if (sourceRevision !== input.sourceRevision) throw new PaymentError("A base deste lote mudou. Selecione a unidade novamente para conferir os recebimentos.", 409);
+    try { assertFruitionMonths(input.fruitionMonths, unit.paidInstallments); }
+    catch (error) { throw new PaymentError((error as Error).message, 422); }
     if (!unit.receipts.length) throw new PaymentError("Esta unidade não tem recebimentos publicados no Qlik.", 422);
     if (unit.receipts.length > 4000) throw new PaymentError("A unidade excedeu o limite de 4.000 lançamentos. Solicite a conferência da origem.", 422);
     let correction;

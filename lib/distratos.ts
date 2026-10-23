@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PaidInstallments } from "./distratos-prefill.ts";
 
 export const DISTRATO_SOURCE = "https://terralotusurbanismo.us.qlikcloud.com/sense/app/e3d13862-ec1f-4332-8a5b-df4c7b93fa7c/sheet/bd84bea2-0f3c-4dc6-9081-0eab08502ba3/state/analysis";
 export const JURISCALC_SOURCE = "https://juriscalc.tjdft.jus.br/publico/calculos";
@@ -38,6 +39,7 @@ export type DistratoUnit = {
   contractId: string; contractNumber: string; companyId: string; companyName: string;
   workKey: string; workCode: string; workName: string; block: string; lot: string;
   buyerName: string; synchronizedAt: string; receipts: DistratoReceipt[];
+  paidInstallments?: PaidInstallments;
 };
 export type CorrectedValue = { id: string; date: string; original: number; corrected: number; factor: number; indices: string[] };
 export type DistratoCorrection = {
