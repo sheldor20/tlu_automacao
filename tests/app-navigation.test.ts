@@ -23,7 +23,7 @@ test("compõe a ordem solicitada e mapeia somente rotas existentes", () => {
     ["Carteira de clientes", "Clube TLU"],
     ["Prospecção", "Esteira de negócios", "Landing Bank", "Performance de empreendimentos"],
     ["Obras"],
-    ["Projetos", "Governança", "Reuniões", "Processos", "Acordo de performance"],
+    ["Pendências", "Projetos", "Governança", "Reuniões", "Processos", "Acordo de performance"],
   ]);
   for (const link of linksOf(entries)) {
     const route = link.href.startsWith("/indicadores/") ? "/indicadores/[area]" : link.href;
@@ -48,7 +48,7 @@ test("checklist original: todos os destinos mantêm a visibilidade em 8.192 comb
     for (const [href, permission] of Object.entries(permissionByHref)) {
       assert.equal(hrefs.includes(href), assigned.includes(permission), `${assigned}: ${href}`);
     }
-    const originalTargets = ["/mensagens", "/hoje", "/pagamentos", "/acordo-performance", "/perfil",
+    const originalTargets = ["/mensagens", "/hoje", "/pagamentos", "/pendencias", "/acordo-performance", "/perfil",
       ...Object.entries(permissionByHref).filter(([, permission]) => assigned.includes(permission)).map(([href]) => href),
       ...(assigned.includes("indicadores") ? ["/indicadores/empresa"] : [])];
     assert.deepEqual([...hrefs].sort(), originalTargets.sort(), `original/final: ${assigned}`);
@@ -71,7 +71,7 @@ test("Indicadores exige departamento e uma visão liberada, usando a primeira au
 
 test("Administração continua exclusiva e o perfil sem departamentos mantém seus módulos pessoais", () => {
   assert.deepEqual(linksOf(getMainNavigation({ departments: [], indicatorAreas: [], isAdmin: false })).map(link => link.href), [
-    "/mensagens", "/hoje", "/pagamentos", "/acordo-performance", "/perfil",
+    "/mensagens", "/hoje", "/pagamentos", "/pendencias", "/acordo-performance", "/perfil",
   ]);
   assert.ok(linksOf(getMainNavigation({ departments, indicatorAreas, isAdmin: true })).some(link => link.href === "/administracao"));
 });
