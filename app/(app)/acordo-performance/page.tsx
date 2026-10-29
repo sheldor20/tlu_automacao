@@ -267,7 +267,7 @@ export default function PerformanceAgreementsPage() {
 
   return <div className="performance-page">
     <PageIntro eyebrow="Desenvolvimento" title="Acordo de Performance"
-      description="Registre as metas e expectativas de cada ciclo em um espaço privado entre colaborador e líder direto." />
+      description="Registre os entregáveis e expectativas de cada ciclo em um espaço privado entre colaborador e líder direto." />
     <p className="performance-privacy"><LockKeyhole size={17} aria-hidden="true" /> Acesso ao colaborador, ao líder e a quem recebeu autorização de consulta no ADM.</p>
     {loading ? <p role="status">Carregando acordos…</p> : loadError ? <section className="content-card">
       <p role="alert">{loadError}</p><Button onClick={() => setReload(value => value + 1)}>Tentar novamente</Button>
@@ -301,7 +301,7 @@ export default function PerformanceAgreementsPage() {
         </tbody></table></div> : null}
         {editor && canEdit ? <section className="content-card">
           <h2>{editor.id ? "Editar acordo" : "Novo acordo"}</h2>
-          <p>{nameOf(owner)} · Preencha o período e as metas deste ciclo.</p>
+          <p>{nameOf(owner)} · Preencha o período e os entregáveis deste ciclo.</p>
           <form onSubmit={save} className="form-grid performance-form">
             <fieldset disabled={saving} className="performance-fields">
               <Field label="Ciclo" hint="Use o mesmo nome em toda a equipe, por exemplo: 2026 — 2º semestre." className="form-span-2">
@@ -312,20 +312,20 @@ export default function PerformanceAgreementsPage() {
               <Field label="Expectativas e observações" className="form-span-2"><textarea rows={4} maxLength={10000} value={editor.data.expectations} onChange={event => changeField("expectations", event.target.value)} /></Field>
               <div className="form-span-2 performance-goals">
                 {editor.data.goals.map((goal, index) => <fieldset key={index} className="performance-goal form-grid">
-                  <legend>Meta {index + 1}</legend>
-                  <Field label="Descrição da meta" className="form-span-2"><input required maxLength={300} value={goal.title} onChange={event => changeGoal(index, "title", event.target.value)} /></Field>
+                  <legend>Entregável {index + 1}</legend>
+                  <Field label="Descrição do entregável" className="form-span-2"><input required maxLength={300} value={goal.title} onChange={event => changeGoal(index, "title", event.target.value)} /></Field>
                   <Field label="Indicador"><input required maxLength={500} value={goal.indicator} onChange={event => changeGoal(index, "indicator", event.target.value)} /></Field>
                   <Field label="Prazo"><input required type="date" min={editor.data.starts_on || undefined} max={editor.data.ends_on || undefined} value={goal.due_date} onChange={event => changeGoal(index, "due_date", event.target.value)} /></Field>
                   <Field label="Resultado esperado" className="form-span-2"><textarea required rows={2} maxLength={1000} value={goal.expected_result} onChange={event => changeGoal(index, "expected_result", event.target.value)} /></Field>
-                  <Button type="button" variant="ghost" disabled={editor.data.goals.length === 1} onClick={() => changeField("goals", editor.data.goals.filter((_, i) => i !== index))} aria-label={`Remover meta ${index + 1}`}><Trash2 size={16} /> Remover meta</Button>
+                  <Button type="button" variant="ghost" disabled={editor.data.goals.length === 1} onClick={() => changeField("goals", editor.data.goals.filter((_, i) => i !== index))} aria-label={`Remover entregável ${index + 1}`}><Trash2 size={16} /> Remover entregável</Button>
                 </fieldset>)}
-                <Button type="button" variant="secondary" disabled={editor.data.goals.length >= 30} onClick={() => changeField("goals", [...editor.data.goals, emptyPerformanceGoal()])}><Plus size={16} /> Adicionar meta</Button>
+                <Button type="button" variant="secondary" disabled={editor.data.goals.length >= 30} onClick={() => changeField("goals", [...editor.data.goals, emptyPerformanceGoal()])}><Plus size={16} /> Adicionar entregável</Button>
               </div>
             </fieldset>
             <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={leaveEditor}>Cancelar</Button><Button type="submit" loading={saving}>Salvar acordo</Button></div>
           </form>
         </section> : visible.length === 0 ? <section className="content-card"><EmptyState icon={<Target size={24} />} title="Nenhum acordo neste momento"
-          description={canEdit ? "Cadastre o primeiro ciclo para registrar as metas e expectativas." : "Seu líder cadastrará o ciclo e as metas para você ler e assinar."} action={canEdit ? <Button onClick={startNew}>Cadastrar acordo</Button> : undefined} /></section> : selected ? <div className="performance-layout" id="performance-agreement-detail">
+          description={canEdit ? "Cadastre o primeiro ciclo para registrar os entregáveis e expectativas." : "Seu líder cadastrará o ciclo e os entregáveis para você ler e assinar."} action={canEdit ? <Button onClick={startNew}>Cadastrar acordo</Button> : undefined} /></section> : selected ? <div className="performance-layout" id="performance-agreement-detail">
           <nav className="performance-cycles content-card" aria-label="Ciclos de performance">
             {visible.map(agreement => <button key={agreement.id} type="button" className={selected.id === agreement.id ? "active" : ""}
               aria-current={selected.id === agreement.id ? "true" : undefined} disabled={saving} onClick={() => { setSelectedId(agreement.id); setFeedback(null); }}>
@@ -336,7 +336,7 @@ export default function PerformanceAgreementsPage() {
             <div className="performance-toolbar"><div><span className="eyebrow">{nameOf(people.find(person => person.user_id === selected.report_user_id))}</span><h2>{selected.cycle}</h2>
               <p>{dateBr(selected.starts_on)} a {dateBr(selected.ends_on)}</p></div>{canEdit && !selected.archived_at ? <div className="performance-tabs"><Button variant="secondary" disabled={saving} onClick={editSelected}>Editar acordo</Button><Button variant="ghost" disabled={saving} onClick={() => void archiveSelected()}><Trash2 size={16} /> Excluir acordo</Button></div> : null}</div>
             {selected.expectations ? <div><h3>Expectativas e observações</h3><p className="performance-text">{selected.expectations}</p></div> : null}
-            <h3>Metas do ciclo</h3>
+            <h3>Entregáveis do ciclo</h3>
             {selected.goals.map((goal, index) => <article key={index} className="performance-goal">
               <h3>{index + 1}. {goal.title}</h3><dl><dt>Indicador</dt><dd>{goal.indicator}</dd><dt>Resultado esperado</dt><dd>{goal.expected_result}</dd><dt>Prazo</dt><dd>{dateBr(goal.due_date)}</dd></dl>
             </article>)}
@@ -348,7 +348,7 @@ export default function PerformanceAgreementsPage() {
                 {currentAcceptance ? <p><strong>Acordado</strong> · Assinado por {currentAcceptance.signature_name} em {performanceTimestamp(currentAcceptance.signed_at)} · {currentAcceptance.location_description}</p> : <><p>Aguardando assinatura do liderado.</p>{currentContract.report_user_id === self ? <PerformanceSignatureForm key={currentContract.id} kind="report" busy={saving} onSign={signContract} /> : null}</>}
               </> : <>
                 <p>O líder deve emitir e assinar o documento desta revisão para disponibilizá-lo ao liderado.</p>
-                {canEdit ? <>{draftContract ? <PerformanceContractViewer contract={draftContract} draft /> : null}<p>O documento identifica as partes, o ciclo, a vigência, as metas e estes compromissos: comunicar as expectativas, acompanhar a execução, atuar para alcançar as metas e comunicar impedimentos. Alterações geram uma nova revisão e exigem novas assinaturas. O acordo não altera, por si só, as condições do vínculo de trabalho.</p><PerformanceSignatureForm key={`${selected.id}-${selected.version}`} kind="leader" busy={saving} onSign={issueContract} /></> : null}
+                {canEdit ? <>{draftContract ? <PerformanceContractViewer contract={draftContract} draft /> : null}<p>O documento identifica as partes, o ciclo, a vigência, os entregáveis e estes compromissos: comunicar as expectativas, acompanhar a execução, atuar para alcançar os entregáveis e comunicar impedimentos. Alterações geram uma nova revisão e exigem novas assinaturas. O acordo não altera, por si só, as condições do vínculo de trabalho.</p><PerformanceSignatureForm key={`${selected.id}-${selected.version}`} kind="leader" busy={saving} onSign={issueContract} /></> : null}
                 {currentSignature ? <p>Ciência anterior registrada por {currentSignature.signature_name} em {performanceTimestamp(currentSignature.signed_at)}. Esse registro não substitui a assinatura do documento formalizado.</p> : null}
               </>}
               {contracts.filter(item => item.agreement_id === selected.id && item.id !== currentContract?.id).map(document => <div key={document.id}><p>Documento preservado · Revisão {document.agreement_version}</p><PerformanceContractViewer contract={document} acceptance={acceptances.find(item => item.contract_id === document.id)} /></div>)}

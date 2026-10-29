@@ -1,0 +1,123 @@
+.announcement-wall {
+  margin-bottom: 24px;
+}
+.announcement-feed {
+  display: grid;
+  gap: 18px;
+  max-height: 850px;
+  overflow: auto;
+  padding: 4px;
+}
+.announcement-post {
+  border: 1px solid var(--border, #e2e8e4);
+  border-radius: 14px;
+  padding: 20px;
+  background: var(--surface, #fff);
+}
+.announcement-post header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.announcement-post h3 {
+  margin: 0 0 6px;
+}
+.announcement-post small {
+  color: #65736b;
+}
+.announcement-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.announcement-image {
+  display: block;
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  border-radius: 10px;
+  margin: 14px auto;
+}
+.announcement-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+.announcement-reactions button {
+  border: 1px solid #d7e1da;
+  border-radius: 24px;
+  background: transparent;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.announcement-reactions button[aria-pressed="true"] {
+  background: #e0eee5;
+  border-color: #438565;
+}
+.announcement-reactions span {
+  font-size: 12px;
+  color: #65736b;
+}
+.announcement-compose,
+.announcement-comment-form {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.announcement-compose label,
+.announcement-comment-form label {
+  display: grid;
+  gap: 6px;
+}
+.announcement-compose input,
+.announcement-compose textarea,
+.announcement-comment-form textarea {
+  width: 100%;
+  border: 1px solid #d7e1da;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+.announcement-comments > div {
+  border-bottom: 1px solid #e2e8e4;
+  padding: 14px 0;
+}
+.announcement-comments p {
+  margin: 8px 0;
+}
+.announcement-post summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.announcement-error {
+  color: #a12c2c;
+}
+.announcement-empty {
+  padding: 16px;
+  color: #65736b;
+}
+.announcement-permissions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+.announcement-permissions label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 600px) {
+  .announcement-post {
+    padding: 14px;
+  }
+  .announcement-wall .content-card-head {
+    flex-wrap: wrap;
+  }
+  .announcement-feed {
+    max-height: 700px;
+  }
+}

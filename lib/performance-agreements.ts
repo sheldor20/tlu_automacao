@@ -47,7 +47,7 @@ export function performanceAgreementError(error: unknown): string {
   const message = error && typeof error === "object" && "message" in error ? String(error.message) : String(error);
   if (message.includes("performance_agreements_cycle_key")) return "Já existe um acordo para este colaborador e ciclo. Abra o registro existente para editar.";
   if (message.includes("performance_agreement_conflict")) return "O acordo foi alterado por outra pessoa ou seu acesso mudou. Recarregue os acordos antes de editar novamente.";
-  if (message.includes("performance_agreement_invalid")) return "Revise o ciclo, o período e as metas. Os prazos precisam estar dentro do ciclo.";
+  if (message.includes("performance_agreement_invalid")) return "Revise o ciclo, o período e os entregáveis. Os prazos precisam estar dentro do ciclo.";
   if (message.includes("row-level security") || message.includes("permission denied")) return "Você não tem mais acesso a este acordo. Recarregue a página.";
   return "Não foi possível salvar o acordo. Seus dados continuam no formulário; tente novamente.";
 }

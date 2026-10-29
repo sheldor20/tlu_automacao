@@ -1,5 +1,6 @@
 "use client";
 
+import { AnnouncementPermissions } from "@/components/announcement-permissions";
 import { MeetingAccessSettings } from "@/components/meeting-access-settings";
 import { Button, Dialog, EmptyState, Field, PageIntro, StatusPill, Toast } from "@/components/ui";
 import { DEPARTMENTS, MANAGEMENT_AREAS } from "@/lib/constants";
@@ -225,6 +226,8 @@ export default function AdministrationPage() {
         <article><UserRoundCog size={19} /><div><strong>{metrics.leaders}</strong><span>líderes diretos</span></div></article>
       </section>
 
+      <AnnouncementPermissions users={users} />
+
       <MeetingAccessSettings users={users} onSaved={loadUsers} />
 
       <section className="content-card admin-users-card">
@@ -326,7 +329,7 @@ export default function AdministrationPage() {
 
           <fieldset className="department-access-fieldset form-span-2">
             <legend>Acordos de Performance</legend>
-            <p>Líder e liderado já consultam os próprios acordos. Esta autorização permite consultar todos os acordos registrados, suas assinaturas e documentos. Não permite editar metas ou assinar por outra pessoa.</p>
+            <p>Líder e liderado já consultam os próprios acordos. Esta autorização permite consultar todos os acordos registrados, suas assinaturas e documentos. Não permite editar entregáveis ou assinar por outra pessoa.</p>
             <div className="admin-toggle-grid"><label><input type="checkbox" disabled={!form.active} checked={form.performance_permission.can_review} onChange={event => setForm({ ...form, performance_permission: { can_review: event.target.checked } })} /><span><strong>Consultar todos os acordos</strong><small>Liberação explícita, inclusive para administradores. Inclui impressão dos documentos.</small></span></label></div>
           </fieldset>
           <fieldset className="department-access-fieldset form-span-2">

@@ -42,7 +42,7 @@ export function PerformanceSignatureForm({ kind, busy, onSign }: { kind: "leader
       <Button variant="secondary" disabled={busy || locating} onClick={locate}>{locating ? "Obtendo localização…" : "Registrar também a localização do dispositivo"}</Button>
       {locationStatus ? <p role="status">{locationStatus}</p> : null}
     </> : null}
-    <label><input type="checkbox" checked={accepted} disabled={busy} onChange={event => setAccepted(event.target.checked)} /> {kind === "leader" ? "Li as metas e os compromissos do documento abaixo e confirmo a emissão deste acordo como líder direto." : "Abri e li o documento integral do acordo, compreendi as metas, os prazos e os compromissos e aceito esta revisão."}</label>
+    <label><input type="checkbox" checked={accepted} disabled={busy} onChange={event => setAccepted(event.target.checked)} /> {kind === "leader" ? "Li os entregáveis e os compromissos do documento abaixo e confirmo a emissão deste acordo como líder direto." : "Abri e li o documento integral do acordo, compreendi os entregáveis, os prazos e os compromissos e aceito esta revisão."}</label>
     <Button disabled={busy || locating || !accepted || name.trim().length < 3 || kind === "report" && location.trim().length < 2} onClick={() => void onSign(name.trim(), kind === "report" ? { description: location.trim(), ...coordinates } : undefined)}>{kind === "leader" ? "Emitir e assinar documento" : "Assinar acordo"}</Button>
   </div>;
 }
