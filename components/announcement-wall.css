@@ -121,3 +121,93 @@
     max-height: 700px;
   }
 }
+
+/* Keep the editor aligned with the spacing and field scale used across TLU. */
+.announcement-wall .announcement-compose {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 24px 28px 28px;
+  gap: 20px;
+}
+.announcement-compose label,
+.announcement-comment-form label {
+  min-width: 0;
+  gap: 8px;
+  color: #39413c;
+  font-size: 13px;
+  font-weight: 720;
+}
+.announcement-compose input,
+.announcement-compose textarea,
+.announcement-comment-form textarea {
+  min-width: 0;
+  padding: 12px 14px;
+  border-color: var(--line, #d7e1da);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink, #253129);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+.announcement-compose textarea,
+.announcement-comment-form textarea {
+  resize: vertical;
+  min-height: 112px;
+}
+.announcement-compose input:focus,
+.announcement-compose textarea:focus,
+.announcement-comment-form textarea:focus {
+  outline: 3px solid #e2ece3;
+  border-color: #6f8a72;
+}
+.announcement-compose input[type="file"] {
+  padding: 10px;
+  background: #f7f8f5;
+  font-size: 12px;
+}
+.announcement-compose input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #d7e1da);
+  border-radius: 7px;
+  background: #fff;
+  color: #39413c;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.announcement-compose > .button,
+.announcement-comment-form > .button {
+  justify-self: end;
+  width: auto;
+  margin-top: 2px;
+}
+.announcement-wall .announcement-feed:empty {
+  display: none;
+}
+.announcement-wall .announcement-empty {
+  margin: 0;
+  padding: 22px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.announcement-compose + .announcement-empty {
+  border-top: 1px solid var(--line, #e2e8e4);
+}
+.announcement-feed:not(:empty) {
+  padding: 20px 22px;
+}
+@media (max-width: 600px) {
+  .announcement-wall .announcement-compose {
+    padding: 20px 17px;
+    gap: 16px;
+  }
+  .announcement-wall .content-card-head .page-action-group {
+    flex-wrap: wrap;
+  }
+  .announcement-wall .announcement-empty,
+  .announcement-feed:not(:empty) {
+    padding: 17px;
+  }
+}
