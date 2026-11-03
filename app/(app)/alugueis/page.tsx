@@ -13,6 +13,7 @@ import {
   Hammer,
   Home,
   KeyRound,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -91,6 +92,7 @@ export default function RentalsPage() {
         eyebrow="Departamento · Aluguéis"
         title="Gestão de aluguéis"
         description="Imóveis, contratos e recebimentos lançados mês a mês."
+        action={<Link href="/alugueis/novo" className="button button-primary"><Plus size={17} /> Novo imóvel</Link>}
       />
 
       <section className="kpi-grid">
@@ -103,7 +105,7 @@ export default function RentalsPage() {
       <nav className="rental-tabs" aria-label="Visões de aluguéis">{([["leases", "Locações"], ["inventory", "Cadastro geral"], ["receipts", "Recebimentos"]] as const).map(([value,label]) => <button key={value} aria-pressed={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>)}</nav>
       {tab !== "receipts" ? <section className="content-card rentals-list-card">
         <div className="content-card-head project-list-head">
-          <div><h2>{tab === "inventory" ? "Cadastro geral de imóveis" : "Locações em gestão"}</h2><p>Cadastro pelo Qlik · locações pelos contratos · recebimentos pelo código do imóvel</p></div>
+          <div><h2>{tab === "inventory" ? "Cadastro geral de imóveis" : "Locações em gestão"}</h2><p>Cadastro aqui ou pelo Qlik · locações pelos contratos · recebimentos pelo código do imóvel</p></div>
         </div>
         <ListToolbar query={query} onQueryChange={setQuery} placeholder="Buscar por imóvel, código, tipo, endereço ou locatário">
           <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filtrar por tipo de imóvel"><option value="buildings">Imóveis · sem terrenos e áreas</option><option value="all">Todos os tipos</option>{Array.from(new Set(rentals.map(r => r.property_type).filter((v): v is string => Boolean(v)))).sort().map(type => <option key={type} value={type}>{type}</option>)}</select>
@@ -117,7 +119,7 @@ export default function RentalsPage() {
           <EmptyState
             icon={<Home size={23} />}
             title="Nenhum imóvel encontrado"
-            description="Os imóveis são importados do Qlik. Confira os filtros ou aguarde a primeira carga validada."
+            description="Confira os filtros ou use Novo imóvel para cadastrar e vincular pelo código do Qlik."
           />
         ) : (
           <div className="rental-table-wrap">

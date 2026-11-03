@@ -94,4 +94,15 @@ test("carteira e recebimentos Qlik: vínculo estável, permissões, IR e cargas 
   assert.equal(synced.property_type,"Imóvel Residencial");assert.equal(synced.rentable,true);assert.equal(Number(synced.monthly_rent),3100);
   assert.equal(Number((await manual()).rows[0].net_received),2000.20);
  });
+ await t.test("novo cadastro local é conciliado pelo código sem duplicar nem perder a locação", async()=>{
+  await role("service_role",null,async()=>{
+   const local=(await db.query<{id:string}>("insert into public.rentals(name,property_address,lessor_type,lessor_name,qlik_property_id,created_by,monthly_rent) values('Novo cadastro','Rua de teste','pj','Terra Lótus','1|009',$1,4500) returning id",[user])).rows[0].id;
+   await assert.rejects(()=>db.query("insert into public.rentals(name,property_address,lessor_type,lessor_name,qlik_property_id) values('Duplicado','Rua de teste','pj','Terra Lótus','1|009')"),/unique/);
+   await inventory([{source_id:"0007",name:"Casa renomeada"},{source_id:"1|009",name:"Nome atualizado no Qlik",property_type:"Imóvel Comercial",rentable:true}],"2025-01-06T00:00:00Z");
+   const result=(await db.query<{id:string;monthly_rent:string;qlik_present:boolean}>("select id,monthly_rent,qlik_present from public.rentals where qlik_property_id='1|009'")).rows;
+   assert.equal(result.length,1); assert.equal(result[0].id,local);
+   assert.equal(Number(result[0].monthly_rent),4500); assert.equal(result[0].qlik_present,true);
+  });
+ });
+
 });

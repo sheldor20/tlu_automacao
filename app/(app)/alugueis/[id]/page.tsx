@@ -135,7 +135,7 @@ export default function RentalDetailPage() {
           <h1>{rental.name}</h1>
           <p><Home size={14} /> {form.property_address}</p>
           <p>Cód. Imóvel: {rental.qlik_property_id || "Contrato anterior · vínculo pendente"}</p>
-          <p>{rental.qlik_synced_at ? `Qlik atualizado em ${dateBr(rental.qlik_synced_at.slice(0, 10))}` : "Aguardando vínculo com a origem Qlik"}{rental.qlik_present === false ? " · Ausente na última carga" : ""}</p>
+          <p>{rental.qlik_synced_at ? `Qlik atualizado em ${dateBr(rental.qlik_synced_at.slice(0, 10))}` : "Código informado · aguardando confirmação na sincronização do Qlik"}{rental.qlik_present === false ? " · Ausente na última carga" : ""}</p>
         </div>
       </header>
 
