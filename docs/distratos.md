@@ -6,7 +6,7 @@ Aplicar `20261023114330_distratos_module.sql` antes de publicar. Nenhum usuário
 
 ## Origem e seleção
 
-Empreendimento/obra → quadra → lote → contrato, quando há mais de um. A empresa e o cliente são mostrados antes da geração. Não unir contratos de empresas diferentes pelo nome ou pelo número do lote.
+Empreendimento/obra → quadra → lote → um ou mais contratos. A empresa e o cliente são mostrados antes da geração. A seleção usa o ID exato do contrato: nomes iguais não unem pessoas/contratos, e o mesmo contrato selecionado por mais de um titular produz um único documento. Não unir contratos de empresas diferentes pelo nome ou pelo número do lote. Não há rateio entre titulares.
 
 Recebimentos vêm da publicação completa de `operational_cash_entries`, `kind=received`, `active=true`, com vínculo exato por `contract_id`, empresa e obra. São mantidos os componentes e estornos assinados, sem usar vencimento como data de pagamento. A data de publicação é mostrada e preservada. `sourceRevision` detecta mudanças entre consulta, cálculo e gravação.
 
@@ -26,6 +26,16 @@ O servidor usa o endpoint público do serviço TJDFT `POST https://juriscalc.tjd
 Datas, valores iniciais, identificadores, índice, juros, quantidade de linhas e total são conferidos no retorno. O cálculo registra a competência efetivamente disponível. Falha do TJDFT impede a emissão; não há estimativa alternativa. A interface não envia nomes, documentos, endereços ou identificadores reais ao TJDFT, apenas valores, datas e rótulos sequenciais.
 
 PDF com memória, descontos, todos os recebimentos e termo. Campos incompletos ou saldo negativo mantêm a marca de minuta. Saldo negativo não vira dívida reconhecida. Os registros guardam integralmente dados, retorno normalizado, regra e termo; downloads posteriores usam o snapshot salvo.
+
+## Vários contratos e resumo
+
+Cada seleção tem formulário, data/preço original, regime, fruição, encargos, pagamentos, revisão da base, histórico e PDF próprios. Remover um contrato desmonta seu formulário e exclui seus valores do resumo; trocar obra/quadra/lote limpa a seleção. Respostas atrasadas das consultas removidas são descartadas. Alterar campos invalida o documento atual do resumo. Consultar um documento histórico não o incorpora ao resumo dos dados atuais.
+
+“Gerar documentos selecionados” usa o endpoint individual existente, sequencialmente e uma vez por ID de contrato. Uma falha não apaga os documentos concluídos nem impede os contratos seguintes. “Parar após contrato atual” aguarda a operação em andamento e não inicia as próximas; não promete desfazer documento já gerado. Repetir a geração com os mesmos campos, ator e revisão reutiliza a chave da operação. O navegador mantém em `sessionStorage` apenas o hash desses dados e o UUID, permitindo recuperar uma resposta incerta após recarregar a mesma aba. Nenhum valor, nome, documento pessoal ou credencial é gravado nesse diário. Se o armazenamento estiver indisponível, a geração não é iniciada. Uma nova aba/sessão não compartilha esse diário; para documentos anteriores, consultar o histórico. O servidor continua validando acesso, idempotência, fruição e revisões, sem alteração da API ou do banco.
+
+O resumo mostra cada saldo e restituição separadamente e soma pagamentos/descontos/restituições em centavos. Soma **as restituições individuais**; não compensa um saldo negativo com a restituição de outro contrato. Não soma o valor dos imóveis nem meses de fruição. Contrato/recebimento duplicado não é contado duas vezes: IDs de contratos são deduplicados e recebimentos repetidos bloqueiam a consolidação. Resultados parciais são identificados e o CSV exige documento atual para todos os contratos selecionados. PDFs continuam individuais.
+
+**Faturamento esclarecido pelo usuário em 04/11/2026:** significa mostrar o valor individual no resumo, não criar Solicitação de Pagamento nem cobrança. O resumo e o CSV distinguem data/valor de venda consultados na origem, pagamentos nominais da origem, base de venda efetivamente usada e resultados calculados. A consulta de venda existente alimenta os valores de origem, preservados mesmo se o usuário ajustar a base do cálculo; ausência aparece como “Não confirmado”, nunca zero presumido. Pagamentos nominais só aparecem após a consulta do contrato. O total é dos documentos disponíveis, explicitamente parcial quando faltam gerações. O fluxo separado de Solicitação de Pagamento possui campos e descontos próprios (`docs/payment-requests.md`) e não é acionado por esta implementação.
 
 ## Validação
 
