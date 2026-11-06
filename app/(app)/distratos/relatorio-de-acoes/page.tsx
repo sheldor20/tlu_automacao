@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Button, Dialog, Field, PageIntro } from "@/components/ui";
-import { legalActionFields, legalActionStatuses, type LegalAction } from "@/lib/distrato-legal-actions";
+import { legalActionEditableKeys, legalActionFields, legalActionStatuses, type LegalAction } from "@/lib/distrato-legal-actions";
 import { paymentFetch } from "@/lib/payment-client";
 import "./legal-actions.css";
 
@@ -124,15 +124,17 @@ function ActionDialog({ action, canWrite, onClose, onSave }: {
     const form = new FormData(event.currentTarget);
     const read = (key: string) => String(form.get(key) ?? "").trim();
     const tracking = { id, status: read("status"), observations: read("observations") };
-    const payload = action ? { ...tracking, revision: action.revision } : {
-      ...tracking,
-      protocol: read("protocol"),
-      details: Object.fromEntries(legalActionFields.map(field => {
-        const value = read(field.key);
-        const numeric = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{1,2}$/.test(value) ? value.replace(/\./g, "").replace(",", ".") : value;
-        return [field.key, "type" in field && field.type === "money" ? numeric : value];
-      })),
-    };
+    const details = Object.fromEntries(legalActionFields.flatMap(field => {
+      if (action && !form.has(field.key)) return [];
+      const value = read(field.key);
+      if (action && value === (action.details[field.key] ?? "")) return [];
+      const localizedMoney = "type" in field && field.type === "money" &&
+        /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{1,2}$/.test(value);
+      return [[field.key, localizedMoney ? value.replace(/\./g, "").replace(",", ".") : value]];
+    }));
+    const payload = action
+      ? { ...tracking, revision: action.revision, details }
+      : { ...tracking, protocol: read("protocol"), details };
     try {
       const data = await paymentFetch(endpoint, { method: action ? "PATCH" : "POST", body: JSON.stringify(payload) });
       onSave(data.action);
@@ -146,19 +148,23 @@ function ActionDialog({ action, canWrite, onClose, onSave }: {
   return (
     <Dialog open wide title={action?.protocol ?? "Nova ação judicial"} onClose={saving ? () => {} : onClose}>
       <form className="legal-action-form" onSubmit={submit}>
-        {action ? <dl className="legal-action-grid">
-          {legalActionFields.map(field => <div key={field.key}><dt>{field.label}</dt>
-            <dd>{displayValue(action.details[field.key], "type" in field ? field.type : undefined)}</dd></div>)}
-        </dl> : <div className="legal-action-grid">
-          <Field label="Protocolo / número do processo"><input name="protocol" required maxLength={120} autoFocus /></Field>
+        <div className="legal-action-grid">
+          {!action && <Field label="Protocolo / número do processo">
+            <input name="protocol" required maxLength={120} autoFocus />
+          </Field>}
           {legalActionFields.map(field => {
             const type = "type" in field ? field.type : undefined;
+            const value = action?.details[field.key] ?? "";
+            if (action && (!canWrite || !legalActionEditableKeys.some(key => key === field.key))) {
+              return <dl key={field.key}><dt>{field.label}</dt><dd>{displayValue(value, type)}</dd></dl>;
+            }
             return <Field key={field.key} label={field.label}>
               <input name={field.key} type={type === "date" ? "date" : "text"} maxLength={500}
-                inputMode={type === "money" ? "decimal" : undefined} required={"required" in field} />
+                inputMode={type === "money" ? "decimal" : undefined} required={"required" in field}
+                defaultValue={value} readOnly={saving} />
             </Field>;
           })}
-        </div>}
+        </div>
         <Field label="Status do processo">
           <select name="status" disabled={!canWrite || saving} defaultValue={action?.status ?? legalActionStatuses[0]}>
             {legalActionStatuses.map(item => <option key={item}>{item}</option>)}
@@ -171,7 +177,7 @@ function ActionDialog({ action, canWrite, onClose, onSave }: {
         {error && <p role="alert">{error}</p>}
         <div className="legal-action-buttons">
           <Button type="button" variant="secondary" disabled={saving} onClick={onClose}>{canWrite ? "Cancelar" : "Fechar"}</Button>
-          {canWrite && <Button type="submit" loading={saving}>{action ? "Salvar acompanhamento" : "Cadastrar ação"}</Button>}
+          {canWrite && <Button type="submit" loading={saving}>{action ? "Salvar alterações" : "Cadastrar ação"}</Button>}
         </div>
       </form>
     </Dialog>
