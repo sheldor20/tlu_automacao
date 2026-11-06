@@ -5,6 +5,7 @@ import { legalActionCreate, legalActionUpdate } from "@/lib/distrato-legal-actio
 import { paymentBody, paymentFailure, paymentJson, PaymentError } from "@/lib/payment-server";
 
 const table = "distrato_legal_actions";
+const staleAction = () => new PaymentError("A ação foi alterada em outra sessão. Recarregue a página para consultar a versão atual.", 409);
 const columns = "id,protocol,details,status,observations,revision,updated_at";
 
 export async function GET(request: Request) {
@@ -41,11 +42,17 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const { db, actor } = await distratoAccess(request, true);
-    const { id, revision, ...tracking } = legalActionUpdate.parse(await paymentBody(request));
+    const { id, revision, details, ...tracking } = legalActionUpdate.parse(await paymentBody(request));
+    let changes = {};
+    if (details && Object.keys(details).length) {
+      const current = await checked(db.from(table).select("details").eq("id", id).eq("revision", revision).maybeSingle());
+      if (!current) throw staleAction();
+      changes = { details: { ...current.details, ...details } };
+    }
     const action = await checked(db.from(table)
-      .update({ ...tracking, updated_by: actor.id, revision: randomUUID(), updated_at: new Date().toISOString() })
+      .update({ ...tracking, ...changes, updated_by: actor.id, revision: randomUUID(), updated_at: new Date().toISOString() })
       .eq("id", id).eq("revision", revision).select(columns).maybeSingle());
-    if (!action) throw new PaymentError("A ação foi alterada em outra sessão. Recarregue a página para consultar a versão atual.", 409);
+    if (!action) throw staleAction();
     return paymentJson({ action });
   } catch (error) {
     return paymentFailure(error);

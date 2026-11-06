@@ -34,6 +34,9 @@ const detailsSchema = z.object(Object.fromEntries(legalActionFields.map(field =>
   return [field.key, value];
 })) as Record<DetailKey, z.ZodType<string>>);
 
+const editableDetailsSchema = detailsSchema.pick({ block: true, lot: true, claimAmount: true, archivedOn: true });
+export const legalActionEditableKeys = editableDetailsSchema.keyof().options;
+
 const trackingSchema = z.object({
   status: z.enum(legalActionStatuses),
   observations: z.string().trim().max(12000),
@@ -48,6 +51,7 @@ export const legalActionCreate = trackingSchema.extend({
 export const legalActionUpdate = trackingSchema.extend({
   id: z.uuid(),
   revision: z.uuid(),
+  details: editableDetailsSchema.partial().strict().optional(),
 });
 
 export type LegalAction = z.infer<typeof legalActionCreate> & { revision: string; updated_at: string };
