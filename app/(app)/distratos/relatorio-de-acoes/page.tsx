@@ -90,7 +90,14 @@ export default function LegalActionsReportPage() {
               <th scope="col">Partes</th><th scope="col">Status</th></tr></thead>
             <tbody>{visible.map(action => (
               <tr key={action.id}>
-                <td><button type="button" className="legal-report-link" onClick={() => setSelected(action)}>{action.protocol}</button></td>
+                <td>
+                  <button type="button" className="legal-report-link" onClick={() => setSelected(action)}>{action.protocol}</button>
+                  {canWrite && <div className="legal-report-edit">
+                    <Button type="button" variant="secondary" aria-label={`Editar ação ${action.protocol}`} onClick={() => setSelected(action)}>
+                      Editar
+                    </Button>
+                  </div>}
+                </td>
                 <td>{action.details.nature}<small>{action.details.district}</small></td>
                 <td>{action.details.plaintiff}<small>Réu · {action.details.defendant}</small></td>
                 <td><span className="legal-report-status">{action.status}</span></td>
