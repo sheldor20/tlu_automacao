@@ -25,7 +25,7 @@ test("valida período, metas e prazos antes do envio", () => {
 test("acordos persistem por ciclo e ficam restritos ao colaborador e líder atual", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  await migrate(db, "20261016183946_performance_agreements.sql");
+  await migrate(db, "20261018120134_performance_agreements.sql");
   for (const id of [employee, leader, other, admin, nextLeader, peer]) {
     await db.query("insert into auth.users (id, email) values ($1, $2)", [id, `${id.slice(0, 3)}@example.test`]);
   }

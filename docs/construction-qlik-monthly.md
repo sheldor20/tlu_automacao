@@ -36,7 +36,7 @@ A migração nova é aditiva: coluna e triggers `SECURITY INVOKER`. Triggers rej
 
 ## Publicação posterior, somente após aprovação específica
 
-1. Revisar diff e migration `20261022143304_construction_qlik_monthly_readonly.sql`, inclusive o bloqueio dos clientes antigos. Comparar o main atual com o commit base; manter as outras branches de revisão separadas.
+1. Revisar diff e migration `20261022172406_construction_qlik_monthly_readonly.sql`, inclusive o bloqueio dos clientes antigos. Comparar o main atual com o commit base; manter as outras branches de revisão separadas.
 2. Em ambiente de homologação aprovado, aplicar a migration **antes** do app, pois a API lê a nova coluna. Nenhum sync/backfill é necessário. Se houver restrição de privilégio, não ampliar grants/RLS para contornar: investigar separadamente.
 3. Publicar a versão revisada e validar com usuário escritor de Obras, viewer e usuário sem acesso. Confirmar tela sem vínculo, códigos ambíguos/inválidos, unidade única e múltiplas, dado ausente, erro de carga, legado e CSV. Usar registros de teste autorizados para gravação.
 4. Conferir que clientes antigos recebem bloqueio de escrita em `construction_budgets` e que os comandos financeiros do endpoint não escrevem. Validar propagação do negócio para obra e conflito de edição concorrente.

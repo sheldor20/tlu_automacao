@@ -84,7 +84,7 @@ O banco e o passo a passo de configuração estão em [supabase/README.md](supab
 ## Criação de projetos com acesso liberado no Adm
 
 Antes do deploy, aplique
-`supabase/migrations/20260915140858_fix_project_creation_rls.sql` no Supabase.
+`supabase/migrations/20260915141545_fix_project_creation_rls.sql` no Supabase.
 Ela corrige a criação por usuários com **Gestão completa** em Projetos ou
 Governança, mantendo as políticas de acesso por área e envolvimento.
 
@@ -512,7 +512,7 @@ vazios, autoria, acesso indevido, bloqueios por perfil e preservação do histó
 
 ## Carregamento e navegação
 
-A migration `20260917120504_today_dashboard_performance.sql` deve ser aplicada
+A migration `20260917120808_today_dashboard_performance.sql` deve ser aplicada
 antes de publicar esta interface. O Hoje usa `today_dashboard` para buscar, em
 uma única chamada, as permissões atualizadas, pessoas visíveis, tarefas da pessoa
 selecionada e alertas. As tarefas são filtradas no banco e retornam somente os
@@ -545,7 +545,7 @@ alteração feita por outra pessoa. Revisões são um controle de concorrência,
 um histórico de versões recuperáveis.
 
 Antes de publicar a interface, aplique a migration
-`20261016183946_performance_agreements.sql` no ambiente de destino. Ela usa
+`20261018120134_performance_agreements.sql` no ambiente de destino. Ela usa
 `profiles` e `profile_reporting_lines` existentes. Nenhum novo segredo ou serviço
 é necessário. O acesso é validado pelo banco a cada consulta e gravação: apenas
 o colaborador ativo e seu líder direto atual, também ativo. Administradores e RH
@@ -590,7 +590,7 @@ retira pendências e impede novas alterações no acordo excluído. **Incluir ac
 excluídos** e **Documentos preservados** permitem consultar seu histórico. As partes
 originais conservam acesso aos documentos emitidos mesmo após mudança de liderança.
 
-A migração `20261021124534_performance_contracts_and_review_access.sql` pressupõe
+A migração `20261021125605_performance_contracts_and_review_access.sql` pressupõe
 as tabelas de ciência e arquivos já existentes em produção (migrações de 19/10,
 agora também incluídas no repositório). Aplique apenas as migrações ainda não
 presentes no ambiente; os nomes históricos no banco podem ter timestamps diferentes.

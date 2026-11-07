@@ -3,8 +3,8 @@ import test from 'node:test';
 import { migrate, projectDatabase } from './helpers/project-database.ts';
 test('assinatura vinculada à revisão, imutável e restrita ao liderado; anexos privados', async t => {
  const db = await projectDatabase(); t.after(() => db.close());
- await migrate(db, '20261016183946_performance_agreements.sql');
- await migrate(db, '20261019133209_performance_acknowledgments_files.sql');
+ await migrate(db, '20261018120134_performance_agreements.sql');
+ await migrate(db, '20261019133508_performance_acknowledgments_files.sql');
  const employee='11111111-1111-4111-8111-111111111111', leader='22222222-2222-4222-8222-222222222222', other='33333333-3333-4333-8333-333333333333';
  for (const id of [employee,leader,other]) await db.query('insert into auth.users(id,email) values($1,$2)',[id,id+'@test.com']);
  await db.query('insert into public.profile_reporting_lines(report_user_id,leader_user_id) values($1,$2)',[employee,leader]);

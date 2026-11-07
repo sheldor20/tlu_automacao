@@ -11,7 +11,7 @@ test('mural: validação de conteúdo e ações',()=>{
 });
 test('mural: banco privado, limites, reação única e exclusão em cascata',async t=>{
  const db=await projectDatabase();t.after(()=>db.close());
- await migrate(db,'20261029184637_announcement_wall.sql');
+ await migrate(db,'20261029184656_announcement_wall.sql');
  const uid='11111111-1111-4111-8111-111111111111';
  await db.query('insert into auth.users(id,email) values($1,$2)',[uid,'mural@test.invalid']);
  const p=(await db.query<{id:string}>("insert into announcements(author_id,author_name,title,body) values($1,'Teste','Aviso','Corpo') returning id",[uid])).rows[0].id;

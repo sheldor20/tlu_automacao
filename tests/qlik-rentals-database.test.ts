@@ -4,13 +4,13 @@ import {migrate,projectDatabase} from "./helpers/project-database.ts";
 
 test("carteira e recebimentos Qlik: vínculo estável, permissões, IR e cargas atômicas",async(t)=>{
  const db=await projectDatabase();t.after(()=>db.close());
- await migrate(db,"20260916184241_rental_reserve_fund.sql");await migrate(db,"20260916184652_rental_monthly_receipts.sql");
+ await migrate(db,"20260916184351_rental_reserve_fund.sql");await migrate(db,"20260916185708_rental_monthly_receipts.sql");
  const user="11111111-1111-4111-8111-111111111111",denied="22222222-2222-4222-8222-222222222222";
  await db.query("insert into auth.users(id,email) values($1,'rentals@example.test'),($2,'denied@example.test')",[user,denied]);
  await db.query("insert into public.profile_departments(user_id,department_slug) values($1,'alugueis')",[user]);
  const id=(await db.query<{id:string}>("insert into public.rentals(name,property_address,lessor_type,lessor_name,monthly_rent,created_by) values('Casa original','Rua de teste','pf','Locador',3000,$1) returning id",[user])).rows[0].id;
  await db.query("insert into public.rental_receipts(rental_id,reference_month,rent_received,administration_fee,reserve_fund,fines,reimbursements,property_tax) values($1,'2026-08-01',2500.50,150.20,100,20,50,200)",[id]);
- await migrate(db,"20260916190849_qlik_rental_inventory_and_income_tax.sql");await migrate(db,"20260916191302_qlik_rental_receipts_by_property_code.sql");
+ await migrate(db,"20260916191805_qlik_rental_inventory_and_income_tax.sql");await migrate(db,"20260916191810_qlik_rental_receipts_by_property_code.sql");
  await migrate(db,"20260916193847_rental_receipts_safe_snapshot_replace.sql");
  async function role(name:string,sub:string|null,work:()=>Promise<void>){
   await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub,role:name})]);await db.exec(`set role ${name}`);

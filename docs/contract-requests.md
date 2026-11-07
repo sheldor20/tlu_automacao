@@ -16,7 +16,7 @@ A opção **Baixar minuta .doc** de locação utiliza as 14 cláusulas do PDF fo
 
 ## Acesso e dados
 
-Aplicar `supabase/migrations/20261020114323_contract_requests.sql` antes de publicar a aplicação. A migração adiciona tabelas independentes, sem alterar solicitações de pagamento existentes. As tabelas de contratos e eventos têm RLS e acesso reservado ao servidor; o cliente acessa apenas as rotas autenticadas. Permissões são concedidas somente pela API administrativa. Tokens públicos aleatórios de 256 bits são guardados somente como SHA-256; downloads, consultas e atualizações repetem a verificação de acesso. Os links públicos não concedem gestão. Formulários públicos têm limite de envios e chave de idempotência. Contratos não utilizam a fila de e-mails de pagamentos: acompanhamento e comunicação são feitos pelo sistema/link fornecido no envio.
+Aplicar `supabase/migrations/20261020115216_contract_requests.sql` antes de publicar a aplicação. A migração adiciona tabelas independentes, sem alterar solicitações de pagamento existentes. As tabelas de contratos e eventos têm RLS e acesso reservado ao servidor; o cliente acessa apenas as rotas autenticadas. Permissões são concedidas somente pela API administrativa. Tokens públicos aleatórios de 256 bits são guardados somente como SHA-256; downloads, consultas e atualizações repetem a verificação de acesso. Os links públicos não concedem gestão. Formulários públicos têm limite de envios e chave de idempotência. Contratos não utilizam a fila de e-mails de pagamentos: acompanhamento e comunicação são feitos pelo sistema/link fornecido no envio.
 
 ## Verificação
 

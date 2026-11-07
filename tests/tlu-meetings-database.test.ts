@@ -12,7 +12,7 @@ test("Reuniões TLU: modelos, acessos, 1:1 privado e revisão da ata", async t =
   const db = await projectDatabase();
   t.after(() => db.close());
   await db.exec("alter table storage.objects add column owner_id text; grant select,insert,delete on storage.objects to authenticated;");
-  for (const name of ["20260916175736_ra_edit_delete_definitions.sql", "20260916180941_ra_delete_item_task.sql", "20260916183159_task_files_comments_activity.sql", "20260916202418_today_alert_department_permissions.sql"]) await migrate(db,name);
+  for (const name of ["20260916180619_ra_edit_delete_definitions.sql", "20260916181222_ra_delete_item_task.sql", "20260916183159_task_files_comments_activity.sql", "20260916202418_today_alert_department_permissions.sql"]) await migrate(db,name);
   for (const [id,name] of [[leader,"Christiane Ribeiro"],[report,"Jessica Alves dos Santos"],[admin,"Kim Silvestre"],[outsider,"Pessoa externa"],[secondReport,"Gabriela Alves dos Reis"]]) {
     await db.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)", [id, `${id}@example.test`, JSON.stringify({ full_name: name })]);
   }
@@ -21,7 +21,7 @@ test("Reuniões TLU: modelos, acessos, 1:1 privado e revisão da ata", async t =
   await db.query("insert into public.profile_reporting_lines(leader_user_id,report_user_id) values($1,$2),($1,$3)",[leader,report,secondReport]);
   await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:leader,role:"authenticated"})]);
   const legacy = (await db.query<{id:string}>("insert into public.ra_meetings(title,scheduled_at,leader_user_id,status,minutes_text) values('Ata anterior',now(),$1,'encerrada','Texto original legado') returning id",[leader])).rows[0].id;
-  await migrate(db,"20260928212742_tlu_meeting_rites.sql");
+  await migrate(db,"20260928215553_tlu_meeting_rites.sql");
   async function asUser<T>(id:string,work:()=>Promise<T>) {
     await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:id,role:"authenticated"})]);
     await db.exec("set role authenticated");

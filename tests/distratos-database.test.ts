@@ -7,7 +7,7 @@ test("distratos: leitura restrita, revogação imediata e histórico imutável",
   // Only the foreign-key target is a fixture; module DDL and access function
   // are the repository's actual migrations.
   await db.exec("create table public.client_contracts(id text primary key); insert into public.client_contracts(id) values('20|33|67');");
-  await migrate(db, "20261023114330_distratos_module.sql");
+  await migrate(db, "20261023115525_distratos_module.sql");
   const user = "11111111-1111-4111-8111-111111111111", outsider = "22222222-2222-4222-8222-222222222222";
   await db.query("insert into auth.users(id,email) values($1,'user@example.test'),($2,'other@example.test')", [user, outsider]);
   await db.query("insert into public.profile_departments(user_id,department_slug) values($1,'distratos')", [user]);

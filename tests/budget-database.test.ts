@@ -21,7 +21,7 @@ test("planejador: migração, agregação real e acesso restrito", async (t) => 
   ])
     await migrate(db, migration);
 
-  await migrate(db, "20260917140745_five_year_budget.sql");
+  await migrate(db, "20260917144603_five_year_budget.sql");
   const admin = "11111111-1111-4111-8111-111111111111",
     viewer = "22222222-2222-4222-8222-222222222222",
     outsider = "33333333-3333-4333-8333-333333333333";

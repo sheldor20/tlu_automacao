@@ -17,8 +17,8 @@ test("payment lifecycle includes protected finalization and an atomic email noti
   ]) await migrate(db, migration);
   // Payment-only fixture: the operations migration adds this optional work link.
   await db.exec("alter table public.payment_requests add column qlik_work_key text");
-  await migrate(db, "20261019201155_payment_requester_edit.sql");
-  await migrate(db, "20261019202358_payment_request_responsibles.sql");
+  await migrate(db, "20261019201358_payment_requester_edit.sql");
+  await migrate(db, "20261019202556_payment_request_responsibles.sql");
   await db.exec(`
     insert into auth.users(id,email) values
       ('11111111-1111-4111-8111-111111111111','admin@example.test'),

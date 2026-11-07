@@ -28,13 +28,13 @@ test("indicadores e resumo usam o mesmo gasto Qlik publicado, respeitando RLS e 
     "20260917162639_operations_initial_activation.sql",
     "20260917163239_operations_collection_index.sql",
     "20260917164123_operations_overdue_dates.sql",
-    "20260917174235_cash_projection_covering_index.sql",
+    "20260917174326_cash_projection_covering_index.sql",
     "20260917174951_client_financial_and_property_status.sql",
     "20260917175343_client_status_snapshot_replace.sql",
   ])
     await migrate(db, migration);
 
-  await migrate(db, "20261022143304_construction_qlik_monthly_readonly.sql");
+  await migrate(db, "20261022172406_construction_qlik_monthly_readonly.sql");
   const admin = "11111111-1111-4111-8111-111111111111";
   const outsider = "22222222-2222-4222-8222-222222222222";
   await db.query("insert into auth.users(id,email) values($1,'admin@example.test'),($2,'other@example.test')", [admin, outsider]);
@@ -48,8 +48,8 @@ test("indicadores e resumo usam o mesmo gasto Qlik publicado, respeitando RLS e 
     { id: "payable", work_key: "test|001", kind: "payable", amount: 80, source_category: "9.118" },
   ].map(e => ({...e, active:true, cash_date: new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}));
   for (const e of entries) await db.query("insert into operational_cash_entries(id,company_id,work_key,kind,amount,source_category,cash_date) values($1,'test',$2,$3,$4,$5,$6)", [e.id,e.work_key,e.kind,e.amount,e.source_category,e.cash_date]);
-  await migrate(db, "20261022160000_construction_qlik_indicators.sql");
-  await migrate(db, "20261022183000_construction_expense_lookup.sql");
+  await migrate(db, "20261022175538_construction_qlik_indicators.sql");
+  await migrate(db, "20261022180943_construction_expense_lookup.sql");
   assert.equal((await db.query<Record<string, unknown>>("select realized_total from construction_progress_summary where id=$1", [work])).rows[0].realized_total, null);
   await db.exec("insert into operational_publications(kind) values('paid'),('payable')");
   const sources = {paid:{at:new Date().toISOString(),status:"success"},payable:{at:new Date().toISOString(),status:"success"}};

@@ -5,7 +5,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 test("carregamento compacto preserva tarefas, alertas e permissões em todas as visões", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  for (const migration of ["20260916202418_today_alert_department_permissions.sql", "20260916203610_resolve_today_alerts.sql", "20260917120504_today_dashboard_performance.sql"]) await migrate(db, migration);
+  for (const migration of ["20260916202418_today_alert_department_permissions.sql", "20260916203610_resolve_today_alerts.sql", "20260917120808_today_dashboard_performance.sql"]) await migrate(db, migration);
   const admin = "11111111-1111-4111-8111-111111111111";
   const user = "22222222-2222-4222-8222-222222222222";
   const other = "33333333-3333-4333-8333-333333333333";
