@@ -4,7 +4,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 
 test("contratos: permissões independentes, três status, concorrência, histórico e acesso público", async t => {
   const db = await projectDatabase(); t.after(() => db.close());
-  await migrate(db, "20261020114323_contract_requests.sql");
+  await migrate(db, "20261020115216_contract_requests.sql");
   const admin = "11111111-1111-4111-8111-111111111111", owner = "22222222-2222-4222-8222-222222222222", manager = "33333333-3333-4333-8333-333333333333", other = "44444444-4444-4444-8444-444444444444";
   for (const id of [admin, owner, manager, other]) await db.query("insert into auth.users(id,email) values($1,$2)", [id, `${id}@example.test`]);
   await db.query("update profiles set is_admin=(user_id=$1)", [admin]);

@@ -5,7 +5,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 const leader = "11111111-1111-4111-8111-111111111111";
 const participant = "22222222-2222-4222-8222-222222222222";
 const admin = "33333333-3333-4333-8333-333333333333";
-const migration = "20260916175736_ra_edit_delete_definitions.sql";
+const migration = "20260916180619_ra_edit_delete_definitions.sql";
 
 test("edição e exclusão de definições preservam a pauta e suas permissões", async (t) => {
   const db = await projectDatabase();

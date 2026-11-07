@@ -6,8 +6,8 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 test("ação judicial: protocolo único, dados fixos e revisão concorrente", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  await migrate(db, "20261106150746_distrato_legal_actions.sql");
-  await migrate(db, "20261106171053_distrato_legal_action_editable_fields.sql");
+  await migrate(db, "20261106151250_distrato_legal_actions.sql");
+  await migrate(db, "20261106171327_distrato_legal_action_editable_fields.sql");
 
   const insert = `insert into public.distrato_legal_actions (protocol, details) values ($1, '{"nature":"Fiscal"}') returning id, revision, status`;
   await db.exec("set role service_role");

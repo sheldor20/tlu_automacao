@@ -26,7 +26,7 @@ test("operações: migração, integridade empresa/obra, concorrência e isolame
     "20260917162639_operations_initial_activation.sql",
     "20260917163239_operations_collection_index.sql",
     "20260917164123_operations_overdue_dates.sql",
-    "20260917174235_cash_projection_covering_index.sql",
+    "20260917174326_cash_projection_covering_index.sql",
     "20260917174951_client_financial_and_property_status.sql",
     "20260917175343_client_status_snapshot_replace.sql",
   ])

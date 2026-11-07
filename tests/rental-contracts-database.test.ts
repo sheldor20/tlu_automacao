@@ -4,7 +4,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 
 test("contratos: versões atômicas, acesso, conflito, isolamento de imóvel e histórico Qlik", async t => {
  const db = await projectDatabase(); t.after(() => db.close());
- for (const file of ["20260916184241_rental_reserve_fund.sql","20260916184652_rental_monthly_receipts.sql","20260916190849_qlik_rental_inventory_and_income_tax.sql","20260916191302_qlik_rental_receipts_by_property_code.sql","20260916193611_qlik_inventory_verified_fields.sql","20261020120431_rental_contract_versions.sql"]) await migrate(db,file);
+ for (const file of ["20260916184351_rental_reserve_fund.sql","20260916185708_rental_monthly_receipts.sql","20260916191805_qlik_rental_inventory_and_income_tax.sql","20260916191810_qlik_rental_receipts_by_property_code.sql","20260916193611_qlik_inventory_verified_fields.sql","20261020120431_rental_contract_versions.sql"]) await migrate(db,file);
  await db.exec("grant select,insert on storage.objects to authenticated,service_role");
  const user="11111111-1111-4111-8111-111111111111", denied="22222222-2222-4222-8222-222222222222";
  await db.query("insert into auth.users(id,email) values($1,'rental@example.test'),($2,'denied@example.test')",[user,denied]);

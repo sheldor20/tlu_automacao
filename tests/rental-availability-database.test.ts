@@ -5,9 +5,9 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 test("disponibilidade conta apenas desocupados com permissão e mantém o acesso por área", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  await migrate(db, "20260916184241_rental_reserve_fund.sql");
-  await migrate(db, "20260916184652_rental_monthly_receipts.sql");
-  await migrate(db, "20260916190849_qlik_rental_inventory_and_income_tax.sql");
+  await migrate(db, "20260916184351_rental_reserve_fund.sql");
+  await migrate(db, "20260916185708_rental_monthly_receipts.sql");
+  await migrate(db, "20260916191805_qlik_rental_inventory_and_income_tax.sql");
   await migrate(db, "20260916195820_rental_availability_requires_rentable.sql");
 
   const allowed = "11111111-1111-4111-8111-111111111111";

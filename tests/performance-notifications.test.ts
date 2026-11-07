@@ -4,7 +4,7 @@ import { migrate, projectDatabase } from './helpers/project-database.ts';
 
 test('avisos de performance em Hoje respeitam destinatário, revisão e assinatura', async t => {
  const db = await projectDatabase(); t.after(() => db.close());
- for (const name of ['20260916202418_today_alert_department_permissions.sql','20260916203610_resolve_today_alerts.sql','20261016183946_performance_agreements.sql','20261019133209_performance_acknowledgments_files.sql']) await migrate(db,name);
+ for (const name of ['20260916202418_today_alert_department_permissions.sql','20260916203610_resolve_today_alerts.sql','20261018120134_performance_agreements.sql','20261019133508_performance_acknowledgments_files.sql']) await migrate(db,name);
  const employee='11111111-1111-4111-8111-111111111111', leader='22222222-2222-4222-8222-222222222222', other='33333333-3333-4333-8333-333333333333', admin='44444444-4444-4444-8444-444444444444';
  for (const id of [employee,leader,other,admin]) await db.query('insert into auth.users(id,email) values($1,$2)',[id,id+'@test.com']);
  await db.query('update public.profiles set is_admin=true where user_id=$1',[admin]);
@@ -13,7 +13,7 @@ test('avisos de performance em Hoje respeitam destinatário, revisão e assinatu
  async function as<T>(id:string, fn:()=>Promise<T>) { await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:id,role:'authenticated'})]); await db.exec('set role authenticated'); try{return await fn();}finally{await db.exec('reset role');} }
  const create=(cycle='Ciclo')=>db.query<{id:string}>(`insert into public.performance_agreements(report_user_id,cycle,starts_on,ends_on,goals) values($1,$2,'2026-01-01','2026-12-31','[{"title":"Meta","indicator":"N","expected_result":"10","due_date":"2026-12-01"}]') returning id`,[employee,cycle]);
  const agreement = (await as(leader,()=>create())).rows[0].id;
- await migrate(db,'20261019133714_performance_agreement_notifications.sql');
+ await migrate(db,'20261019133913_performance_agreement_notifications.sql');
  const list=(id:string)=>db.query<{id:string;occurrence_key:string;title:string;href:string;resolved_at:string|null}>('select * from public.today_alerts($1)',[id]);
  const count=()=>db.query<{n:number}>('select public.current_user_today_alert_count() n');
  const notifications=()=>db.query<{notification_type:string;recipient_user_id:string}>('select notification_type,recipient_user_id from public.user_notifications');

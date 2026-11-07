@@ -4,7 +4,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 const ids=["11111111-1111-4111-8111-111111111111","22222222-2222-4222-8222-222222222222","33333333-3333-4333-8333-333333333333"];
 test("attachments preserve bytes, enforce limits atomically and revoke access",async t=>{
  const db=await projectDatabase();t.after(()=>db.close());
- await migrate(db,"20261021201543_internal_chat.sql");await migrate(db,"20261022120641_chat_attachments.sql");
+ await migrate(db,"20261021201543_internal_chat.sql");await migrate(db,"20261022120907_chat_attachments.sql");
  for(const [i,id] of ids.entries()) await db.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)",[id,`file${i}@example.test`,JSON.stringify({full_name:`Pessoa ${i}`})]);
  await db.exec("update public.profiles set active=true");
  await db.query("update public.profiles set is_admin=true where user_id=$1",[ids[2]]);

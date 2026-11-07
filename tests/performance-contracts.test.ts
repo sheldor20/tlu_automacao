@@ -17,10 +17,10 @@ test("contratos: autorização ADM, assinaturas, conteúdo preservado e exclusã
  const db = await projectDatabase(); t.after(() => db.close());
  await migrate(db, "20260916202418_today_alert_department_permissions.sql");
  await migrate(db, "20260916203610_resolve_today_alerts.sql");
- await migrate(db, "20261016183946_performance_agreements.sql");
- await migrate(db, "20261019133209_performance_acknowledgments_files.sql");
- await migrate(db, "20261019133714_performance_agreement_notifications.sql");
- await migrate(db, "20261021124534_performance_contracts_and_review_access.sql");
+ await migrate(db, "20261018120134_performance_agreements.sql");
+ await migrate(db, "20261019133508_performance_acknowledgments_files.sql");
+ await migrate(db, "20261019133913_performance_agreement_notifications.sql");
+ await migrate(db, "20261021125605_performance_contracts_and_review_access.sql");
  for (const id of [employee,leader,reviewer,admin,other,nextLeader]) await db.query("insert into auth.users(id,email) values($1,$2)",[id,`${id}@test.com`]);
  await db.query("update public.profiles set is_admin = true where user_id=$1",[admin]);
  await db.query("insert into public.profile_reporting_lines(report_user_id,leader_user_id) values($1,$2)",[employee,leader]);

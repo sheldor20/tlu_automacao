@@ -2,7 +2,7 @@
 
 Menu independente `/distratos`, com acesso individual pela Administração. Administradores têm acesso; usuários precisam do departamento `distratos`. Leitores consultam o histórico e baixam os documentos. Geração exige nível de edição.
 
-Aplicar `20261023114330_distratos_module.sql` antes de publicar. Nenhum usuário recebe o novo departamento automaticamente. A migração cria snapshots imutáveis, com RLS na leitura e escrita restrita ao servidor autorizado.
+Aplicar `20261023115525_distratos_module.sql` antes de publicar. Nenhum usuário recebe o novo departamento automaticamente. A migração cria snapshots imutáveis, com RLS na leitura e escrita restrita ao servidor autorizado.
 
 ## Origem e seleção
 

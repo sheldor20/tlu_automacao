@@ -1,0 +1,1 @@
+drop function if exists public.club_invite_target(uuid,uuid);

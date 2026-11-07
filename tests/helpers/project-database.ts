@@ -3,7 +3,7 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { readFileSync, readdirSync } from "node:fs";
 
 const migrations = new URL("../../supabase/migrations/", import.meta.url);
-export const creationMigration = "20260915140858_fix_project_creation_rls.sql";
+export const creationMigration = "20260915141545_fix_project_creation_rls.sql";
 
 export async function migrate(db: PGlite, filename: string) {
   await db.exec(readFileSync(new URL(filename, migrations), "utf8"));

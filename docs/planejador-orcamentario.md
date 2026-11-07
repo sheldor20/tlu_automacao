@@ -62,7 +62,7 @@ Na consulta de 17/09/2026, a carga de recebimentos estava em andamento; pagament
 
 ## Instalação e validação
 
-Aplicar `supabase/migrations/20260917140745_five_year_budget.sql` depois das migrations de Financeiro/Clientes/Cobrança, publicar o código e acessar `/planejador-orcamentario` no domínio do sistema. Não há novas variáveis de ambiente. Reutiliza as credenciais existentes de servidor e Supabase.
+Aplicar `supabase/migrations/20260917144603_five_year_budget.sql` depois das migrations de Financeiro/Clientes/Cobrança, publicar o código e acessar `/planejador-orcamentario` no domínio do sistema. Não há novas variáveis de ambiente. Reutiliza as credenciais existentes de servidor e Supabase.
 
 A mudança foi verificada localmente com testes de cálculo, reajustes, totais anuais, transferência entre caixa e resultado, segregação por empresa, fonte incompleta, CSV, preservação dos realizados, migração em PostgreSQL/PGlite, RLS, total do negócio e conflito de versões. A navegação e o layout foram verificados em desktop e celular com dados de teste; os testes visuais não gravaram no banco real.
 

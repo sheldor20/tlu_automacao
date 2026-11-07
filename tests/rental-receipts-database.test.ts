@@ -5,8 +5,8 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 test("recebimentos: persistência por mês, independência do contrato e permissões", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  await migrate(db, "20260916184241_rental_reserve_fund.sql");
-  await migrate(db, "20260916184652_rental_monthly_receipts.sql");
+  await migrate(db, "20260916184351_rental_reserve_fund.sql");
+  await migrate(db, "20260916185708_rental_monthly_receipts.sql");
   const allowed = "11111111-1111-4111-8111-111111111111", denied = "22222222-2222-4222-8222-222222222222";
   await db.query("insert into auth.users(id,email) values ($1,'rental@example.test'),($2,'denied@example.test')", [allowed, denied]);
   await db.query("insert into public.profile_departments(user_id,department_slug) values ($1,'alugueis')", [allowed]);

@@ -88,7 +88,7 @@ test("banco real: migração aditiva preserva legado, bloqueia novas escritas e 
   const grants = await db.query(
     "select relname,relacl from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by relname",
   );
-  await migrate(db, "20261022143304_construction_qlik_monthly_readonly.sql");
+  await migrate(db, "20261022172406_construction_qlik_monthly_readonly.sql");
   assert.deepEqual(
     (
       await db.query(

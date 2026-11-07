@@ -9,7 +9,7 @@ const admin = "33333333-3333-4333-8333-333333333333";
 test("exclusão de assunto da RA remove a tarefa na mesma transação", async (t) => {
   const db = await projectDatabase();
   t.after(() => db.close());
-  await migrate(db, "20260916175736_ra_edit_delete_definitions.sql");
+  await migrate(db, "20260916180619_ra_edit_delete_definitions.sql");
   await db.query("insert into auth.users (id, email) values ($1, 'leader@example.test'), ($2, 'participant@example.test'), ($3, 'admin@example.test')", [leader, participant, admin]);
   await db.query("update public.profiles set is_admin = (user_id = $1), active = true", [admin]);
   await db.query("insert into public.profile_departments (user_id, department_slug) values ($1, 'pauta-ra'), ($1, 'projetos'), ($2, 'pauta-ra'), ($2, 'projetos')", [leader, participant]);
@@ -41,7 +41,7 @@ test("exclusão de assunto da RA remove a tarefa na mesma transação", async (t
     assert.equal(await exists("ra_agenda_items", legacy.id), false);
     assert.equal(await exists("project_tasks", legacy.taskId), true);
   });
-  await migrate(db, "20260916180941_ra_delete_item_task.sql");
+  await migrate(db, "20260916181222_ra_delete_item_task.sql");
 
   await t.test("líder remove assunto, definições, tarefa, responsáveis, subtarefas e alertas", async () => {
     const item = await newItem();

@@ -1,0 +1,1 @@
+alter policy rental_contract_files_insert on storage.objects with check (bucket_id = 'rental-contracts' and (select public.has_department_access('alugueis')) and exists (select 1 from public.rentals as rental where rental.id::text = split_part(objects.name, '/', 1)) and storage.extension(objects.name) = 'pdf');

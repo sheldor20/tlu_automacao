@@ -26,6 +26,6 @@ Salvar a correção não envia e-mail automaticamente. “Reenviar ATA” usa a 
 
 ## Publicação e validação
 
-Aplicar `20260928212742_tlu_meeting_rites.sql` antes de liberar a interface. A migração é transacional e adiciona tabelas/colunas sem remover registros existentes. Manter as variáveis de e-mail e Supabase já utilizadas pelo sistema.
+Aplicar `20260928215553_tlu_meeting_rites.sql` antes de liberar a interface. A migração é transacional e adiciona tabelas/colunas sem remover registros existentes. Manter as variáveis de e-mail e Supabase já utilizadas pelo sistema.
 
 Os testes `tlu-meetings-database.test.ts` executam as migrações reais no PostgreSQL embarcado e verificam permissões, revogação, atomicidade, privacidade de tarefas e revisão de atas. `meeting-rites.test.ts` cobre datas e conteúdo do registro. A verificação de interface utiliza uma base isolada, sem e-mails reais.

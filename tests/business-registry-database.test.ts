@@ -5,7 +5,7 @@ import { migrate, projectDatabase } from "./helpers/project-database.ts";
 test("documentos da matrícula são privados e conservam os campos existentes da visão", async (t) => {
   const db = await projectDatabase(); t.after(() => db.close());
   const before = await db.query<{ column_name: string }>("select column_name from information_schema.columns where table_name='business_operational_summary' order by ordinal_position");
-  await migrate(db, "20260921140358_business_registry_report.sql");
+  await migrate(db, "20260921141703_business_registry_report.sql");
   const after = await db.query<{ column_name: string }>("select column_name from information_schema.columns where table_name='business_operational_summary' order by ordinal_position");
   assert.deepEqual(after.rows.slice(0, before.rows.length), before.rows);
   assert.deepEqual(after.rows.slice(-4).map((row) => row.column_name), ["registration_file_path", "registration_file_name", "area_image_path", "area_image_name"]);

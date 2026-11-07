@@ -18,6 +18,6 @@ Referências: [Maps Static API](https://developers.google.com/maps/documentation
 
 ## Instalação e validação
 
-Aplicar `20260921140358_business_registry_report.sql` antes de publicar o código. A migração adiciona campos opcionais e o bucket privado `business-documents`, mantendo as colunas e permissões existentes da visão operacional. O bucket limita tipo/tamanho e permite limpar envios do próprio usuário antes da criação do negócio. A gravação do registro e das referências aos arquivos ocorre em uma única operação; falhas removem os novos arquivos e preservam os anteriores.
+Aplicar `20260921141703_business_registry_report.sql` antes de publicar o código. A migração adiciona campos opcionais e o bucket privado `business-documents`, mantendo as colunas e permissões existentes da visão operacional. O bucket limita tipo/tamanho e permite limpar envios do próprio usuário antes da criação do negócio. A gravação do registro e das referências aos arquivos ocorre em uma única operação; falhas removem os novos arquivos e preservam os anteriores.
 
 Testes automatizados cobrem reconhecimento do número, validação de PDFs, geometria, montagem/anexos do relatório, políticas de acesso e restrições dos campos. O fluxo no navegador foi validado com serviços locais de teste, inclusive o PDF digitalizado fornecido, criação/edição, imagem enviada, download e falha de salvamento. Nenhum PDF fornecido foi atribuído a um negócio real durante esses testes.
